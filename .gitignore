@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+
+# Окружение и локальные данные
+.env
+.env.local
+*.local
+
+# Редакторы и ОС
+.idea/
+.vscode/
+.DS_Store
+
+# Coverage
+.coverage
+htmlcov/

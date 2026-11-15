@@ -1,0 +1,1392 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --surface-muted: #eef1f5;
+  --border: #d7dde5;
+  --text: #1b2430;
+  --text-muted: #5b6878;
+  --accent: #2f6feb;
+  --ok: #1f8a4c;
+  --error: #c0392b;
+  --shadow: 0 1px 2px rgb(16 24 40 / 8%);
+  --radius: 10px;
+  --font: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #12161c;
+  --surface: #1a2029;
+  --surface-muted: #222a35;
+  --border: #2f3a48;
+  --text: #e8edf4;
+  --text-muted: #9aa8b8;
+  --accent: #6f9dff;
+  --ok: #3ecf7f;
+  --error: #ff7a6b;
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--surface-muted);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.shell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  z-index: 2;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 6px;
+}
+
+.brand:hover .brand__name,
+.brand:focus-visible .brand__name {
+  color: var(--accent);
+}
+
+.page__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dialog-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dialog-form input,
+.dialog-form textarea,
+.dialog-form select {
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.brand__mark {
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.brand__name {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-size: 15px;
+}
+
+.brand__stage {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.shell__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shell__main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  padding: 12px;
+}
+
+.page {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.page--centered {
+  align-items: center;
+  justify-content: center;
+}
+
+.page__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 4px;
+}
+
+.page__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 620;
+}
+
+.page__subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.canvas__host {
+  width: 100%;
+  height: 100%;
+}
+
+/* Штатные 12 px крупнее, чем нужно для компактных фигур. */
+.canvas .djs-label {
+  font-size: 11px;
+}
+
+.canvas__overlay {
+  position: absolute;
+  inset-block-end: 10px;
+  inset-inline-start: 12px;
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.canvas__overlay--error {
+  color: var(--error);
+}
+
+.ghost-button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 6px 11px;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.ghost-button:hover {
+  border-color: var(--accent);
+}
+
+.badge {
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.badge--muted {
+  color: var(--text-muted);
+  background: var(--surface-muted);
+}
+
+.badge--ok {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+.badge--error {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  border-color: color-mix(in srgb, var(--error) 35%, transparent);
+}
+
+.diagram-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diagram-list__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.diagram-list__link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 560;
+}
+
+.diagram-list__meta {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.workspace {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 12px;
+}
+
+.workspace__main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.editor-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.editor-toolbar--format {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 5px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.editor-toolbar__section {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.editor-toolbar__label {
+  flex: none;
+  padding-inline: 3px 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.editor-toolbar__size {
+  flex: none;
+  width: 76px;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.editor-toolbar__color {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 27px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.editor-toolbar__color span {
+  position: absolute;
+  inset-block-end: 2px;
+  inset-inline-end: 2px;
+  z-index: 2;
+  min-width: 11px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 9px;
+  line-height: 11px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.djs-element[data-locked='true'] {
+  cursor: not-allowed;
+}
+
+.editor-toolbar__color input {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.editor-toolbar__color:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.editor-toolbar__size--wide {
+  width: 96px;
+}
+
+.editor-toolbar__cell {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.editor-toolbar__cell input {
+  width: 48px;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.narrow-only {
+  display: none;
+}
+
+.inspector {
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.inspector__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.inspector__header .inspector__title {
+  margin: 0;
+}
+
+.inspector__close {
+  display: none;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.inspector__close:hover {
+  color: var(--text);
+}
+
+.inspector__title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.inspector__hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.inspector__colors {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.inspector__color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.inspector__color input {
+  width: 34px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.inspector__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.inspector__swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.inspector__swatch:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.inspector__swatch--stroke {
+  border-width: 3px;
+  background: var(--surface);
+}
+
+.inspector__style-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.inspector__mini {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.inspector__mini input,
+.inspector__mini select {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.inspector__mini input[type='range'] {
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.inspector__checkbox-row {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.inspector__style-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inspector__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.inspector__field input,
+.inspector__field textarea {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+.inspector__field input:focus,
+.inspector__field textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+}
+
+.ghost-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (max-width: 1100px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Инспектор больше не отнимает высоту у холста: на узком окне он
+     открывается поверх как закрываемая панель. */
+  .inspector {
+    position: fixed;
+    top: 96px;
+    right: 12px;
+    bottom: 12px;
+    /* Выше context pad bpmn-js (100), иначе меню выделения рисуется поверх панели. */
+    z-index: 150;
+    width: min(320px, calc(100vw - 24px));
+    box-shadow: 0 18px 50px rgb(16 24 40 / 28%);
+  }
+
+  .inspector:not(.inspector--open) {
+    display: none;
+  }
+
+  .inspector__close,
+  .narrow-only {
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+@media (max-width: 720px) {
+  .inspector {
+    top: 96px;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    width: auto;
+  }
+}
+
+/* --- Панель редактора --- */
+
+.editor-toolbar__divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+.ghost-button--active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ghost-button--small {
+  padding: 3px 8px;
+  font-size: 11.5px;
+}
+
+.ghost-button--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.ghost-button--primary:hover {
+  filter: brightness(1.06);
+}
+
+.canvas-hint {
+  position: absolute;
+  z-index: 130;
+  inset-block-start: 8px;
+  inset-inline-end: 10px;
+  margin: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  pointer-events: none;
+}
+
+/* Context pad bpmn-js по умолчанию остаётся светлым, а иконки наследуют
+   светлый цвет текста приложения — в тёмной теме они сливаются с плитками. */
+:root[data-theme='dark'] .djs-context-pad .entry {
+  background-color: var(--surface);
+  box-shadow: 0 0 2px 1px var(--surface);
+  color: var(--text);
+}
+
+:root[data-theme='dark'] .djs-context-pad .entry:hover {
+  background-color: var(--surface-muted);
+}
+
+/* bpmn-js рисует подписи событий/шлюзов отдельными фигурами: на тёмном холсте
+   тёмный текст пропадает, поэтому для них включаем светлый цвет. */
+:root[data-theme='dark'] .djs-shape[data-element-id$='_label'] .djs-label {
+  /* bpmn-js задаёт цвет подписи inline-стилем, поэтому нужен !important. */
+  fill: #e8edf4 !important;
+}
+
+/* Свёрнутая мини-карта дублирует кнопку тулбара и подписана по-английски. */
+.djs-minimap:not(.open) {
+  display: none;
+}
+
+/* Свёрнутая мини-карта — это белая кнопка; в тёмной теме перекрашиваем. */
+:root[data-theme='dark'] .djs-minimap {
+  --bio-surface: #222a35;
+  --bio-border: #2f3a48;
+  color: var(--text);
+}
+
+.draft-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  font-size: 12.5px;
+}
+
+/* --- Инспектор --- */
+
+.inspector__section {
+  margin: 0 0 12px;
+  padding: 8px 10px 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.inspector__section legend {
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.inspector__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.inspector__checkbox input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+
+.inspector__field small {
+  font-size: 11px;
+  color: var(--error);
+}
+
+/* --- Контекстное меню --- */
+
+.context-menu {
+  position: fixed;
+  /* bpmn-js держит палитру и context pad на z-index 1000 внутри холста. */
+  z-index: 1100;
+  min-width: 220px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow:
+    0 1px 2px rgb(16 24 40 / 8%),
+    0 12px 32px rgb(16 24 40 / 18%);
+}
+
+.context-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.context-menu__item:hover:not(:disabled),
+.context-menu__item--active {
+  background: var(--surface-muted);
+}
+
+.context-menu__item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.context-menu__item--danger {
+  color: var(--error);
+}
+
+.context-menu__hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.context-menu__separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+/* --- Диалог --- */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Выше context pad (100) и панели инспектора (150), ниже ПКМ-меню (1100). */
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(16 24 40 / 45%);
+}
+
+.dialog {
+  width: min(640px, 100%);
+  max-height: min(720px, 92vh);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgb(16 24 40 / 30%);
+}
+
+.dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dialog__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 620;
+}
+
+.dialog__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dialog__error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--error);
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.settings-section__title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.settings-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.settings-field input {
+  width: 84px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.dialog__footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.shortcut-list {
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.shortcut-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 150px auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shortcut-row:last-child {
+  border-bottom: 0;
+}
+
+.shortcut-row__group {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.shortcut-row__label {
+  font-size: 13px;
+}
+
+.shortcut-row__keys {
+  justify-self: start;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.shortcut-row__keys--capturing {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* --- Хлебные крошки drilldown --- */
+
+.bjs-breadcrumbs {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.bjs-breadcrumbs a.bjs-crumb {
+  color: var(--accent);
+}
+
+@media (max-width: 720px) {
+  .shortcut-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .shortcut-row__group {
+    display: none;
+  }
+
+  .shortcut-row__keys {
+    grid-column: 2 / 3;
+  }
+}
+
+/* --- Темы оформления (1.3.3) --- */
+
+.theme-list {
+  display: grid;
+  gap: 8px;
+}
+
+.theme-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-muted);
+  cursor: pointer;
+}
+
+.theme-card--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.theme-card input {
+  accent-color: var(--accent);
+}
+
+.theme-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.theme-card__name {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.theme-card__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.theme-card__swatches {
+  display: flex;
+  gap: 4px;
+}
+
+.theme-card__swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 2px solid;
+}
+
+/* --- Своя тема и фон холста (1.3.11) --- */
+
+.dialog--wide {
+  width: min(760px, 100%);
+}
+
+.theme-editor {
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.theme-editor__title {
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.theme-editor__hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.theme-editor__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px 16px;
+}
+
+.theme-editor__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.theme-editor__label {
+  flex: 1;
+}
+
+.theme-editor__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.theme-editor__field input {
+  width: 30px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.theme-editor__actions {
+  margin-top: 8px;
+}
+
+.theme-editor__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+/* Фон холста хранится в документе (`bs:canvas`), чтобы схема
+   открывалась в том же виде на другом компьютере. */
+.canvas__host[data-canvas='dark'] {
+  background: #0f172a;
+}
+
+.canvas__host[data-canvas='dark'] .djs-grid-line {
+  stroke: rgb(148 163 184 / 22%);
+}
+
+/* --- Комментарии на холсте (1.3.8) --- */
+
+.comment-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 32%);
+  cursor: pointer;
+}
+
+.comment-pin:hover {
+  transform: scale(1.08);
+}
+
+.comments-panel {
+  position: absolute;
+  z-index: 130;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 16%);
+  font-size: 12.5px;
+}
+
+.comments-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.comments-panel__title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 620;
+}
+
+.comments-panel__element {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.comments-panel__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.comments-panel__list {
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.comments-panel__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--error);
+}
+
+.comments-panel__composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.comments-panel__input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  resize: vertical;
+}
+
+.comment {
+  padding: 8px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.comment--resolved {
+  opacity: 0.68;
+}
+
+.comment__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.comment__author {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.comment__badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.comment__body {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment__actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* --- Легенда схемы (1.3.4) --- */
+
+.canvas-legend {
+  position: absolute;
+  /* Панель легенды не должна уходить под context pad, который bpmn-js
+     держит на z-index 100 внутри холста. */
+  z-index: 130;
+  min-width: 170px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+  font-size: 12.5px;
+  user-select: none;
+}
+
+.canvas-legend__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  cursor: grab;
+  touch-action: none;
+}
+
+.canvas-legend__close {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.canvas-legend__close:hover {
+  color: var(--text);
+}
+
+.canvas-legend__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.canvas-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-legend__swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 2px solid;
+  flex: none;
+}
+
+/* --- Кастомные атрибуты элемента (1.3.6) --- */
+
+.attr-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.attr-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.attr-row input {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 7px;
+}
+
+.attr-row input:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+}

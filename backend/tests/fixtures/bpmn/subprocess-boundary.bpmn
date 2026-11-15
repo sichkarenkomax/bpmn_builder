@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_Sub"
+                  targetNamespace="http://bpmn-studio.dev/schema">
+  <bpmn:process id="Process_Sub" name="Проверка с таймаутом" isExecutable="false">
+    <bpmn:startEvent id="Start_1">
+      <bpmn:outgoing>Flow_To_Sub</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:subProcess id="SubProcess_1" name="Проверка документов">
+      <bpmn:incoming>Flow_To_Sub</bpmn:incoming>
+      <bpmn:outgoing>Flow_Ok</bpmn:outgoing>
+    </bpmn:subProcess>
+    <bpmn:boundaryEvent id="Boundary_Timeout" name="Таймаут" attachedToRef="SubProcess_1" cancelActivity="true">
+      <bpmn:outgoing>Flow_Timeout</bpmn:outgoing>
+    </bpmn:boundaryEvent>
+    <bpmn:endEvent id="End_Ok">
+      <bpmn:incoming>Flow_Ok</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="End_Timeout">
+      <bpmn:incoming>Flow_Timeout</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_To_Sub" sourceRef="Start_1" targetRef="SubProcess_1" />
+    <bpmn:sequenceFlow id="Flow_Ok" sourceRef="SubProcess_1" targetRef="End_Ok" />
+    <bpmn:sequenceFlow id="Flow_Timeout" sourceRef="Boundary_Timeout" targetRef="End_Timeout" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_1">
+    <bpmndi:BPMNPlane id="Plane_1" bpmnElement="Process_Sub">
+      <bpmndi:BPMNShape id="Start_1_di" bpmnElement="Start_1">
+        <dc:Bounds x="100" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="SubProcess_1_di" bpmnElement="SubProcess_1" isExpanded="false">
+        <dc:Bounds x="190" y="78" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Boundary_Timeout_di" bpmnElement="Boundary_Timeout">
+        <dc:Bounds x="252" y="140" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Ok_di" bpmnElement="End_Ok">
+        <dc:Bounds x="350" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Timeout_di" bpmnElement="End_Timeout">
+        <dc:Bounds x="350" y="200" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_To_Sub_di" bpmnElement="Flow_To_Sub">
+        <di:waypoint x="136" y="118" />
+        <di:waypoint x="190" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Ok_di" bpmnElement="Flow_Ok">
+        <di:waypoint x="290" y="118" />
+        <di:waypoint x="350" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Timeout_di" bpmnElement="Flow_Timeout">
+        <di:waypoint x="270" y="176" />
+        <di:waypoint x="270" y="218" />
+        <di:waypoint x="350" y="218" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_Two"
+                  targetNamespace="http://bpmn-studio.dev/schema">
+  <bpmn:process id="Process_First" name="Первый" isExecutable="false">
+    <bpmn:startEvent id="First_Start">
+      <bpmn:outgoing>First_Flow</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:endEvent id="First_End">
+      <bpmn:incoming>First_Flow</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="First_Flow" sourceRef="First_Start" targetRef="First_End" />
+  </bpmn:process>
+  <bpmn:process id="Process_Second" name="Второй" isExecutable="false">
+    <bpmn:startEvent id="Second_Start" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_First">
+    <bpmndi:BPMNPlane id="Plane_First" bpmnElement="Process_First">
+      <bpmndi:BPMNShape id="First_Start_di" bpmnElement="First_Start">
+        <dc:Bounds x="100" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="First_End_di" bpmnElement="First_End">
+        <dc:Bounds x="200" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="First_Flow_di" bpmnElement="First_Flow">
+        <di:waypoint x="136" y="118" />
+        <di:waypoint x="200" y="118" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="Diagram_Second">
+    <bpmndi:BPMNPlane id="Plane_Second" bpmnElement="Process_Second">
+      <bpmndi:BPMNShape id="Second_Start_di" bpmnElement="Second_Start">
+        <dc:Bounds x="100" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -1,0 +1,173 @@
+{
+  "name": "BpmnStudio",
+  "uri": "https://bpmn-studio.dev/schema/1.0",
+  "prefix": "bs",
+  "types": [
+    {
+      "name": "StyledShape",
+      "extends": ["bpmndi:BPMNShape"],
+      "properties": [
+        {
+          "name": "fontFamily",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "font-family"
+          }
+        },
+        {
+          "name": "fontSize",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "font-size"
+          }
+        },
+        {
+          "name": "fontColor",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "font-color"
+          }
+        },
+        {
+          "name": "fontBold",
+          "type": "Boolean",
+          "isAttr": true,
+          "xml": {
+            "alias": "font-bold"
+          }
+        },
+        {
+          "name": "fontItalic",
+          "type": "Boolean",
+          "isAttr": true,
+          "xml": {
+            "alias": "font-italic"
+          }
+        },
+        {
+          "name": "textAlign",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "text-align"
+          }
+        },
+        {
+          "name": "opacity",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "opacity"
+          }
+        },
+        {
+          "name": "strokeWidth",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "stroke-width"
+          }
+        },
+        {
+          "name": "strokeStyle",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "stroke-style"
+          }
+        },
+        {
+          "name": "locked",
+          "type": "Boolean",
+          "isAttr": true
+        }
+      ]
+    },
+    {
+      "name": "StyledEdge",
+      "extends": ["bpmndi:BPMNEdge"],
+      "properties": [
+        {
+          "name": "fontFamily",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "font-family"
+          }
+        },
+        {
+          "name": "fontSize",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "font-size"
+          }
+        },
+        {
+          "name": "fontColor",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "font-color"
+          }
+        },
+        {
+          "name": "fontBold",
+          "type": "Boolean",
+          "isAttr": true,
+          "xml": {
+            "alias": "font-bold"
+          }
+        },
+        {
+          "name": "fontItalic",
+          "type": "Boolean",
+          "isAttr": true,
+          "xml": {
+            "alias": "font-italic"
+          }
+        },
+        {
+          "name": "textAlign",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "text-align"
+          }
+        },
+        {
+          "name": "opacity",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "opacity"
+          }
+        },
+        {
+          "name": "strokeWidth",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "stroke-width"
+          }
+        },
+        {
+          "name": "strokeStyle",
+          "type": "String",
+          "isAttr": true,
+          "xml": {
+            "alias": "stroke-style"
+          }
+        },
+        {
+          "name": "locked",
+          "type": "Boolean",
+          "isAttr": true
+        }
+      ]
+    }
+  ]
+}

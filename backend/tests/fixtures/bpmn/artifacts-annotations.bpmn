@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_Artifacts"
+                  targetNamespace="http://bpmn-studio.dev/schema">
+  <bpmn:category id="Category_1">
+    <bpmn:categoryValue id="CategoryValue_Docs" value="Документы" />
+  </bpmn:category>
+  <bpmn:process id="Process_Artifacts" name="Работа с документами" isExecutable="false">
+    <bpmn:startEvent id="Start_1">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_Check" name="Проверить документы">
+      <bpmn:documentation>Проверка комплектности</bpmn:documentation>
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+    </bpmn:userTask>
+    <bpmn:dataObject id="DataObject_1" name="Пакет документов" />
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="Start_1" targetRef="Task_Check" />
+    <bpmn:textAnnotation id="Annotation_1">
+      <bpmn:text>Срок проверки — 2 рабочих дня</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:group id="Group_1" categoryValueRef="CategoryValue_Docs" />
+    <bpmn:association id="Association_1" sourceRef="Annotation_1" targetRef="Task_Check" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_1">
+    <bpmndi:BPMNPlane id="Plane_1" bpmnElement="Process_Artifacts">
+      <bpmndi:BPMNShape id="Start_1_di" bpmnElement="Start_1">
+        <dc:Bounds x="100" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Check_di" bpmnElement="Task_Check">
+        <dc:Bounds x="200" y="78" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="DataObject_1_di" bpmnElement="DataObject_1">
+        <dc:Bounds x="330" y="190" width="36" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Annotation_1_di" bpmnElement="Annotation_1">
+        <dc:Bounds x="200" y="200" width="100" height="30" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Group_1_di" bpmnElement="Group_1">
+        <dc:Bounds x="180" y="60" width="200" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="136" y="118" />
+        <di:waypoint x="200" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_1_di" bpmnElement="Association_1">
+        <di:waypoint x="250" y="200" />
+        <di:waypoint x="250" y="158" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

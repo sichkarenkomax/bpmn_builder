@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn2:definitions xmlns:bpmn2="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:diagram="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:dd="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:ddi="http://www.omg.org/spec/DD/20100524/DI"
+                   id="Definitions_Prefixed"
+                   targetNamespace="http://example.org/prefixed">
+  <bpmn2:process id="Process_Prefixed" name="Нестандартные префиксы" isExecutable="false">
+    <bpmn2:startEvent id="Start_1" name="Старт">
+      <bpmn2:outgoing>Flow_1</bpmn2:outgoing>
+    </bpmn2:startEvent>
+    <bpmn2:manualTask id="Task_Manual" name="Сделать вручную">
+      <bpmn2:incoming>Flow_1</bpmn2:incoming>
+      <bpmn2:outgoing>Flow_2</bpmn2:outgoing>
+    </bpmn2:manualTask>
+    <bpmn2:endEvent id="End_1" name="Конец">
+      <bpmn2:incoming>Flow_2</bpmn2:incoming>
+    </bpmn2:endEvent>
+    <bpmn2:sequenceFlow id="Flow_1" sourceRef="Start_1" targetRef="Task_Manual" />
+    <bpmn2:sequenceFlow id="Flow_2" sourceRef="Task_Manual" targetRef="End_1" />
+  </bpmn2:process>
+  <diagram:BPMNDiagram id="Diagram_1">
+    <diagram:BPMNPlane id="Plane_1" bpmnElement="Process_Prefixed">
+      <diagram:BPMNShape id="Start_1_di" bpmnElement="Start_1">
+        <dd:Bounds x="120" y="120" width="36" height="36" />
+      </diagram:BPMNShape>
+      <diagram:BPMNShape id="Task_Manual_di" bpmnElement="Task_Manual">
+        <dd:Bounds x="200" y="98" width="100" height="80" />
+      </diagram:BPMNShape>
+      <diagram:BPMNShape id="End_1_di" bpmnElement="End_1">
+        <dd:Bounds x="340" y="120" width="36" height="36" />
+      </diagram:BPMNShape>
+      <diagram:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <ddi:waypoint x="156" y="138" />
+        <ddi:waypoint x="200" y="138" />
+      </diagram:BPMNEdge>
+      <diagram:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <ddi:waypoint x="300" y="138" />
+        <ddi:waypoint x="340" y="138" />
+      </diagram:BPMNEdge>
+    </diagram:BPMNPlane>
+  </diagram:BPMNDiagram>
+</bpmn2:definitions>

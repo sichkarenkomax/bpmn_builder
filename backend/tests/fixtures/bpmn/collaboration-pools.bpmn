@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_Collab"
+                  targetNamespace="http://bpmn-studio.dev/schema">
+  <bpmn:collaboration id="Collaboration_1">
+    <bpmn:participant id="Participant_Client" name="Клиент" processRef="Process_Client" />
+    <bpmn:participant id="Participant_Bank" name="Банк" processRef="Process_Bank" />
+    <bpmn:messageFlow id="Message_1" name="Заявка"
+                      sourceRef="Participant_Client" targetRef="Participant_Bank" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_Client" name="Клиент" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_Client">
+      <bpmn:lane id="Lane_Client" name="Клиент">
+        <bpmn:flowNodeRef>Client_Start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Client_Task</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Client_Start" name="Нужен кредит">
+      <bpmn:outgoing>Client_Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Client_Task" name="Заполнить заявку">
+      <bpmn:incoming>Client_Flow_1</bpmn:incoming>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="Client_Flow_1" sourceRef="Client_Start" targetRef="Client_Task" />
+  </bpmn:process>
+  <bpmn:process id="Process_Bank" name="Банк" isExecutable="true">
+    <bpmn:laneSet id="LaneSet_Bank">
+      <bpmn:lane id="Lane_Bank" name="Банк">
+        <bpmn:flowNodeRef>Bank_Start</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Bank_Start" name="Заявка получена" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_Client">
+    <bpmndi:BPMNPlane id="Plane_Client" bpmnElement="Process_Client">
+      <bpmndi:BPMNShape id="Lane_Client_di" bpmnElement="Lane_Client" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="600" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Client_Start_di" bpmnElement="Client_Start">
+        <dc:Bounds x="200" y="140" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Client_Task_di" bpmnElement="Client_Task">
+        <dc:Bounds x="290" y="118" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Client_Flow_1_di" bpmnElement="Client_Flow_1">
+        <di:waypoint x="236" y="158" />
+        <di:waypoint x="290" y="158" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="Diagram_Bank">
+    <bpmndi:BPMNPlane id="Plane_Bank" bpmnElement="Process_Bank">
+      <bpmndi:BPMNShape id="Lane_Bank_di" bpmnElement="Lane_Bank" isHorizontal="true">
+        <dc:Bounds x="160" y="320" width="600" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Bank_Start_di" bpmnElement="Bank_Start">
+        <dc:Bounds x="200" y="380" width="36" height="36" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="Diagram_Collaboration">
+    <bpmndi:BPMNPlane id="Plane_Collaboration" bpmnElement="Collaboration_1">
+      <bpmndi:BPMNShape id="Participant_Client_di" bpmnElement="Participant_Client" isHorizontal="true">
+        <dc:Bounds x="130" y="60" width="660" height="240" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_Bank_di" bpmnElement="Participant_Bank" isHorizontal="true">
+        <dc:Bounds x="130" y="300" width="660" height="240" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Message_1_di" bpmnElement="Message_1">
+        <di:waypoint x="420" y="300" />
+        <di:waypoint x="420" y="260" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

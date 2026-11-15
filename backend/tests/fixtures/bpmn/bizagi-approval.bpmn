@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:bizagi="http://www.bizagi.com/bpmn20"
+                  id="Definitions_Bizagi"
+                  targetNamespace="http://www.bizagi.com/bpmn20"
+                  exporter="Bizagi Modeler"
+                  exporterVersion="4.0.0.1234">
+  <bpmn:process id="Process_Approval" name="Согласование договора" isExecutable="false">
+    <bpmn:startEvent id="Start_1" name="Договор подготовлен">
+      <bpmn:outgoing>Seq_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:userTask id="Task_Approve" name="Согласовать договор" bizagi:displayName="Согласование">
+      <bpmn:incoming>Seq_1</bpmn:incoming>
+      <bpmn:outgoing>Seq_2</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Decision" name="Решение">
+      <bpmn:incoming>Seq_2</bpmn:incoming>
+      <bpmn:outgoing>Seq_Yes</bpmn:outgoing>
+      <bpmn:outgoing>Seq_No</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="End_Yes" name="Согласовано">
+      <bpmn:incoming>Seq_Yes</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="End_No" name="Отклонено">
+      <bpmn:incoming>Seq_No</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Seq_1" sourceRef="Start_1" targetRef="Task_Approve" />
+    <bpmn:sequenceFlow id="Seq_2" sourceRef="Task_Approve" targetRef="Gateway_Decision" />
+    <bpmn:sequenceFlow id="Seq_Yes" name="Да" sourceRef="Gateway_Decision" targetRef="End_Yes">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression"
+                                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">approved == true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Seq_No" name="Нет" sourceRef="Gateway_Decision" targetRef="End_No" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_1">
+    <bpmndi:BPMNPlane id="Plane_1" bpmnElement="Process_Approval">
+      <bpmndi:BPMNShape id="Start_1_di" bpmnElement="Start_1">
+        <dc:Bounds x="100" y="180" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Approve_di" bpmnElement="Task_Approve">
+        <dc:Bounds x="180" y="158" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Decision_di" bpmnElement="Gateway_Decision" isMarkerVisible="true">
+        <dc:Bounds x="330" y="173" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Yes_di" bpmnElement="End_Yes">
+        <dc:Bounds x="430" y="120" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_No_di" bpmnElement="End_No">
+        <dc:Bounds x="430" y="240" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Seq_1_di" bpmnElement="Seq_1">
+        <di:waypoint x="136" y="198" />
+        <di:waypoint x="180" y="198" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Seq_2_di" bpmnElement="Seq_2">
+        <di:waypoint x="280" y="198" />
+        <di:waypoint x="330" y="198" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Seq_Yes_di" bpmnElement="Seq_Yes">
+        <di:waypoint x="380" y="198" />
+        <di:waypoint x="405" y="198" />
+        <di:waypoint x="405" y="138" />
+        <di:waypoint x="430" y="138" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Seq_No_di" bpmnElement="Seq_No">
+        <di:waypoint x="380" y="198" />
+        <di:waypoint x="405" y="198" />
+        <di:waypoint x="405" y="258" />
+        <di:waypoint x="430" y="258" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
