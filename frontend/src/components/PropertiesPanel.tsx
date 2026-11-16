@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
+import { ATTRIBUTE_TYPES, type AttributeType } from '../lib/attributes';
 import {
   isScriptTaskType,
   isSequenceFlowType,
@@ -11,6 +12,8 @@ import {
   type InspectorPatch,
 } from '../lib/inspector';
 import { FILL_SWATCHES, STROKE_SWATCHES } from '../lib/style-palette';
+import { DocumentationEditor } from './DocumentationEditor';
+import { attributeValuePlaceholder, validateAttributeValue } from '../lib/attributes';
 
 function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (
@@ -52,6 +55,7 @@ export function PropertiesPanel({
   onClearDefaultStyle,
   onClose,
   inspectorOpen,
+  markdownToolbar,
 }: {
   element: InspectorElement | null;
   onChange: (patch: InspectorPatch) => void;
@@ -61,6 +65,7 @@ export function PropertiesPanel({
   onClearDefaultStyle: () => void;
   onClose: () => void;
   inspectorOpen: boolean;
+  markdownToolbar: boolean;
 }) {
   const [idDraft, setIdDraft] = useState(element?.id ?? '');
   const [idError, setIdError] = useState<string | null>(null);
@@ -81,11 +86,13 @@ export function PropertiesPanel({
       if (JSON.stringify(filled) === attributeKey) {
         return current;
       }
-      return attributeKey ? (JSON.parse(attributeKey) as { name: string; value: string }[]) : [];
+      return attributeKey
+        ? (JSON.parse(attributeKey) as { name: string; value: string; type: AttributeType }[])
+        : [];
     });
   }, [attributeKey]);
 
-  const commitAttributes = (next: { name: string; value: string }[]) => {
+  const commitAttributes = (next: { name: string; value: string; type: AttributeType }[]) => {
     setAttrDraft(next);
     onChange({ customProperties: next });
   };
@@ -179,12 +186,26 @@ export function PropertiesPanel({
           />
         </Field>
 
-        <Field label="Документация">
-          <textarea
-            rows={3}
-            value={element.documentation}
-            onChange={(event) => onChange({ documentation: event.target.value })}
-          />
+        <Field
+          label={markdownToolbar ? 'Документация (Markdown)' : 'Документация'}
+          hint={
+            markdownToolbar
+              ? 'Поддерживается Markdown: заголовки, списки, **жирный**, ссылки.'
+              : undefined
+          }
+        >
+          {markdownToolbar ? (
+            <DocumentationEditor
+              value={element.documentation}
+              onChange={(next) => onChange({ documentation: next })}
+            />
+          ) : (
+            <textarea
+              rows={3}
+              value={element.documentation}
+              onChange={(event) => onChange({ documentation: event.target.value })}
+            />
+          )}
         </Field>
 
         {isSubProcessType(element.type) ? (
@@ -383,54 +404,84 @@ export function PropertiesPanel({
         <legend>Атрибуты</legend>
         {element.customProperties.length === 0 ? (
           <p className="inspector__hint">
-            Свои пары «ключ — значение» сохраняются в расширении camunda:properties.
+            Свои пары «ключ — значение» сохраняются в расширении camunda:properties. Тип значения
+            (строка, число, дата, ссылка) пишется в атрибут bs:type и переживает сохранение.
           </p>
         ) : null}
         <div className="attr-list">
-          {attrDraft.map((property, index) => (
-            <div className="attr-row" key={index}>
-              <input
-                aria-label="Имя атрибута"
-                value={property.name}
-                placeholder="ключ"
-                onChange={(event) => {
-                  commitAttributes(
-                    attrDraft.map((item, itemIndex) =>
-                      itemIndex === index ? { ...item, name: event.target.value } : item,
-                    ),
-                  );
-                }}
-              />
-              <input
-                aria-label="Значение атрибута"
-                value={property.value}
-                placeholder="значение"
-                onChange={(event) => {
-                  commitAttributes(
-                    attrDraft.map((item, itemIndex) =>
-                      itemIndex === index ? { ...item, value: event.target.value } : item,
-                    ),
-                  );
-                }}
-              />
-              <button
-                type="button"
-                className="ghost-button ghost-button--small"
-                title="Удалить атрибут"
-                aria-label="Удалить атрибут"
-                onClick={() =>
-                  commitAttributes(attrDraft.filter((_item, itemIndex) => itemIndex !== index))
-                }
-              >
-                ×
-              </button>
-            </div>
-          ))}
+          {attrDraft.map((property, index) => {
+            const error = validateAttributeValue(property.type, property.value);
+            return (
+              <div className="attr-row" key={index}>
+                <input
+                  aria-label="Имя атрибута"
+                  value={property.name}
+                  placeholder="ключ"
+                  onChange={(event) => {
+                    commitAttributes(
+                      attrDraft.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, name: event.target.value } : item,
+                      ),
+                    );
+                  }}
+                />
+                <select
+                  aria-label="Тип атрибута"
+                  value={property.type}
+                  title="Тип значения"
+                  onChange={(event) => {
+                    commitAttributes(
+                      attrDraft.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, type: event.target.value as AttributeType }
+                          : item,
+                      ),
+                    );
+                  }}
+                >
+                  {ATTRIBUTE_TYPES.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  aria-label="Значение атрибута"
+                  value={property.value}
+                  className={error ? 'attr-row__value--invalid' : undefined}
+                  placeholder={attributeValuePlaceholder(property.type)}
+                  onChange={(event) => {
+                    commitAttributes(
+                      attrDraft.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, value: event.target.value } : item,
+                      ),
+                    );
+                  }}
+                />
+                <button
+                  type="button"
+                  className="ghost-button ghost-button--small"
+                  title="Удалить атрибут"
+                  aria-label="Удалить атрибут"
+                  onClick={() =>
+                    commitAttributes(attrDraft.filter((_item, itemIndex) => itemIndex !== index))
+                  }
+                >
+                  ×
+                </button>
+                {error ? (
+                  <p className="attr-row__error" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
         <button
           type="button"
           className="ghost-button ghost-button--small"
-          onClick={() => setAttrDraft([...attrDraft, { name: '', value: '' }])}
+          onClick={() => setAttrDraft([...attrDraft, { name: '', value: '', type: 'string' }])}
         >
           Добавить атрибут
         </button>

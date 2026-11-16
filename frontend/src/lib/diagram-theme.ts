@@ -272,6 +272,28 @@ export function buildLegendItems(
     .map((category) => seen.get(category)!);
 }
 
+/**
+ * Аннотация по нотации: скобка — это граница, а не прямоугольник.
+ * Фон остаётся мягким серым, как в Bizagi, и никогда не получает обводку.
+ */
+export function applyAnnotationStyle(
+  gfx: SVGGElement | undefined,
+  colors?: { fill?: string; stroke?: string },
+): void {
+  if (!gfx) {
+    return;
+  }
+  for (const child of gfx.querySelectorAll<SVGElement>('.djs-visual > *')) {
+    if (child.tagName === 'rect') {
+      child.style.fill = colors?.fill || '#f8fafc';
+      child.style.stroke = 'none';
+    } else if (child.tagName === 'path') {
+      child.style.fill = 'none';
+      child.style.stroke = colors?.stroke || '#4b5563';
+    }
+  }
+}
+
 /** Красит отрисованный элемент цветами темы, не записывая их в модель. */
 export function applyThemeToGfx(
   gfx: SVGGElement | undefined,
@@ -283,13 +305,24 @@ export function applyThemeToGfx(
     return;
   }
 
+  // Аннотация по нотации — только раскрытая скобка: bpmn-js кладёт перед ней
+  // прозрачный прямоугольник, который тема не должна закрашивать.
+  if (type === 'bpmn:TextAnnotation') {
+    applyAnnotationStyle(gfx);
+    return;
+  }
+
   // Потоки и ассоциации — линии: заливка им не нужна, а обводка по нотации
   // остаётся чёрной независимо от цветовой темы.
   if (type.endsWith('Flow') || type.endsWith('Association')) {
+    const isAssociation = type.endsWith('Association');
     for (const child of gfx.querySelectorAll<SVGElement>('.djs-visual > *')) {
       if (child instanceof SVGElement && child.tagName !== 'text') {
         child.style.stroke = '#000000';
         child.style.fill = 'none';
+        if (isAssociation) {
+          child.style.strokeDasharray = '3 3';
+        }
       }
     }
     for (const marker of gfx.querySelectorAll<SVGElement>('.djs-visual defs marker path')) {
@@ -303,6 +336,10 @@ export function applyThemeToGfx(
   // У завершающего события по нотации толстая граница; ручная толщина
   // из панели «Стиль» важнее.
   const isEndEvent = type.endsWith('EndEvent');
+  // Толстая граница по нотации — только у внешнего круга события.
+  // Иконка внутри (terminate, error, message…) рисуется следом и должна
+  // оставаться обычной толщины.
+  let isBorder = isEndEvent;
   for (const child of gfx.querySelectorAll<SVGElement>('.djs-visual > *')) {
     if (!(child instanceof SVGElement)) {
       continue;
@@ -312,8 +349,9 @@ export function applyThemeToGfx(
     }
     child.style.fill = colors.fill;
     child.style.stroke = colors.stroke;
-    if (isEndEvent && !options?.strokeWidth) {
+    if (isBorder && !options?.strokeWidth) {
       child.style.strokeWidth = '4px';
     }
+    isBorder = false;
   }
 }

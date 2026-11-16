@@ -6,6 +6,7 @@ import {
   AUTOSAVE_MIN_SECONDS,
   clampAutosaveSeconds,
 } from '../lib/autosave';
+import type { CanvasMouseMode } from '../lib/mouse-settings';
 import {
   comboFromEvent,
   DEFAULT_SHORTCUTS,
@@ -25,6 +26,10 @@ export function ShortcutSettings({
   onChange,
   autosaveSeconds,
   onAutosaveChange,
+  markdownToolbar,
+  onMarkdownToolbarChange,
+  mouseMode,
+  onMouseModeChange,
   onClose,
 }: {
   open: boolean;
@@ -32,6 +37,10 @@ export function ShortcutSettings({
   onChange: (next: ShortcutMap) => void;
   autosaveSeconds: number;
   onAutosaveChange: (seconds: number) => void;
+  markdownToolbar: boolean;
+  onMarkdownToolbarChange: (enabled: boolean) => void;
+  mouseMode: CanvasMouseMode;
+  onMouseModeChange: (mode: CanvasMouseMode) => void;
   onClose: () => void;
 }) {
   const [capturing, setCapturing] = useState<ShortcutAction | null>(null);
@@ -155,6 +164,36 @@ export function ShortcutSettings({
             По умолчанию {AUTOSAVE_DEFAULT_SECONDS} с, допустимо от {AUTOSAVE_MIN_SECONDS} до{' '}
             {AUTOSAVE_MAX_SECONDS} с. Локальный черновик пишется чаще — он страхует от потери
             правок.
+          </p>
+        </div>
+
+        <div className="settings-section">
+          <h3 className="settings-section__title">Редактор</h3>
+          <label className="settings-field settings-field--checkbox">
+            <input
+              type="checkbox"
+              checked={markdownToolbar}
+              onChange={(event) => onMarkdownToolbarChange(event.target.checked)}
+            />
+            <span>Markdown-панель в документации элемента</span>
+          </label>
+          <p className="dialog__hint">
+            Включает панель форматирования (заголовки, списки, ссылки) и предпросмотр в инспекторе.
+            Выключите, чтобы вернуться к простому текстовому полю.
+          </p>
+          <label className="settings-field">
+            <span>Левая кнопка на пустом холсте</span>
+            <select
+              value={mouseMode}
+              onChange={(event) => onMouseModeChange(event.target.value as CanvasMouseMode)}
+            >
+              <option value="select">Выделение рамкой</option>
+              <option value="pan">Перемещение холста</option>
+            </select>
+          </label>
+          <p className="dialog__hint">
+            Средняя кнопка мыши всегда двигает холст. В режиме выделения рамка захватывает элементы,
+            целиком попавшие внутрь; Shift добавляет их к текущему выделению.
           </p>
         </div>
 

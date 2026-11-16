@@ -3,6 +3,8 @@ declare module 'bpmn-moddle' {
     $attrs: Record<string, string>;
     get(name: string): unknown;
     set(name: string, value: unknown): void;
+    values?: ModdleElement[];
+    extensionElements?: { values: ModdleElement[] };
   }
 
   export interface ModdlePlane extends ModdleElement {
@@ -15,6 +17,11 @@ declare module 'bpmn-moddle' {
 
   export interface ModdleDefinitions extends ModdleElement {
     diagrams: ModdleDiagram[];
+    rootElements: ModdleFlowElement[];
+  }
+
+  export interface ModdleFlowElement extends ModdleElement {
+    flowElements: ModdleFlowElement[];
   }
 
   export class BpmnModdle {

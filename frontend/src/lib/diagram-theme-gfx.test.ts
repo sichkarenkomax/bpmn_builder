@@ -39,12 +39,36 @@ describe('applyThemeToGfx', () => {
     expect(path.style.fill).toBe('#000000');
   });
 
+  it('даёт аннотации мягкий фон и красит только скобку', () => {
+    const gfx = makeGfx(['rect', 'path']);
+    applyThemeToGfx(gfx, 'bpmn:TextAnnotation', themeById('classic'));
+    const [background, bracket] = gfx.querySelectorAll<SVGElement>('.djs-visual > *');
+    expect(background?.style.fill).toBe('#f8fafc');
+    expect(background?.style.stroke).toBe('none');
+    expect(bracket?.style.fill).toBe('none');
+    expect(bracket?.style.stroke).toBe('#4b5563');
+  });
+
+  it('рисует ассоциацию пунктиром', () => {
+    const gfx = makeGfx(['path']);
+    applyThemeToGfx(gfx, 'bpmn:Association', themeById('classic'));
+    expect(gfx.querySelector('path')?.style.strokeDasharray).toBe('3 3');
+  });
+
   it('даёт завершающему событию толстую границу', () => {
     const gfx = makeGfx(['circle']);
     applyThemeToGfx(gfx, 'bpmn:EndEvent', themeById('classic'));
     const circle = gfx.querySelector('circle');
     expect(circle?.style.strokeWidth).toBe('4px');
     expect(circle?.style.stroke).toBe('#dc2626');
+  });
+
+  it('не утолщает иконку внутри завершающего события', () => {
+    const gfx = makeGfx(['circle', 'path']);
+    applyThemeToGfx(gfx, 'bpmn:EndEvent', themeById('classic'));
+    const [border, icon] = gfx.querySelectorAll<SVGElement>('.djs-visual > *');
+    expect(border?.style.strokeWidth).toBe('4px');
+    expect(icon?.style.strokeWidth).toBe('');
   });
 
   it('не перекрывает ручную толщину завершающего события', () => {

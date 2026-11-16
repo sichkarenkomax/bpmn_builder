@@ -1,6 +1,7 @@
 import { BpmnModdle } from 'bpmn-moddle';
 import { describe, expect, it } from 'vitest';
 
+import camundaModdle from 'camunda-bpmn-moddle/resources/camunda.json';
 import bsModdle from './bs-moddle.json';
 import { readDiagramSettings, type DefinitionsLike } from './diagram-settings';
 
@@ -22,7 +23,9 @@ const XML = `<?xml version="1.0" encoding="UTF-8"?>
 </bpmn:definitions>`;
 
 async function parse(source = XML) {
-  const moddle = new BpmnModdle({ bs: bsModdle });
+  // TypedProperty расширяет camunda:Property, поэтому camunda-дескриптор нужен
+  // вместе с bs — в приложении они всегда подключены вместе.
+  const moddle = new BpmnModdle({ camunda: camundaModdle, bs: bsModdle });
   const { rootElement } = await moddle.fromXML(source);
   const shape = rootElement.diagrams[0]?.plane.planeElement[0];
   if (!shape) {
@@ -76,5 +79,47 @@ describe('bs namespace', () => {
     const settings = readDiagramSettings(reloaded.rootElement as unknown as DefinitionsLike);
     expect(settings.theme).toBe('classic');
     expect(settings.legend).toEqual({ x: 200, y: 40 });
+  });
+
+  it('пишет и читает тип кастомного атрибута (bs:type на camunda:property) — 1.3.6', async () => {
+    const source = XML.replace(
+      '<bpmn:task id="Task_1" name="Задача" />',
+      `<bpmn:task id="Task_1" name="Задача">
+      <bpmn:extensionElements>
+        <camunda:properties xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+          <camunda:property name="sla" value="42" bs:type="number" />
+          <camunda:property name="когда" value="2026-12-31" bs:type="date" />
+          <camunda:property name="wiki" value="https://example.com" bs:type="link" />
+          <camunda:property name="заметка" value="просто строка" />
+        </camunda:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>`,
+    ).replace('xmlns:dc=', 'xmlns:bs="https://bpmn-studio.dev/schema/1.0" xmlns:dc=');
+
+    const moddle = new BpmnModdle({ camunda: camundaModdle, bs: bsModdle });
+    const parsed = await moddle.fromXML(source);
+    const task = parsed.rootElement.rootElements[0]?.flowElements[0];
+    const extension = task?.extensionElements?.values[0];
+    const properties = extension?.values ?? [];
+    expect(properties.map((property) => (property as { type?: string }).type ?? 'string')).toEqual([
+      'number',
+      'date',
+      'link',
+      'string',
+    ]);
+
+    // Повторная сериализация сохраняет bs:type только у помеченных значений.
+    const result = await moddle.toXML(parsed.rootElement, { format: true });
+    expect(result.xml).toContain('bs:type="number"');
+    expect(result.xml).toContain('bs:type="date"');
+    expect(result.xml).toContain('bs:type="link"');
+    expect(result.xml).not.toContain('name="заметка" bs:type');
+
+    const reloaded = await moddle.fromXML(result.xml);
+    const reloadedTask = reloaded.rootElement.rootElements[0]?.flowElements[0];
+    const reloadedProperties = reloadedTask?.extensionElements?.values[0]?.values ?? [];
+    expect(
+      reloadedProperties.map((property) => (property as { type?: string }).type ?? 'string'),
+    ).toEqual(['number', 'date', 'link', 'string']);
   });
 });

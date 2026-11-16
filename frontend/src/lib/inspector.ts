@@ -1,3 +1,5 @@
+import { ATTRIBUTE_TYPES, type AttributeType } from './attributes';
+
 export interface InspectorElement {
   id: string;
   type: string;
@@ -26,8 +28,10 @@ export interface InspectorElement {
   opacity: string;
   strokeWidth: string;
   strokeStyle: string;
-  customProperties: { name: string; value: string }[];
+  customProperties: { name: string; value: string; type: AttributeType }[];
 }
+
+export { ATTRIBUTE_TYPES };
 
 export type InspectorPatch = Partial<InspectorElement>;
 

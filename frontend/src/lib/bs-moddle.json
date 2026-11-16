@@ -168,6 +168,17 @@
           "isAttr": true
         }
       ]
+    },
+    {
+      "name": "TypedProperty",
+      "extends": ["camunda:Property"],
+      "properties": [
+        {
+          "name": "type",
+          "type": "String",
+          "isAttr": true
+        }
+      ]
     }
   ]
 }

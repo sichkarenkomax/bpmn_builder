@@ -14,6 +14,142 @@ const here = dirname(fileURLToPath(import.meta.url));
 const sampleXml = readFileSync(resolve(here, 'fixtures/simple.bpmn'), 'utf8');
 const API = '/api/v1';
 
+test('закрепление нескольких выделенных элементов — одной командой undo', async ({
+  page,
+  request,
+}) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E lock ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  const save = async () => {
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/diagrams/${diagram.id}/bpmn`) &&
+          response.request().method() === 'PUT' &&
+          response.ok(),
+      ),
+      page.keyboard.press('ControlOrMeta+s'),
+    ]);
+    return (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+  };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const task = page.locator('[data-element-id="Task_Review"]').first();
+    const endEvent = page.locator('[data-element-id="EndEvent_1"]').first();
+    await expect(task).toBeVisible();
+
+    await task.click();
+    await page.keyboard.down('Shift');
+    await endEvent.click();
+    await page.keyboard.up('Shift');
+    await endEvent.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Закрепить выбранные (2)' }).click();
+
+    expect((await save()).match(/bs:locked="true"/g)).toHaveLength(2);
+
+    // Один шаг undo снимает закрепление с обоих элементов.
+    await page.keyboard.press('ControlOrMeta+z');
+    expect((await save()).includes('bs:locked')).toBe(false);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('рамка ЛКМ выделяет элементы, а точки примыкания меняют концы связи', async ({
+  page,
+  request,
+}) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E select ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const start = page.locator('[data-element-id="StartEvent_1"]').first();
+    const end = page.locator('[data-element-id="EndEvent_1"]').first();
+    await expect(start).toBeVisible();
+
+    // ЛКМ по пустому холсту — рамка выделения (по умолчанию).
+    const startBox = (await start.boundingBox())!;
+    const endBox = (await end.boundingBox())!;
+    await page.mouse.move(startBox.x - 24, startBox.y - 20);
+    await page.mouse.down();
+    await page.mouse.move(endBox.x + endBox.width + 24, endBox.y + endBox.height + 20, {
+      steps: 8,
+    });
+    await expect(page.locator('.canvas-marquee')).toBeVisible();
+    await page.mouse.up();
+    await expect(start).toHaveClass(/selected/);
+    await expect(end).toHaveClass(/selected/);
+    // Точки примыкания: начало у задачи сверху, конец у события снизу.
+    await page
+      .locator('[data-element-id="Flow_2"]')
+      .first()
+      .dispatchEvent('contextmenu', { bubbles: true, clientX: 600, clientY: 400 });
+    await page.getByRole('menuitem', { name: 'Точки примыкания…' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Точки примыкания связи' });
+    const sourceGroup = dialog.getByRole('group', { name: /Начало/ });
+    const targetGroup = dialog.getByRole('group', { name: /Конец/ });
+    await sourceGroup.getByLabel('Сверху').check();
+    await targetGroup.getByLabel('Снизу').check();
+    await dialog.getByRole('button', { name: 'Применить' }).click();
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/diagrams/${diagram.id}/bpmn`) &&
+          response.request().method() === 'PUT' &&
+          response.ok(),
+      ),
+      page.keyboard.press('ControlOrMeta+s'),
+    ]);
+    const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+    expect(xml).toContain('<di:waypoint x="320" y="77"');
+    expect(xml).toContain('<di:waypoint x="450" y="135"');
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('из всплывающего меню выбранного элемента создаётся следующий элемент', async ({
+  page,
+  request,
+}) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E append ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const task = page.locator('[data-element-id="Task_Review"]').first();
+    await expect(task).toBeVisible();
+
+    await task.click();
+    const pad = page.locator('.djs-context-pad');
+    await expect(pad).toBeVisible();
+    const originalId = await task.getAttribute('data-element-id');
+    await pad.locator('[data-action="append.append-task"]').click();
+    await page.keyboard.press('Escape');
+
+    // bpmn-js выдаёт новой задаче ID с префиксом Activity_, а не Task_.
+    const appended = page.locator('.djs-shape.selected[data-element-id]');
+    await expect(appended).toHaveCount(1);
+    await expect(appended).not.toHaveAttribute('data-element-id', originalId ?? '');
+    await expect(task).toBeVisible();
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
 test('тема, комментарии и сохранение переживают перезагрузку', async ({ page, request }) => {
   const created = await request.post(`${API}/diagrams`, {
     data: { title: `E2E ${Date.now()}`, bpmn_xml: sampleXml },

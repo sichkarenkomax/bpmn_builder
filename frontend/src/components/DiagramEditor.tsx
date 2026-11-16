@@ -30,6 +30,7 @@ import {
 } from '../lib/comments';
 import { CommentsPanel } from './CommentsPanel';
 import { loadAutosaveSeconds, saveAutosaveSeconds } from '../lib/autosave';
+import { loadMarkdownToolbarEnabled, saveMarkdownToolbarEnabled } from '../lib/markdown-settings';
 import {
   clearDefaultStyle,
   getDefaultStyle,
@@ -46,6 +47,7 @@ import {
   toStyleAttributes,
 } from '../lib/style-extra';
 import {
+  applyAnnotationStyle,
   applyThemeToGfx,
   buildLegendItems,
   DEFAULT_CUSTOM_COLORS,
@@ -63,7 +65,15 @@ import {
   type LegendPosition,
 } from '../lib/diagram-settings';
 import bsModdle from '../lib/bs-moddle.json';
+import { attributeTypeForXml, parseAttributeType } from '../lib/attributes';
 import { isElementLocked } from '../lib/lock';
+import { anchorPoint, closestSide, type AnchorSide } from '../lib/connection-anchors';
+import { ConnectionAnchors } from './ConnectionAnchors';
+import {
+  loadCanvasMouseMode,
+  saveCanvasMouseMode,
+  type CanvasMouseMode,
+} from '../lib/mouse-settings';
 import { DiagramLegend } from './DiagramLegend';
 import { ThemeSettings } from './ThemeSettings';
 import {
@@ -102,6 +112,8 @@ interface ModdleProperty {
   $type?: string;
   name?: string;
   value?: string;
+  type?: unknown;
+  $attrs?: Record<string, string>;
   values?: ModdleProperty[];
 }
 
@@ -160,6 +172,7 @@ interface CanvasLike {
 
 interface ModelingLike {
   updateProperties: (element: DiagramElement, properties: Record<string, unknown>) => void;
+  updateWaypoints: (connection: DiagramElement, waypoints: { x: number; y: number }[]) => void;
   removeElements: (elements: DiagramElement[]) => void;
   toggleCollapse: (element: DiagramElement) => void;
   addLane: (element: DiagramElement, location: 'top' | 'bottom') => DiagramElement;
@@ -170,6 +183,7 @@ interface ModelingLike {
 interface ElementRegistryLike {
   get: (id: string) => DiagramElement | undefined;
   getAll: () => DiagramElement[];
+  filter: (predicate: (element: DiagramElement) => boolean) => DiagramElement[];
   getGraphics: (element: DiagramElement) => SVGGElement | undefined;
 }
 
@@ -184,7 +198,8 @@ interface EditorEvent {
 }
 
 interface EventBusLike {
-  on: (event: string, handler: (event: EditorEvent) => void) => void;
+  on(event: string, handler: (event: EditorEvent) => void): void;
+  on(event: string, priority: number, handler: (event: EditorEvent) => void): void;
 }
 
 interface LockEventBus {
@@ -211,9 +226,58 @@ class LockRulesProvider {
   }
 }
 
+interface DiProperties {
+  get: (name: string) => unknown;
+  set: (name: string, value: unknown) => void;
+}
+
+interface BulkLockItem {
+  element: DiagramElement;
+  moddleElement: DiProperties;
+  properties: Record<string, unknown>;
+}
+
+interface BulkLockContext {
+  items: BulkLockItem[];
+  previous?: Record<string, unknown>[];
+}
+
+/** Одна команда на закрепление/открепление сразу нескольких элементов. */
+class BulkLockHandler {
+  execute(context: BulkLockContext): DiagramElement[] {
+    context.previous = context.items.map((item) => ({
+      locked: item.moddleElement.get('locked'),
+    }));
+    for (const item of context.items) {
+      for (const [key, value] of Object.entries(item.properties)) {
+        item.moddleElement.set(key, value);
+      }
+    }
+    return context.items.map((item) => item.element);
+  }
+
+  revert(context: BulkLockContext): DiagramElement[] {
+    context.items.forEach((item, index) => {
+      for (const [key, value] of Object.entries(context.previous?.[index] ?? {})) {
+        item.moddleElement.set(key, value);
+      }
+    });
+    return context.items.map((item) => item.element);
+  }
+}
+
+class BulkLockProvider {
+  static $inject = ['commandStack'];
+
+  constructor(commandStack: CommandStackLike) {
+    commandStack.registerHandler('elements.updateModdleProperties', BulkLockHandler);
+  }
+}
+
 const lockModule = {
-  __init__: ['lockRules'],
+  __init__: ['lockRules', 'bulkLock'],
   lockRules: ['type', LockRulesProvider],
+  bulkLock: ['type', BulkLockProvider],
 };
 
 interface ModdleLike {
@@ -226,6 +290,7 @@ interface CommandStackLike {
   canUndo: () => boolean;
   canRedo: () => boolean;
   execute: (event: string, context: Record<string, unknown>) => void;
+  registerHandler: (event: string, handler: new () => BulkLockHandler) => void;
 }
 
 interface EditorActionsLike {
@@ -345,7 +410,11 @@ function toInspector(element: DiagramElement): InspectorElement {
     customProperties: (bo.extensionElements?.values ?? [])
       .filter((value) => value.$type === 'camunda:Properties')
       .flatMap((value) => value.values ?? [])
-      .map((value) => ({ name: value.name ?? '', value: value.value ?? '' })),
+      .map((value) => ({
+        name: value.name ?? '',
+        value: value.value ?? '',
+        type: parseAttributeType(value),
+      })),
   };
 }
 
@@ -360,6 +429,19 @@ function findDefinitions(modeler: Modeler): DefinitionsLike | undefined {
     businessObject = businessObject.$parent;
   }
   return undefined;
+}
+
+function shapeBounds(element: DiagramElement | undefined) {
+  if (
+    !element ||
+    typeof element.x !== 'number' ||
+    typeof element.y !== 'number' ||
+    typeof element.width !== 'number' ||
+    typeof element.height !== 'number'
+  ) {
+    return null;
+  }
+  return { x: element.x, y: element.y, width: element.width, height: element.height };
 }
 
 function findElementAt(
@@ -404,6 +486,9 @@ export function DiagramEditor({
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => loadShortcuts());
   const [autosaveSeconds, setAutosaveSeconds] = useState<number>(() => loadAutosaveSeconds());
+  const [markdownToolbar, setMarkdownToolbar] = useState<boolean>(() =>
+    loadMarkdownToolbarEnabled(),
+  );
   const [styleDefaults, setStyleDefaults] = useState<StyleDefaults>(() => loadStyleDefaults());
   const styleDefaultsRef = useRef(styleDefaults);
   styleDefaultsRef.current = styleDefaults;
@@ -419,6 +504,21 @@ export function DiagramEditor({
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsBusy, setCommentsBusy] = useState(false);
   const [commentsError, setCommentsError] = useState<string | null>(null);
+  const [mouseMode, setMouseMode] = useState<CanvasMouseMode>(() => loadCanvasMouseMode());
+  const mouseModeRef = useRef(mouseMode);
+  mouseModeRef.current = mouseMode;
+  const [marquee, setMarquee] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const suppressSelectionClickRef = useRef(false);
+  const [anchorEditor, setAnchorEditor] = useState<{
+    connection: DiagramElement;
+    source: AnchorSide;
+    target: AnchorSide;
+  } | null>(null);
 
   const applyAllStyles = (modeler: Modeler) => {
     const registry = modeler.get<ElementRegistryLike>('elementRegistry');
@@ -438,15 +538,20 @@ export function DiagramEditor({
         // Ручной цвет важнее темы: переносим его в inline-стиль поверх возможного оверрайда.
         const fill = element.di?.get?.('color:background-color');
         const stroke = element.di?.get?.('color:border-color');
-        for (const child of gfx?.querySelectorAll<SVGElement>('.djs-visual > *') ?? []) {
-          if (child.tagName === 'text') {
-            continue;
-          }
-          if (fill) {
-            child.style.fill = fill;
-          }
-          if (stroke) {
-            child.style.stroke = stroke;
+        if (element.businessObject.$type === 'bpmn:TextAnnotation') {
+          // У аннотации красим фон и скобку отдельно, не превращая её в квадрат.
+          applyAnnotationStyle(gfx, { fill, stroke });
+        } else {
+          for (const child of gfx?.querySelectorAll<SVGElement>('.djs-visual > *') ?? []) {
+            if (child.tagName === 'text') {
+              continue;
+            }
+            if (fill) {
+              child.style.fill = fill;
+            }
+            if (stroke) {
+              child.style.stroke = stroke;
+            }
           }
         }
       } else {
@@ -674,6 +779,152 @@ export function DiagramEditor({
       setCommentsBusy(false);
     }
   };
+
+  // Мышь на пустом холсте: ЛКМ — рамка выделения, средняя кнопка — панорама.
+  // В режиме «панорама» ЛКМ остаётся за bpmn-js (MoveCanvas).
+  useEffect(() => {
+    const host = hostRef.current;
+    const modeler = modelerRef.current;
+    if (!ready || !host || !modeler) {
+      return;
+    }
+    let drag: { startX: number; startY: number; add: boolean; moved: boolean } | null = null;
+    const lastPointer = { current: null as { x: number; y: number } | null };
+    const eventBus = modeler.get<EventBusLike>('eventBus');
+    const onClick = (event: EditorEvent & { stopPropagation?: () => void }) => {
+      if (!suppressSelectionClickRef.current) {
+        return undefined;
+      }
+      suppressSelectionClickRef.current = false;
+      event.stopPropagation?.();
+      return false;
+    };
+    eventBus.on('element.click', 1500, onClick as (event: EditorEvent) => void);
+    const onMove = (event: MouseEvent) => {
+      if (!drag) {
+        return;
+      }
+      const dx = event.clientX - drag.startX;
+      const dy = event.clientY - drag.startY;
+      if (!drag.moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) {
+        return;
+      }
+      drag.moved = true;
+      setMarquee({
+        left: Math.min(drag.startX, event.clientX),
+        top: Math.min(drag.startY, event.clientY),
+        width: Math.abs(dx),
+        height: Math.abs(dy),
+      });
+    };
+    const cleanup = () => {
+      document.removeEventListener('mousemove', trackPointer, true);
+      document.removeEventListener('mousemove', onMove, true);
+      document.removeEventListener('mouseup', onUp, true);
+      drag = null;
+      setMarquee(null);
+    };
+    const onUp = () => {
+      const current = drag;
+      if (!current) {
+        return;
+      }
+      const selection = modeler.get<SelectionLike>('selection');
+      const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+      const canvas = modeler.get<CanvasLike>('canvas');
+      if (!current.moved) {
+        cleanup();
+        if (!current.add) {
+          selection.select([]);
+        }
+        return;
+      }
+      const rect = host.getBoundingClientRect();
+      const viewbox = canvas.viewbox();
+      const toCanvas = (clientX: number, clientY: number) => ({
+        x: viewbox.x + (clientX - rect.left) / viewbox.scale,
+        y: viewbox.y + (clientY - rect.top) / viewbox.scale,
+      });
+      const start = toCanvas(current.startX, current.startY);
+      const last = lastPointer.current ?? { x: current.startX, y: current.startY };
+      const end = toCanvas(last.x, last.y);
+      const box = { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
+      const root = canvas.getRootElement();
+      const enclosed = registry.filter(
+        (element) =>
+          element !== root &&
+          element.type !== 'label' &&
+          typeof element.x === 'number' &&
+          typeof element.y === 'number' &&
+          typeof element.width === 'number' &&
+          typeof element.height === 'number' &&
+          element.x >= Math.min(box.x1, box.x2) &&
+          element.y >= Math.min(box.y1, box.y2) &&
+          element.x + element.width <= Math.max(box.x1, box.x2) &&
+          element.y + element.height <= Math.max(box.y1, box.y2),
+      );
+      const next = current.add ? [...selection.get(), ...enclosed] : enclosed;
+      const unique = [...new Map(next.map((element) => [element.id, element])).values()];
+      // Клик после протяжки не должен сбрасывать только что сделанное выделение.
+      suppressSelectionClickRef.current = true;
+      // Если браузер не пришлёт click (например, кнопку отпустили вне холста),
+      // флаг не должен глушить следующий клик по context pad.
+      window.setTimeout(() => {
+        suppressSelectionClickRef.current = false;
+      }, 0);
+      cleanup();
+      selection.select(unique);
+    };
+    const trackPointer = (event: MouseEvent) => {
+      lastPointer.current = { x: event.clientX, y: event.clientY };
+    };
+    const onDown = (event: MouseEvent) => {
+      if (event.button !== 0 || mouseModeRef.current !== 'select') {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      // Панели bpmn-js (context pad, палитра, popup) лежат внутри контейнера,
+      // но не являются пустым холстом: иначе рамка съедает их клики.
+      if (
+        target.closest(
+          'button, a, input, select, textarea, [role="button"], .djs-context-pad, .djs-popup, .djs-palette, .djs-overlay, .djs-minimap',
+        )
+      ) {
+        return;
+      }
+      const rootElement = modeler.get<CanvasLike>('canvas').getRootElement();
+      const elementHost = target.closest('[data-element-id]');
+      const elementId = elementHost?.getAttribute('data-element-id');
+      if (
+        elementId &&
+        modeler.get<ElementRegistryLike>('elementRegistry').get(elementId) !== rootElement
+      ) {
+        return;
+      }
+      suppressSelectionClickRef.current = false;
+      drag = {
+        startX: event.clientX,
+        startY: event.clientY,
+        add: event.shiftKey,
+        moved: false,
+      };
+      lastPointer.current = { x: event.clientX, y: event.clientY };
+      event.preventDefault();
+      event.stopPropagation();
+      document.addEventListener('mousemove', trackPointer, true);
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('mouseup', onUp, true);
+    };
+    host.addEventListener('mousedown', onDown, true);
+    return () => {
+      host.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('mousemove', trackPointer, true);
+      cleanup();
+    };
+  }, [ready]);
 
   useEffect(() => {
     const container = hostRef.current;
@@ -994,15 +1245,23 @@ export function DiagramEditor({
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [executeAction]);
 
-  const setElementLocked = useCallback((element: DiagramElement, locked: boolean) => {
+  const setElementsLocked = useCallback((elements: DiagramElement[], locked: boolean) => {
     const modeler = modelerRef.current;
-    if (!modeler || !element.di) {
+    if (!modeler) {
       return;
     }
-    modeler.get<CommandStackLike>('commandStack').execute('element.updateModdleProperties', {
-      element,
-      moddleElement: element.di,
-      properties: { locked: locked ? true : undefined },
+    const items = elements
+      .filter((element) => element.di)
+      .map((element) => ({
+        element,
+        moddleElement: element.di as unknown as DiProperties,
+        properties: { locked: locked ? true : undefined },
+      }));
+    if (items.length === 0) {
+      return;
+    }
+    modeler.get<CommandStackLike>('commandStack').execute('elements.updateModdleProperties', {
+      items,
     });
   }, []);
 
@@ -1098,7 +1357,11 @@ export function DiagramEditor({
     if (patch.customProperties) {
       const moddle = modeler.get<ModdleLike>('moddle');
       const clean = patch.customProperties
-        .map((property) => ({ name: property.name.trim(), value: property.value }))
+        .map((property) => ({
+          name: property.name.trim(),
+          value: property.value,
+          type: attributeTypeForXml(property.type),
+        }))
         .filter((property) => property.name !== '');
       const values = (bo.extensionElements?.values ?? []).filter(
         (value) => value.$type !== 'camunda:Properties',
@@ -1186,6 +1449,18 @@ export function DiagramEditor({
       const isParticipant = target.type === 'bpmn:Participant';
       const isLane = target.type === 'bpmn:Lane';
       const isSubProcess = isSubProcessType(target.type);
+      const selectedShapes = selection.get().filter((element) => !element.waypoints && element.di);
+      const lockTargets =
+        !target.waypoints && selectedShapes.includes(target) ? selectedShapes : [target];
+      const allLocked = lockTargets.every((element) => isElementLocked(element.di));
+      const lockLabel =
+        lockTargets.length > 1
+          ? allLocked
+            ? `Открепить выбранные (${lockTargets.length})`
+            : `Закрепить выбранные (${lockTargets.length})`
+          : allLocked
+            ? 'Открепить элемент'
+            : 'Закрепить элемент';
       items = [
         {
           id: 'rename',
@@ -1211,8 +1486,8 @@ export function DiagramEditor({
           : [
               {
                 id: 'lock',
-                label: isElementLocked(target.di) ? 'Открепить элемент' : 'Закрепить элемент',
-                onSelect: () => setElementLocked(target, !isElementLocked(target.di)),
+                label: lockLabel,
+                onSelect: () => setElementsLocked(lockTargets, !allLocked),
               },
             ]),
         { id: 'sep-1', label: '', separator: true },
@@ -1246,6 +1521,22 @@ export function DiagramEditor({
           id: 'reverse-flow',
           label: 'Изменить направление',
           onSelect: () => modeling.reconnect(target, flowTarget, flowSource),
+        });
+      }
+
+      const sourceBounds = shapeBounds(target.source);
+      const targetBounds = shapeBounds(target.target);
+      if (target.waypoints && sourceBounds && targetBounds) {
+        const waypoints = target.waypoints as { x: number; y: number }[];
+        items.push({
+          id: 'connection-anchors',
+          label: 'Точки примыкания…',
+          onSelect: () =>
+            setAnchorEditor({
+              connection: target,
+              source: closestSide(sourceBounds, waypoints[0]!),
+              target: closestSide(targetBounds, waypoints[waypoints.length - 1]!),
+            }),
         });
       }
 
@@ -1711,6 +2002,18 @@ export function DiagramEditor({
             data-revision={revision}
             onContextMenu={openContextMenu}
           />
+          {marquee ? (
+            <div
+              className="canvas-marquee"
+              style={{
+                left: marquee.left,
+                top: marquee.top,
+                width: marquee.width,
+                height: marquee.height,
+              }}
+              aria-hidden="true"
+            />
+          ) : null}
           {loadError ? <p className="canvas__overlay canvas__overlay--error">{loadError}</p> : null}
           {!ready && !loadError ? <p className="canvas__overlay">открываю диаграмму…</p> : null}
           <p className="canvas-hint" aria-hidden="true">
@@ -1749,6 +2052,7 @@ export function DiagramEditor({
         element={selectedInspector}
         onClose={() => setInspectorOpen(false)}
         inspectorOpen={inspectorOpen}
+        markdownToolbar={markdownToolbar}
         onChange={applyPatch}
         hasDefaultStyle={
           selected ? Boolean(getDefaultStyle(styleDefaults, selected.businessObject.$type)) : false
@@ -1762,6 +2066,42 @@ export function DiagramEditor({
         }}
       />
 
+      <ConnectionAnchors
+        open={anchorEditor !== null}
+        sourceName={
+          anchorEditor?.connection.source?.businessObject.name ||
+          anchorEditor?.connection.source?.id ||
+          ''
+        }
+        targetName={
+          anchorEditor?.connection.target?.businessObject.name ||
+          anchorEditor?.connection.target?.id ||
+          ''
+        }
+        source={anchorEditor?.source ?? 'right'}
+        target={anchorEditor?.target ?? 'left'}
+        onApply={(source, target) => {
+          if (!anchorEditor) {
+            return;
+          }
+          const modeler = modelerRef.current;
+          const connection = anchorEditor.connection;
+          if (!modeler || !connection.source || !connection.target) {
+            return;
+          }
+          const sourceBounds = shapeBounds(connection.source);
+          const targetBounds = shapeBounds(connection.target);
+          if (!sourceBounds || !targetBounds) {
+            return;
+          }
+          const waypoints = [...(connection.waypoints as { x: number; y: number }[])];
+          waypoints[0] = anchorPoint(sourceBounds, source);
+          waypoints[waypoints.length - 1] = anchorPoint(targetBounds, target);
+          modeler.get<ModelingLike>('modeling').updateWaypoints(connection, waypoints);
+          setAnchorEditor(null);
+        }}
+        onClose={() => setAnchorEditor(null)}
+      />
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />
       <ThemeSettings
         open={themeOpen}
@@ -1779,6 +2119,12 @@ export function DiagramEditor({
         onChange={updateShortcuts}
         autosaveSeconds={autosaveSeconds}
         onAutosaveChange={(seconds) => setAutosaveSeconds(saveAutosaveSeconds(seconds))}
+        markdownToolbar={markdownToolbar}
+        onMarkdownToolbarChange={(enabled) =>
+          setMarkdownToolbar(saveMarkdownToolbarEnabled(enabled))
+        }
+        mouseMode={mouseMode}
+        onMouseModeChange={(mode) => setMouseMode(saveCanvasMouseMode(mode))}
         onClose={() => setShortcutsOpen(false)}
       />
     </div>
