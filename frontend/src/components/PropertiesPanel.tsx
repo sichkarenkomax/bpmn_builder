@@ -197,6 +197,7 @@ export function PropertiesPanel({
           {markdownToolbar ? (
             <DocumentationEditor
               value={element.documentation}
+              title={element.name || element.id}
               onChange={(next) => onChange({ documentation: next })}
             />
           ) : (
@@ -318,6 +319,18 @@ export function PropertiesPanel({
               <option value="left">слева</option>
               <option value="center">по центру</option>
               <option value="right">справа</option>
+            </select>
+          </label>
+          <label className="inspector__mini">
+            <span>Направление текста</span>
+            <select
+              aria-label="Направление текста"
+              value={element.textDirection || ''}
+              onChange={(event) => onChange({ textDirection: event.target.value })}
+            >
+              <option value="">горизонтально</option>
+              <option value="vertical">вертикально</option>
+              <option value="rotate">поворот</option>
             </select>
           </label>
           <label className="inspector__mini">

@@ -25,6 +25,7 @@ export interface InspectorElement {
   isBold: boolean;
   isItalic: boolean;
   textAlign: string;
+  textDirection: string;
   opacity: string;
   strokeWidth: string;
   strokeStyle: string;

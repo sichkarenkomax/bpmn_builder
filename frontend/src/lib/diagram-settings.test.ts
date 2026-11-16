@@ -52,6 +52,20 @@ describe('настройки в документе', () => {
     expect(readDiagramSettings({ theme: 'custom' }).theme).toBe('custom');
   });
 
+  it('хранит и читает этапы в bs:stages', () => {
+    const properties = diagramSettingsProperties({
+      stages: [
+        { id: 's1', name: 'Этап', y: 10, height: 120, collapsed: true, milestones: [] },
+      ],
+    });
+    const settings = readDiagramSettings({ $attrs: { 'bs:stages': properties['stages']! } });
+
+    expect(settings.stages).toEqual([
+      { id: 's1', name: 'Этап', y: 10, height: 120, collapsed: true, milestones: [] },
+    ]);
+    expect(diagramSettingsProperties({ stages: [] })['stages']).toBeUndefined();
+  });
+
   it('хранит фон холста только для тёмного варианта', () => {
     expect(diagramSettingsProperties({ canvas: 'dark' })).toEqual({ canvas: 'dark' });
     expect(diagramSettingsProperties({ canvas: 'light' })).toEqual({ canvas: undefined });

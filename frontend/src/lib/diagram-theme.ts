@@ -321,13 +321,20 @@ export function applyThemeToGfx(
         child.style.stroke = '#000000';
         child.style.fill = 'none';
         if (isAssociation) {
-          child.style.strokeDasharray = '3 3';
+          // По нотации связь комментария/данных — точками, а не тире.
+          child.style.strokeDasharray = '0 6';
+          child.style.strokeLinecap = 'round';
         }
       }
     }
     for (const marker of gfx.querySelectorAll<SVGElement>('.djs-visual defs marker path')) {
       marker.style.stroke = '#000000';
       marker.style.fill = '#000000';
+    }
+    // Наконечник стрелки заметнее, сама линия остаётся прежней толщины.
+    for (const marker of gfx.querySelectorAll<SVGElement>('.djs-visual defs marker')) {
+      marker.setAttribute('markerWidth', '14');
+      marker.setAttribute('markerHeight', '14');
     }
     return;
   }

@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
 
+import { openActions } from './helpers';
+
 /**
  * Ключевой сценарий редактора (перенесён из ручных прогонов в /tmp):
  * чёрные стрелки, толстая граница завершающего события, своя тема,
@@ -13,6 +15,37 @@ import { expect, test } from '@playwright/test';
 const here = dirname(fileURLToPath(import.meta.url));
 const sampleXml = readFileSync(resolve(here, 'fixtures/simple.bpmn'), 'utf8');
 const API = '/api/v1';
+
+/** Границы фигуры из BPMNDI фикстуры — чтобы не зашивать координаты в тест. */
+function edgeWaypoints(xml: string, edgeId: string) {
+  const pattern = new RegExp(
+    `<bpmndi:BPMNEdge[^>]*bpmnElement="${edgeId}"[^>]*>([\\s\\S]*?)</bpmndi:BPMNEdge>`,
+  );
+  const body = pattern.exec(xml)?.[1];
+  if (!body) {
+    throw new Error(`в фикстуре нет связи ${edgeId}`);
+  }
+  return [...body.matchAll(/<di:waypoint x="([\d.]+)" y="([\d.]+)"/g)].map((match) => ({
+    x: Number(match[1]),
+    y: Number(match[2]),
+  }));
+}
+
+function shapeBounds(xml: string, elementId: string) {
+  const pattern = new RegExp(
+    `<bpmndi:BPMNShape[^>]*bpmnElement="${elementId}"[^>]*>\\s*<dc:Bounds x="([\\d.]+)" y="([\\d.]+)" width="([\\d.]+)" height="([\\d.]+)"`,
+  );
+  const match = pattern.exec(xml);
+  if (!match) {
+    throw new Error(`в фикстуре нет фигуры ${elementId}`);
+  }
+  return {
+    x: Number(match[1]),
+    y: Number(match[2]),
+    width: Number(match[3]),
+    height: Number(match[4]),
+  };
+}
 
 test('закрепление нескольких выделенных элементов — одной командой undo', async ({
   page,
@@ -111,8 +144,13 @@ test('рамка ЛКМ выделяет элементы, а точки при�
       page.keyboard.press('ControlOrMeta+s'),
     ]);
     const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
-    expect(xml).toContain('<di:waypoint x="320" y="77"');
-    expect(xml).toContain('<di:waypoint x="450" y="135"');
+    const waypoints = edgeWaypoints(xml, 'Flow_2');
+    const anchorSourceBox = shapeBounds(sampleXml, 'Task_Review');
+    const anchorTargetBox = shapeBounds(sampleXml, 'EndEvent_1');
+    // Маршрут может прилипнуть к углу фигуры, но сторона должна остаться выбранной.
+    expect(waypoints[0]!.y).toBe(anchorSourceBox.y);
+    expect(waypoints.at(-1)!.y).toBe(anchorTargetBox.y + anchorTargetBox.height);
+    expect(waypoints).toHaveLength(4);
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }
@@ -175,7 +213,8 @@ test('тема, комментарии и сохранение пережива�
     expect(endStroke).toBe('4px');
 
     // 1.3.11: своя тема — цвета по категориям и тёмный фон холста.
-    await page.getByRole('button', { name: 'Тема', exact: true }).click();
+    await openActions(page);
+    await page.getByRole('menuitem', { name: 'Тема' }).click();
     const dialog = page.getByRole('dialog', { name: 'Тема оформления' });
     await expect(dialog).toBeVisible();
     await dialog.locator('input[name="diagram-theme"][value="custom"]').check();
@@ -218,7 +257,8 @@ test('тема, комментарии и сохранение пережива�
 
     // 1.3.8: комментарий к выбранному элементу и маркер на холсте.
     await task.click();
-    await page.getByRole('button', { name: /^Комментарии/ }).click();
+    await openActions(page);
+    await page.getByRole('menuitem', { name: /^Комментарии/ }).click();
     const panel = page.getByRole('region', { name: 'Комментарии' });
     await panel.getByLabel('Новый комментарий').fill('Проверить SLA до пятницы');
     await panel.getByRole('button', { name: 'Отправить' }).click();

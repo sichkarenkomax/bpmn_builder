@@ -13,7 +13,7 @@ cp .env.example .env
 make up          # docker compose up -d --build
 ```
 
-- редактор — http://localhost:5173
+- редактор — http://localhost
 - API и Swagger — http://localhost:8000/docs
 - консоль MinIO — http://localhost:9001 (`minioadmin` / `minioadmin`)
 
@@ -31,6 +31,10 @@ uv run uvicorn app.main:app --reload --port 8000
 
 cd frontend && npm ci && npm run dev
 ```
+
+Фронтенд слушает 80. В Docker это норма (процесс root), а при запуске на хосте
+Linux без root понадобится разрешение на привилегированный порт, например:
+`sudo setcap cap_net_bind_service=+ep $(readlink -f $(which node))`.
 
 Хосты в `.env` рассчитаны на compose (`postgres`, `redis`), поэтому при локальном
 запуске переменные нужно переопределить, как показано выше.
@@ -80,7 +84,7 @@ scripts/tasks.py    сводка прогресса по дорожной кар
 | `make typecheck` | mypy strict + tsc |
 | `make tasks` | сколько задач сделано, в работе и не начато |
 | `make migrate` | применить миграции БД |
-| `cd frontend && npm run test:e2e` | Playwright-сценарий редактора; нужен живой стек (`E2E_BASE_URL`, по умолчанию `http://127.0.0.1:5173`) |
+| `cd frontend && npm run test:e2e` | Playwright-сценарий редактора; нужен живой стек (`E2E_BASE_URL`, по умолчанию `http://127.0.0.1`) |
 
 ## Прогресс по дорожной карте
 

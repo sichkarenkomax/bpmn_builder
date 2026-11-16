@@ -5,7 +5,9 @@
   "types": [
     {
       "name": "StyledShape",
-      "extends": ["bpmndi:BPMNShape"],
+      "extends": [
+        "bpmndi:BPMNShape"
+      ],
       "properties": [
         {
           "name": "fontFamily",
@@ -54,6 +56,11 @@
           "xml": {
             "alias": "text-align"
           }
+        },
+        {
+          "name": "textDirection",
+          "isAttr": true,
+          "type": "String"
         },
         {
           "name": "opacity",
@@ -88,7 +95,9 @@
     },
     {
       "name": "StyledEdge",
-      "extends": ["bpmndi:BPMNEdge"],
+      "extends": [
+        "bpmndi:BPMNEdge"
+      ],
       "properties": [
         {
           "name": "fontFamily",
@@ -139,6 +148,11 @@
           }
         },
         {
+          "name": "textDirection",
+          "isAttr": true,
+          "type": "String"
+        },
+        {
           "name": "opacity",
           "type": "String",
           "isAttr": true,
@@ -171,7 +185,9 @@
     },
     {
       "name": "TypedProperty",
-      "extends": ["camunda:Property"],
+      "extends": [
+        "camunda:Property"
+      ],
       "properties": [
         {
           "name": "type",

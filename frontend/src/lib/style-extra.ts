@@ -7,6 +7,7 @@ export const BS_ATTR = {
   fontBold: 'bs:font-bold',
   fontItalic: 'bs:font-italic',
   textAlign: 'bs:text-align',
+  textDirection: 'bs:text-direction',
   opacity: 'bs:opacity',
   strokeWidth: 'bs:stroke-width',
   strokeStyle: 'bs:stroke-style',
@@ -20,6 +21,7 @@ export type ExtendedStyleCarrier = {
   fontBold?: boolean | string;
   fontItalic?: boolean | string;
   textAlign?: string;
+  textDirection?: string;
   opacity?: string;
   strokeWidth?: string;
   strokeStyle?: string;
@@ -58,6 +60,7 @@ export function readExtendedStyle(carrier: ExtendedStyleCarrier | undefined): {
   isBold: boolean;
   isItalic: boolean;
   textAlign: string;
+  textDirection: string;
   opacity: string;
   strokeWidth: string;
   strokeStyle: string;
@@ -70,6 +73,10 @@ export function readExtendedStyle(carrier: ExtendedStyleCarrier | undefined): {
     isBold: pick(source, 'fontBold') === 'true',
     isItalic: pick(source, 'fontItalic') === 'true',
     textAlign: pick(source, 'textAlign'),
+    textDirection:
+      pick(source, 'textDirection') === 'vertical' || pick(source, 'textDirection') === 'rotate'
+        ? pick(source, 'textDirection')
+        : '',
     opacity: pick(source, 'opacity'),
     strokeWidth: pick(source, 'strokeWidth'),
     strokeStyle: pick(source, 'strokeStyle'),
@@ -84,6 +91,7 @@ export function toStyleAttributes(patch: {
   isBold?: boolean;
   isItalic?: boolean;
   textAlign?: string;
+  textDirection?: string;
   opacity?: string;
   strokeWidth?: string;
   strokeStyle?: string;
@@ -106,6 +114,9 @@ export function toStyleAttributes(patch: {
   }
   if (patch.textAlign !== undefined) {
     attrs[BS_ATTR.textAlign] = sanitizeTextAlign(patch.textAlign);
+  }
+  if (patch.textDirection !== undefined) {
+    attrs[BS_ATTR.textDirection] = sanitizeTextDirection(patch.textDirection);
   }
   if (patch.opacity !== undefined) {
     attrs[BS_ATTR.opacity] = sanitizeOpacity(patch.opacity);
@@ -137,6 +148,29 @@ function sanitizeFontSize(value: string): string {
 
 function sanitizeTextAlign(value: string): string {
   return value === 'left' || value === 'center' || value === 'right' ? value : '';
+}
+
+function sanitizeTextDirection(value: string): string {
+  return value === 'vertical' || value === 'rotate' ? value : '';
+}
+
+/**
+ * Вертикальный текст или поворот подписи; горизонтальный — штатный вид без стилей.
+ * Для вынесенных подписей поворот применяется ко всему фрейму (см.
+ * applyExternalLabelLayout), а не к тексту отдельно.
+ */
+export function applyTextDirection(
+  label: SVGTextElement,
+  direction: string,
+  rotateText = true,
+): void {
+  label.style.writingMode = direction === 'vertical' ? 'vertical-rl' : '';
+  // mixed поворачивает кириллицу вслед за строкой, upright ставит буквы
+  // столбиком и выводит их за пределы фигуры.
+  label.style.textOrientation = direction === 'vertical' ? 'mixed' : '';
+  label.style.transform = direction === 'rotate' && rotateText ? 'rotate(-90deg)' : '';
+  label.style.transformBox = direction === 'rotate' && rotateText ? 'fill-box' : '';
+  label.style.transformOrigin = direction === 'rotate' && rotateText ? 'center' : '';
 }
 
 function sanitizeColor(value: string): string {
@@ -222,6 +256,7 @@ export function applyExternalLabelLayout(
   gfx: SVGGElement | undefined,
   element: ExternalLabelElement,
   align: string,
+  direction = '',
 ): void {
   if (!gfx || element.type !== 'label') {
     return;
@@ -231,16 +266,42 @@ export function applyExternalLabelLayout(
   if (!host || host.waypoints) {
     return;
   }
+
+  const rotatesFrame = direction === 'rotate' && !host.waypoints;
+  for (const label of gfx.querySelectorAll<SVGTextElement>('.djs-label')) {
+    // При повороте подписи вращаем её фрейм целиком, иначе текст
+    // поворачивается внутри неподвижной рамки и вылезает за неё.
+    applyTextDirection(label, direction, !rotatesFrame);
+  }
   if (typeof element.y !== 'number' || typeof element.x !== 'number') {
     return;
   }
 
+  let shift = 0;
   if (typeof host.y === 'number' && typeof host.height === 'number') {
     const bottom = host.y + host.height;
-    const shift = bottom + EXTERNAL_LABEL_GAP - element.y;
+    shift = bottom + EXTERNAL_LABEL_GAP - element.y;
+    if (shift < 0 || element.y < bottom - 2) {
+      shift = 0;
+    }
+  }
+
+  if (rotatesFrame) {
     const visual = gfx.querySelector<SVGGElement>('.djs-visual');
-    // Подписи с достаточным зазором и поднятые над фигурой не трогаем.
-    if (visual && element.y >= bottom - 2) {
+    if (visual) {
+      visual.style.transformBox = 'fill-box';
+      visual.style.transformOrigin = 'center';
+      visual.style.transform = `translateY(${shift}px) rotate(-90deg)`;
+    }
+    const outline = gfx.querySelector<SVGGElement>('.djs-outline');
+    if (outline) {
+      outline.style.transformBox = 'fill-box';
+      outline.style.transformOrigin = 'center';
+      outline.style.transform = 'rotate(-90deg)';
+    }
+  } else {
+    const visual = gfx.querySelector<SVGGElement>('.djs-visual');
+    if (visual) {
       visual.style.transform = shift > 0 ? `translateY(${shift}px)` : '';
     }
   }
@@ -277,11 +338,15 @@ const DASH: Record<string, string | undefined> = {
 export function applyStyleToGfx(
   gfx: SVGGElement | undefined,
   carrier: ExtendedStyleCarrier | undefined,
+  type = '',
 ): void {
   if (!gfx) {
     return;
   }
   const style = readExtendedStyle(carrier);
+  // У аннотации поворот применяется ко всему фрейму: иначе текст
+  // переворачивается внутри неподвижного прямоугольника.
+  const rotatesFrame = style.textDirection === 'rotate' && type === 'bpmn:TextAnnotation';
   const size = Number.parseFloat(style.fontSize);
   const width = Number.parseFloat(style.strokeWidth);
 
@@ -298,6 +363,25 @@ export function applyStyleToGfx(
       label.style.fill = style.fontColor;
     } else {
       label.style.removeProperty('fill');
+    }
+    applyTextDirection(label, style.textDirection, !rotatesFrame);
+  }
+
+  const visual = gfx.querySelector<SVGGElement>('.djs-visual');
+  const outline = gfx.querySelector<SVGGElement>('.djs-outline');
+  if (rotatesFrame) {
+    for (const frame of [visual, outline]) {
+      if (frame) {
+        frame.style.transformBox = 'fill-box';
+        frame.style.transformOrigin = 'center';
+        frame.style.transform = 'rotate(-90deg)';
+      }
+    }
+  } else {
+    for (const frame of [visual, outline]) {
+      if (frame) {
+        frame.style.transform = '';
+      }
     }
   }
 

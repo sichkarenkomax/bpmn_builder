@@ -212,6 +212,106 @@ code {
   pointer-events: none;
 }
 
+/* --- Этапы схемы (1.3.14) --- */
+
+.stage-bands {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.stage-band {
+  position: absolute;
+  inset-inline: 0;
+  border-top: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent);
+  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.stage-band--collapsed {
+  border-bottom-style: solid;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.stage-band__header {
+  position: absolute;
+  top: 6px;
+  /* Справа: слева палитра bpmn-js, а её z-index выше полос. */
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(360px, 70%);
+  padding: 3px 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(16 24 40 / 12%);
+  pointer-events: auto;
+}
+
+.stage-band__name {
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-band__collapsed-note {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.stage-band__toggle {
+  flex: none;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.stage-band__toggle:hover {
+  color: var(--text);
+}
+
+.stage-milestone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed color-mix(in srgb, var(--accent) 80%, transparent);
+  pointer-events: none;
+}
+
+.stage-milestone::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: -4px;
+  width: 7px;
+  height: 7px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+
+.stage-milestone__label {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  padding: 1px 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* Штатные 12 px крупнее, чем нужно для компактных фигур. */
 .canvas .djs-label {
   font-size: 11px;
@@ -248,6 +348,12 @@ code {
 
 .ghost-button:hover {
   border-color: var(--accent);
+}
+
+.ghost-button--menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .badge {
@@ -845,6 +951,20 @@ code {
   color: var(--error);
 }
 
+.context-menu__text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.context-menu__icon {
+  width: 16px;
+  flex: none;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .context-menu__hint {
   font-size: 11px;
   color: var(--text-muted);
@@ -854,6 +974,59 @@ code {
   height: 1px;
   margin: 4px 6px;
   background: var(--border);
+}
+
+/* --- Компактное меню «Сменить тип» --- */
+
+.replace-menu {
+  position: fixed;
+  z-index: 1150;
+  display: grid;
+  grid-template-columns: repeat(4, 34px);
+  gap: 3px;
+  max-height: min(320px, calc(100vh - 16px));
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow:
+    0 1px 2px rgb(16 24 40 / 8%),
+    0 12px 32px rgb(16 24 40 / 18%);
+}
+
+.replace-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.replace-menu__item:hover,
+.replace-menu__item:focus-visible {
+  background: var(--surface-muted);
+  outline: none;
+}
+
+.replace-menu__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.replace-menu__icon--text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 /* --- Диалог --- */
@@ -901,6 +1074,134 @@ code {
   margin: 0;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.dialog--stages {
+  width: min(760px, 100%);
+}
+
+.stage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 48vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.stage-item {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.stage-item .stage-row {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.milestone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px 8px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.milestone-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 80px auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.milestone-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.milestone-row input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.stage-item__add {
+  align-self: flex-start;
+}
+
+.stage-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 80px 80px auto auto;
+  gap: 8px;
+  align-items: end;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.stage-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.stage-row input[type='text'],
+.stage-row input:not([type]) {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.stage-row__flag {
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  padding-bottom: 4px;
+  white-space: nowrap;
+}
+
+.stage-list__add {
+  align-self: flex-start;
+}
+
+.settings-section__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 720px) {
+  .stage-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .stage-row__name {
+    grid-column: 1 / -1;
+  }
 }
 
 .dialog__error {
@@ -1504,6 +1805,76 @@ code {
 .docs-editor textarea:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
   outline-offset: 1px;
+}
+
+.dialog--markdown {
+  width: min(980px, 100%);
+}
+
+.docs-window__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.docs-window__body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-height: 0;
+}
+
+.docs-window__pane {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.docs-window__caption {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.docs-window__pane textarea {
+  min-height: min(340px, 42vh);
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.docs-window__preview {
+  min-height: min(340px, 42vh);
+  max-height: 52vh;
+  overflow-y: auto;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+@media (max-width: 720px) {
+  .docs-window__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.docs-editor__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.docs-editor__hint code {
+  font-size: 10.5px;
 }
 
 .docs-editor__preview-pane {

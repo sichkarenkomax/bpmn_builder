@@ -8,11 +8,11 @@ help: ## Показать команды
 
 up: ## Поднять локальный стек (без MinIO)
 	docker compose up -d --build
-	@echo "Фронтенд: http://localhost:5173 · API: http://localhost:8000/docs"
+	@echo "Фронтенд: http://localhost · API: http://localhost:8000/docs"
 
 up-full: ## Поднять стек вместе с MinIO
 	docker compose --profile storage up -d --build
-	@echo "Фронтенд: http://localhost:5173 · API: http://localhost:8000/docs · MinIO: http://localhost:9001"
+	@echo "Фронтенд: http://localhost · API: http://localhost:8000/docs · MinIO: http://localhost:9001"
 
 down: ## Остановить стек (данные сохраняются)
 	docker compose down

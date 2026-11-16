@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * E2E требует живой стек: backend с Postgres и Vite.
- * По умолчанию ждём фронтенд на 5173 (как в docker compose);
+ * По умолчанию ждём фронтенд на 80 (как в docker compose);
  * другой адрес задаётся через E2E_BASE_URL.
  */
 export default defineConfig({
@@ -14,7 +14,7 @@ export default defineConfig({
   retries: 0,
   reporter: 'list',
   use: {
-    baseURL: process.env['E2E_BASE_URL'] ?? 'http://127.0.0.1:5173',
+    baseURL: process.env['E2E_BASE_URL'] ?? 'http://127.0.0.1',
     trace: 'retain-on-failure',
     viewport: { width: 1440, height: 900 },
   },

@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 
 export interface ContextMenuItem {
   id: string;
   label: string;
+  /** Значок перед подписью: эмодзи или символ. */
+  icon?: string;
   hint?: string;
   disabled?: boolean;
   danger?: boolean;
@@ -20,9 +22,12 @@ export interface ContextMenuState {
 export function ContextMenu({
   menu,
   onClose,
+  ignoreRef,
 }: {
   menu: ContextMenuState | null;
   onClose: () => void;
+  /** Кнопка, которая открывает меню: клик по ней не должен закрывать его до обработки. */
+  ignoreRef?: RefObject<HTMLElement | null>;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -48,6 +53,13 @@ export function ContextMenu({
     }
     const onPointerDown = (event: MouseEvent) => {
       if (ref.current && event.target instanceof Node && ref.current.contains(event.target)) {
+        return;
+      }
+      if (
+        ignoreRef?.current &&
+        event.target instanceof Node &&
+        ignoreRef.current.contains(event.target)
+      ) {
         return;
       }
       onClose();
@@ -85,7 +97,7 @@ export function ContextMenu({
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('scroll', onScroll, true);
     };
-  }, [menu, activeIndex, onClose]);
+  }, [menu, activeIndex, onClose, ignoreRef]);
 
   if (!menu) {
     return null;
@@ -135,7 +147,14 @@ export function ContextMenu({
               }
             }}
           >
-            <span>{item.label}</span>
+            <span className="context-menu__text">
+              {item.icon ? (
+                <span className="context-menu__icon" aria-hidden="true">
+                  {item.icon}
+                </span>
+              ) : null}
+              <span>{item.label}</span>
+            </span>
             {item.hint ? <kbd className="context-menu__hint">{item.hint}</kbd> : null}
           </button>
         );

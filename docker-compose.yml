@@ -61,7 +61,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bpmn}:${POSTGRES_PASSWORD:-bpmn}@postgres:5432/${POSTGRES_DB:-bpmn}
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000
-      CORS_ORIGINS: '["http://localhost:5173"]'
+      CORS_ORIGINS: '["http://localhost"]'
     ports:
       - '8000:8000'
     depends_on:
@@ -80,7 +80,7 @@ services:
     environment:
       VITE_PROXY_TARGET: http://backend:8000
     ports:
-      - '5173:5173'
+      - '80:80'
     depends_on:
       - backend
 

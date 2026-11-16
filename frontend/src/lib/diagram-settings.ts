@@ -7,6 +7,7 @@ import {
   type ThemeColorsMap,
   type ThemeId,
 } from './diagram-theme';
+import { parseStages, serializeStages, type DiagramStage } from './stages';
 
 export type LegendPosition = { x: number; y: number };
 export type CanvasTheme = 'light' | 'dark';
@@ -16,6 +17,7 @@ export type DiagramSettings = {
   legend: LegendPosition | null;
   customColors: ThemeColorsMap | null;
   canvas: CanvasTheme;
+  stages: DiagramStage[] | null;
 };
 
 /** Минимальная форма `bpmn:Definitions` от moddle: прямые свойства и `$attrs`. */
@@ -53,6 +55,7 @@ export function readDiagramSettings(definitions: DefinitionsLike | undefined): D
     // `bs:custom-theme` — JSON в атрибуте; битый атрибут не ломает открытие.
     customColors: parseCustomTheme(attribute(definitions, 'custom-theme', 'custom-theme')),
     canvas: canvas === 'dark' ? 'dark' : 'light',
+    stages: parseStages(attribute(definitions, 'stages', 'stages')),
   };
 }
 
@@ -62,6 +65,7 @@ export function diagramSettingsProperties(settings: {
   legend?: LegendPosition;
   customColors?: ThemeColorsMap;
   canvas?: CanvasTheme;
+  stages?: DiagramStage[];
 }): Record<string, string | undefined> {
   const properties: Record<string, string | undefined> = {};
   if (settings.theme !== undefined) {
@@ -76,6 +80,9 @@ export function diagramSettingsProperties(settings: {
   if (settings.legend) {
     properties['legend-x'] = String(Math.round(settings.legend.x));
     properties['legend-y'] = String(Math.round(settings.legend.y));
+  }
+  if (settings.stages !== undefined) {
+    properties['stages'] = serializeStages(settings.stages);
   }
   return properties;
 }

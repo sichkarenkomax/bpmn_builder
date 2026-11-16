@@ -1,5 +1,16 @@
 import DrilldownModule from 'bpmn-js/lib/features/drilldown';
+import {
+  DATA_OBJECT_REFERENCE_OUTLINE_PATH,
+  DATA_OBJECT_REFERENCE_STANDARD_SIZE,
+  DATA_STORE_REFERENCE_OUTLINE_PATH,
+  DATA_STORE_REFERENCE_STANDARD_SIZE,
+} from 'bpmn-js/lib/features/outline/OutlineUtil';
+import BpmnLayouter, {
+  type BpmnLayoutConnectionHints,
+} from 'bpmn-js/lib/features/modeling/BpmnLayouter';
 import Modeler from 'bpmn-js/lib/Modeler';
+import { is } from 'bpmn-js/lib/util/ModelUtil';
+import RuleProvider from 'diagram-js/lib/features/rules/RuleProvider';
 import { getPlaneIdFromShape } from 'bpmn-js/lib/util/DrilldownUtil';
 import camundaModdle from 'camunda-bpmn-moddle/resources/camunda.json';
 import minimapModule from 'diagram-js-minimap';
@@ -68,6 +79,8 @@ import bsModdle from '../lib/bs-moddle.json';
 import { attributeTypeForXml, parseAttributeType } from '../lib/attributes';
 import { isElementLocked } from '../lib/lock';
 import { anchorPoint, closestSide, type AnchorSide } from '../lib/connection-anchors';
+import { hasDiagonalSegment, orthogonalAssociationWaypoints } from '../lib/association-route';
+import { proportionalAnchor, type Bounds, type Point } from '../lib/resize-anchors';
 import { ConnectionAnchors } from './ConnectionAnchors';
 import {
   loadCanvasMouseMode,
@@ -94,6 +107,10 @@ import {
   type ShortcutMap,
 } from '../lib/shortcuts';
 import { ContextMenu, type ContextMenuItem, type ContextMenuState } from './ContextMenu';
+import { ReplaceMenu, type ReplaceEntry, type ReplaceMenuState } from './ReplaceMenu';
+import { StageBands } from './StageBands';
+import { StagesDialog } from './StagesDialog';
+import { hiddenStageElementIds, type DiagramStage } from '../lib/stages';
 import { PropertiesPanel } from './PropertiesPanel';
 import { ShortcutSettings } from './ShortcutSettings';
 
@@ -180,6 +197,16 @@ interface ModelingLike {
   setColor: (elements: DiagramElement[], colors: { fill?: string; stroke?: string }) => void;
 }
 
+interface LayouterLike {
+  layoutConnection: (
+    connection: DiagramElement,
+    hints: {
+      connectionStart?: { x: number; y: number };
+      connectionEnd?: { x: number; y: number };
+    },
+  ) => { x: number; y: number }[];
+}
+
 interface ElementRegistryLike {
   get: (id: string) => DiagramElement | undefined;
   getAll: () => DiagramElement[];
@@ -195,11 +222,13 @@ interface SelectionLike {
 interface EditorEvent {
   newSelection?: DiagramElement[];
   context?: { shape?: DiagramElement; connection?: DiagramElement };
+  viewbox?: { x: number; y: number; scale: number };
 }
 
 interface EventBusLike {
   on(event: string, handler: (event: EditorEvent) => void): void;
   on(event: string, priority: number, handler: (event: EditorEvent) => void): void;
+  off?: (event: string, handler: (event: EditorEvent) => void) => void;
 }
 
 interface LockEventBus {
@@ -231,23 +260,32 @@ interface DiProperties {
   set: (name: string, value: unknown) => void;
 }
 
-interface BulkLockItem {
+interface BulkPropertiesItem {
   element: DiagramElement;
   moddleElement: DiProperties;
   properties: Record<string, unknown>;
 }
 
-interface BulkLockContext {
-  items: BulkLockItem[];
+interface BulkPropertiesContext {
+  items: BulkPropertiesItem[];
   previous?: Record<string, unknown>[];
 }
 
-/** Одна команда на закрепление/открепление сразу нескольких элементов. */
-class BulkLockHandler {
-  execute(context: BulkLockContext): DiagramElement[] {
-    context.previous = context.items.map((item) => ({
-      locked: item.moddleElement.get('locked'),
-    }));
+/**
+ * Одна команда на изменение свойств сразу нескольких DI-элементов
+ * (сейчас — массовое закрепление). В снимок для undo попадают все ключи
+ * из `properties`, а не только `locked`: команда останется корректной,
+ * если набор свойств расширят.
+ */
+class ModdlePropertiesHandler {
+  execute(context: BulkPropertiesContext): DiagramElement[] {
+    context.previous = context.items.map((item) => {
+      const snapshot: Record<string, unknown> = {};
+      for (const key of Object.keys(item.properties)) {
+        snapshot[key] = item.moddleElement.get(key);
+      }
+      return snapshot;
+    });
     for (const item of context.items) {
       for (const [key, value] of Object.entries(item.properties)) {
         item.moddleElement.set(key, value);
@@ -256,7 +294,7 @@ class BulkLockHandler {
     return context.items.map((item) => item.element);
   }
 
-  revert(context: BulkLockContext): DiagramElement[] {
+  revert(context: BulkPropertiesContext): DiagramElement[] {
     context.items.forEach((item, index) => {
       for (const [key, value] of Object.entries(context.previous?.[index] ?? {})) {
         item.moddleElement.set(key, value);
@@ -266,18 +304,460 @@ class BulkLockHandler {
   }
 }
 
-class BulkLockProvider {
+class BulkPropertiesProvider {
   static $inject = ['commandStack'];
 
   constructor(commandStack: CommandStackLike) {
-    commandStack.registerHandler('elements.updateModdleProperties', BulkLockHandler);
+    commandStack.registerHandler('elements.updateModdleProperties', ModdlePropertiesHandler);
   }
 }
 
 const lockModule = {
-  __init__: ['lockRules', 'bulkLock'],
+  __init__: ['lockRules', 'bulkProperties'],
   lockRules: ['type', LockRulesProvider],
-  bulkLock: ['type', BulkLockProvider],
+  bulkProperties: ['type', BulkPropertiesProvider],
+};
+
+interface LayoutPoint {
+  x: number;
+  y: number;
+}
+
+/** Связи-ассоциации идут по сторонам фигур и ортогонально, как потоки. */
+class OrthogonalAssociationLayouter extends BpmnLayouter {
+  override layoutConnection(
+    connection: never,
+    hints: BpmnLayoutConnectionHints = {},
+  ): LayoutPoint[] {
+    if (is(connection, 'bpmn:Association') || is(connection, 'bpmn:DataAssociation')) {
+      const association = connection as unknown as DiagramElement;
+      const source =
+        (hints.source as unknown as DiagramElement | undefined) ?? association.source;
+      const target =
+        (hints.target as unknown as DiagramElement | undefined) ?? association.target;
+      const sourceBounds = shapeBounds(source);
+      const targetBounds = shapeBounds(target);
+      if (sourceBounds && targetBounds) {
+        return orthogonalAssociationWaypoints(sourceBounds, targetBounds);
+      }
+    }
+    return super.layoutConnection(connection, hints as never);
+  }
+}
+
+const ALIGN_LINES = {
+  left: [
+    [2, 14],
+    [2, 10],
+    [2, 14],
+    [2, 8],
+  ],
+  center: [
+    [1, 15],
+    [4, 12],
+    [1, 15],
+    [3, 13],
+  ],
+  right: [
+    [2, 14],
+    [6, 14],
+    [2, 14],
+    [8, 14],
+  ],
+} as const;
+
+/** Стандартные значки выравнивания текста (три строки у края/по центру). */
+function AlignIcon({ align }: { align: 'left' | 'center' | 'right' }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      {ALIGN_LINES[align].map(([x1, x2], index) => (
+        <line
+          key={index}
+          x1={x1}
+          x2={x2}
+          y1={2.5 + index * 3.5}
+          y2={2.5 + index * 3.5}
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+      ))}
+    </svg>
+  );
+}
+
+/** Значки направления текста: горизонтально, вертикально, поворот. */
+function DirectionIcon({ value }: { value: '' | 'vertical' | 'rotate' }) {
+  if (value === 'vertical') {
+    return (
+      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M8 13V2M5 5l3-3 3 3"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+  if (value === 'rotate') {
+    return (
+      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5V5h-2.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M3 8h10M10 5l3 3-3 3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+interface ReplaceMenuProviderLike {
+  getPopupMenuEntries: (target: DiagramElement) => Record<string, ReplaceEntry>;
+}
+
+interface ResizeRuleContext {
+  shape?: DiagramElement;
+  newBounds?: { width: number; height: number };
+}
+
+/** Разрешает ресайз всем фигурам BPMN, не только задачам/пулам (1.3.27). */
+class ResizeAllShapesRules extends RuleProvider {
+  static override $inject = ['eventBus'];
+
+  override init(): void {
+    // Выше BpmnRules: иначе его запрет для событий/задач сработает раньше.
+    this.addRule('shape.resize', 1500, (context: ResizeRuleContext) => {
+      const shape = context.shape;
+      if (!shape || shape.type === 'label') {
+        return undefined;
+      }
+      if (
+        context.newBounds &&
+        (context.newBounds.width < 12 || context.newBounds.height < 12)
+      ) {
+        return false;
+      }
+      return shape.type?.startsWith('bpmn:') ? true : undefined;
+    });
+  }
+}
+
+const associationRoutingModule = {
+  bpmnLayouter: ['type', OrthogonalAssociationLayouter],
+};
+
+interface CommandEventLike {
+  context?: {
+    connection?: DiagramElement;
+    shape?: DiagramElement;
+    shapes?: DiagramElement[];
+  };
+}
+
+interface GraphicsFactoryLike {
+  update: (type: string, element: DiagramElement, gfx: unknown) => void;
+}
+
+interface BpmnUpdaterLike {
+  updateConnectionWaypoints: (connection: DiagramElement) => void;
+}
+
+/**
+ * Держит ассоциации ортогональными после создания, переноса и ресайза:
+ * правит waypoints на месте, без лишних шагов undo.
+ */
+class AssociationRoutingProvider {
+  static $inject = ['eventBus', 'elementRegistry', 'graphicsFactory', 'bpmnUpdater'];
+
+  constructor(
+    eventBus: {
+      on: (
+        events: string | string[],
+        priority: number,
+        handler: (event: CommandEventLike) => void,
+      ) => void;
+    },
+    registry: ElementRegistryLike,
+    graphicsFactory: GraphicsFactoryLike,
+    bpmnUpdater: BpmnUpdaterLike,
+  ) {
+    const apply = (connection: DiagramElement) => {
+      const sourceBounds = shapeBounds(connection.source);
+      const targetBounds = shapeBounds(connection.target);
+      if (!sourceBounds || !targetBounds) {
+        return;
+      }
+      const next = orthogonalAssociationWaypoints(sourceBounds, targetBounds);
+      const current = (connection.waypoints ?? []) as LayoutPoint[];
+      if (
+        current.length === next.length &&
+        current.every(
+          (point, index) =>
+            Math.abs(point.x - next[index]!.x) < 0.5 &&
+            Math.abs(point.y - next[index]!.y) < 0.5,
+        )
+      ) {
+        return;
+      }
+      connection.waypoints = next;
+      bpmnUpdater.updateConnectionWaypoints(connection);
+      const gfx = registry.getGraphics(connection);
+      if (gfx) {
+        graphicsFactory.update('connection', connection, gfx);
+      }
+    };
+
+    const reroute = (event: CommandEventLike) => {
+      const context = event.context ?? {};
+      const changedIds = new Set(
+        [context.shape, ...(context.shapes ?? [])]
+          .filter((shape): shape is DiagramElement => Boolean(shape))
+          .map((shape) => shape.id),
+      );
+      for (const element of registry.getAll()) {
+        if (!element.type.endsWith('Association')) {
+          continue;
+        }
+        const affected =
+          element === context.connection ||
+          (element.source ? changedIds.has(element.source.id) : false) ||
+          (element.target ? changedIds.has(element.target.id) : false);
+        if (affected) {
+          apply(element);
+        }
+      }
+    };
+
+    eventBus.on(
+      [
+        'commandStack.connection.create.postExecuted',
+        'commandStack.connection.reconnect.postExecuted',
+        'commandStack.shape.move.postExecuted',
+        'commandStack.shape.resize.postExecuted',
+        'commandStack.elements.move.postExecuted',
+      ],
+      1500,
+      reroute,
+    );
+  }
+}
+
+const associationRoutingBehaviorModule = {
+  __init__: ['associationRoutingBehavior'],
+  associationRoutingBehavior: ['type', AssociationRoutingProvider],
+};
+
+interface ShapeLike extends Bounds {
+  id: string;
+}
+
+interface LayoutHintsLike {
+  connectionStart?: Point;
+  connectionEnd?: Point;
+}
+
+interface LayoutContextLike {
+  shape?: ShapeLike;
+  connection?: DiagramElement & { waypoints?: Point[]; source?: DiagramElement; target?: DiagramElement };
+  hints?: LayoutHintsLike;
+}
+
+/**
+ * При ресайзе bpmn-js оставляет старую точку примыкания, если она попала
+ * внутрь новой рамки (при сжатии снизу стрелка «съезжает» вниз).
+ * Пересчитываем конец связи пропорционально старой рамке.
+ */
+class ResizeAnchorProvider {
+  static $inject = ['eventBus'];
+
+  constructor(eventBus: {
+    on: (events: string, priority: number, handler: (event: { context?: LayoutContextLike }) => void) => void;
+  }) {
+    const oldBounds = new Map<string, Bounds>();
+
+    eventBus.on('commandStack.shape.resize.preExecute', 1500, (event) => {
+      const shape = event.context?.shape;
+      if (shape) {
+        oldBounds.set(shape.id, {
+          x: shape.x,
+          y: shape.y,
+          width: shape.width,
+          height: shape.height,
+        });
+      }
+    });
+
+    eventBus.on('commandStack.connection.layout.preExecute', 1500, (event) => {
+      const context = event.context;
+      const connection = context?.connection;
+      const hints = context?.hints;
+      if (!connection || !hints) {
+        return;
+      }
+      const waypoints = connection.waypoints ?? [];
+      const sourceNew = shapeBounds(connection.source);
+      const sourceOld = connection.source ? oldBounds.get(connection.source.id) : undefined;
+      if (hints.connectionStart && sourceOld && sourceNew && waypoints[0]) {
+        hints.connectionStart = proportionalAnchor(waypoints[0], sourceOld, sourceNew);
+      }
+      const targetNew = shapeBounds(connection.target);
+      const targetOld = connection.target ? oldBounds.get(connection.target.id) : undefined;
+      const last = waypoints[waypoints.length - 1];
+      if (hints.connectionEnd && targetOld && targetNew && last) {
+        hints.connectionEnd = proportionalAnchor(last, targetOld, targetNew);
+      }
+    });
+
+    // Чистим после завершения команды: вложенные connection.layout уже отработали.
+    eventBus.on('commandStack.shape.resize.postExecuted', 100, () => oldBounds.clear());
+    eventBus.on('commandStack.shape.resize.reverted', 100, () => oldBounds.clear());
+  }
+}
+
+const resizeAnchorModule = {
+  __init__: ['resizeAnchorBehavior'],
+  resizeAnchorBehavior: ['type', ResizeAnchorProvider],
+};
+
+interface OutlineStylesLike {
+  cls: (className: string, classes: string[]) => Record<string, string>;
+}
+
+interface OutlineLike {
+  registerProvider: (priority: number, provider: ResizableOutlineProvider) => void;
+}
+
+/** Дорисовывает контур выделения под изменённые события, шлюзы и данные. */
+class ResizableOutlineProvider {
+  static $inject = ['outline', 'styles'];
+
+  private readonly styles: Record<string, string>;
+
+  constructor(outline: OutlineLike, styles: OutlineStylesLike) {
+    this.styles = styles.cls('djs-outline', ['no-fill']);
+    outline.registerProvider(1500, this);
+  }
+
+  private create(tag: 'circle' | 'rect' | 'path'): SVGElement {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [name, value] of Object.entries(this.styles)) {
+      node.setAttribute(name, value);
+    }
+    return node;
+  }
+
+  getOutline(element: DiagramElement): SVGElement | undefined {
+    if (element.type === 'bpmn:EndEvent' || element.type === 'bpmn:Event') {
+      const outline = this.create('circle');
+      this.updateEventOutline(outline, element);
+      return outline;
+    }
+    if (element.type === 'bpmn:Gateway') {
+      const outline = this.create('rect');
+      this.updateGatewayOutline(outline, element);
+      return outline;
+    }
+    if (element.type === 'bpmn:DataObjectReference' || element.type === 'bpmn:DataStoreReference') {
+      const outline = this.create('path');
+      const standard =
+        element.type === 'bpmn:DataObjectReference'
+          ? DATA_OBJECT_REFERENCE_STANDARD_SIZE
+          : DATA_STORE_REFERENCE_STANDARD_SIZE;
+      outline.setAttribute(
+        'd',
+        element.type === 'bpmn:DataObjectReference'
+          ? DATA_OBJECT_REFERENCE_OUTLINE_PATH
+          : DATA_STORE_REFERENCE_OUTLINE_PATH,
+      );
+      outline.setAttribute('stroke-width', '2');
+      this.updateDataOutline(outline, element, standard);
+      return outline;
+    }
+    return undefined;
+  }
+
+  updateOutline(element: DiagramElement, outline: SVGElement): boolean {
+    if (element.type === 'bpmn:EndEvent' || element.type === 'bpmn:Event') {
+      this.updateEventOutline(outline, element);
+      return true;
+    }
+    if (element.type === 'bpmn:Gateway') {
+      this.updateGatewayOutline(outline, element);
+      return true;
+    }
+    if (element.type === 'bpmn:DataObjectReference' || element.type === 'bpmn:DataStoreReference') {
+      this.updateDataOutline(
+        outline,
+        element,
+        element.type === 'bpmn:DataObjectReference'
+          ? DATA_OBJECT_REFERENCE_STANDARD_SIZE
+          : DATA_STORE_REFERENCE_STANDARD_SIZE,
+      );
+      return true;
+    }
+    return false;
+  }
+
+  private updateEventOutline(outline: SVGElement, element: DiagramElement): void {
+    const width = element.width ?? 0;
+    const height = element.height ?? 0;
+    outline.setAttribute('cx', String(width / 2));
+    outline.setAttribute('cy', String(height / 2));
+    outline.setAttribute('r', String(width / 2 + 6 + (element.type === 'bpmn:EndEvent' ? 1 : 0)));
+  }
+
+  private updateGatewayOutline(outline: SVGElement, element: DiagramElement): void {
+    outline.setAttribute('x', '2');
+    outline.setAttribute('y', '2');
+    outline.setAttribute('rx', '4');
+    outline.setAttribute('width', String(Math.max(0, (element.width ?? 0) - 4)));
+    outline.setAttribute('height', String(Math.max(0, (element.height ?? 0) - 4)));
+    outline.style.transformBox = 'fill-box';
+    outline.style.transform = 'rotate(45deg)';
+    outline.style.transformOrigin = 'center';
+  }
+
+  private updateDataOutline(
+    outline: SVGElement,
+    element: DiagramElement,
+    standard: { width: number; height: number },
+  ): void {
+    const scaleX = (element.width ?? standard.width) / standard.width;
+    const scaleY = (element.height ?? standard.height) / standard.height;
+    outline.setAttribute(
+      'transform',
+      `translate(${-6 * scaleX} ${-6 * scaleY}) scale(${scaleX} ${scaleY})`,
+    );
+  }
+}
+
+const resizableOutlineModule = {
+  __init__: ['resizableOutlineProvider'],
+  resizableOutlineProvider: ['type', ResizableOutlineProvider],
+};
+
+const resizeModule = {
+  __init__: ['resizeAllRules'],
+  resizeAllRules: ['type', ResizeAllShapesRules],
 };
 
 interface ModdleLike {
@@ -290,7 +770,13 @@ interface CommandStackLike {
   canUndo: () => boolean;
   canRedo: () => boolean;
   execute: (event: string, context: Record<string, unknown>) => void;
-  registerHandler: (event: string, handler: new () => BulkLockHandler) => void;
+  registerHandler: (
+    event: string,
+    handler: new () => {
+      execute: (context: BulkPropertiesContext) => DiagramElement[];
+      revert: (context: BulkPropertiesContext) => DiagramElement[];
+    },
+  ) => void;
 }
 
 interface EditorActionsLike {
@@ -444,6 +930,29 @@ function shapeBounds(element: DiagramElement | undefined) {
   return { x: element.x, y: element.y, width: element.width, height: element.height };
 }
 
+/** Чинит старые ассоциации с диагональными сегментами при открытии схемы. */
+function normalizeImportedAssociations(modeler: Modeler): boolean {
+  const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+  const modeling = modeler.get<ModelingLike>('modeling');
+  let changed = false;
+  for (const element of registry.getAll()) {
+    if (!element.type.endsWith('Association')) {
+      continue;
+    }
+    const sourceBounds = shapeBounds(element.source);
+    const targetBounds = shapeBounds(element.target);
+    if (!sourceBounds || !targetBounds) {
+      continue;
+    }
+    if (!hasDiagonalSegment((element.waypoints ?? []) as LayoutPoint[])) {
+      continue;
+    }
+    modeling.updateWaypoints(element, orthogonalAssociationWaypoints(sourceBounds, targetBounds));
+    changed = true;
+  }
+  return changed;
+}
+
 function findElementAt(
   target: EventTarget | null,
   registry: ElementRegistryLike,
@@ -484,6 +993,7 @@ export function DiagramEditor({
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const [replaceMenu, setReplaceMenu] = useState<ReplaceMenuState | null>(null);
   const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => loadShortcuts());
   const [autosaveSeconds, setAutosaveSeconds] = useState<number>(() => loadAutosaveSeconds());
   const [markdownToolbar, setMarkdownToolbar] = useState<boolean>(() =>
@@ -519,6 +1029,11 @@ export function DiagramEditor({
     source: AnchorSide;
     target: AnchorSide;
   } | null>(null);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [stages, setStages] = useState<DiagramStage[]>([]);
+  const [stagesOpen, setStagesOpen] = useState(false);
+  const [viewbox, setViewbox] = useState({ x: 0, y: 0, scale: 1 });
 
   const applyAllStyles = (modeler: Modeler) => {
     const registry = modeler.get<ElementRegistryLike>('elementRegistry');
@@ -528,11 +1043,12 @@ export function DiagramEditor({
       if (gfx) {
         gfx.dataset['locked'] = isElementLocked(element.di) ? 'true' : '';
       }
-      applyStyleToGfx(gfx, element.di);
+      applyStyleToGfx(gfx, element.di, element.type);
       applyExternalLabelLayout(
         gfx,
         element,
         element.type === 'label' ? readExtendedStyle(element.labelTarget?.di).textAlign : '',
+        element.type === 'label' ? readExtendedStyle(element.labelTarget?.di).textDirection : '',
       );
       if (hasManualColor(element.di)) {
         // Ручной цвет важнее темы: переносим его в inline-стиль поверх возможного оверрайда.
@@ -590,7 +1106,7 @@ export function DiagramEditor({
   });
 
   shortcutsRef.current = shortcuts;
-  overlayOpenRef.current = shortcutsOpen || themeOpen || menu !== null;
+  overlayOpenRef.current = shortcutsOpen || themeOpen || stagesOpen || menu !== null;
 
   const updateShortcuts = useCallback((next: ShortcutMap) => {
     setShortcuts(next);
@@ -673,6 +1189,7 @@ export function DiagramEditor({
     legend?: LegendPosition;
     customColors?: ThemeColorsMap;
     canvas?: CanvasTheme;
+    stages?: DiagramStage[];
   }) => {
     const modeler = modelerRef.current;
     const definitions = modeler ? findDefinitions(modeler) : undefined;
@@ -718,6 +1235,19 @@ export function DiagramEditor({
   const updateCanvasTheme = (next: CanvasTheme) => {
     setCanvasTheme(next);
     writeDiagramSettings({ canvas: next });
+  };
+
+  const updateStages = (next: DiagramStage[]) => {
+    setStages(next);
+    writeDiagramSettings({ stages: next });
+  };
+
+  const toggleStage = (stage: DiagramStage) => {
+    updateStages(
+      stages.map((item) =>
+        item.id === stage.id ? { ...item, collapsed: !item.collapsed } : item,
+      ),
+    );
   };
 
   // Комментарии живут в БД отдельно от XML (1.3.8): загрузка/мутации идут
@@ -866,12 +1396,9 @@ export function DiagramEditor({
       const next = current.add ? [...selection.get(), ...enclosed] : enclosed;
       const unique = [...new Map(next.map((element) => [element.id, element])).values()];
       // Клик после протяжки не должен сбрасывать только что сделанное выделение.
+      // Флаг снимается либо этим кликом (element.click), либо следующим
+      // mousedown — без таймера, поэтому гонки с событием click нет.
       suppressSelectionClickRef.current = true;
-      // Если браузер не пришлёт click (например, кнопку отпустили вне холста),
-      // флаг не должен глушить следующий клик по context pad.
-      window.setTimeout(() => {
-        suppressSelectionClickRef.current = false;
-      }, 0);
       cleanup();
       selection.select(unique);
     };
@@ -882,6 +1409,8 @@ export function DiagramEditor({
       if (event.button !== 0 || mouseModeRef.current !== 'select') {
         return;
       }
+      // Новое нажатие — новый жест: недоставленный клик прошлой рамки больше не актуален.
+      suppressSelectionClickRef.current = false;
       const target = event.target;
       if (!(target instanceof Element)) {
         return;
@@ -890,7 +1419,7 @@ export function DiagramEditor({
       // но не являются пустым холстом: иначе рамка съедает их клики.
       if (
         target.closest(
-          'button, a, input, select, textarea, [role="button"], .djs-context-pad, .djs-popup, .djs-palette, .djs-overlay, .djs-minimap',
+          'button, a, input, select, textarea, [role="button"], .djs-context-pad, .djs-popup, .djs-palette, .djs-overlay, .djs-minimap, .layer-resizers, .djs-resizer, .djs-bendpoint, .djs-segment-dragger',
         )
       ) {
         return;
@@ -904,7 +1433,6 @@ export function DiagramEditor({
       ) {
         return;
       }
-      suppressSelectionClickRef.current = false;
       drag = {
         startX: event.clientX,
         startY: event.clientY,
@@ -934,7 +1462,16 @@ export function DiagramEditor({
 
     const modeler = new Modeler({
       container,
-      additionalModules: [minimapModule, DrilldownModule, lockModule],
+      additionalModules: [
+        minimapModule,
+        DrilldownModule,
+        lockModule,
+        associationRoutingModule,
+        associationRoutingBehaviorModule,
+        resizeModule,
+        resizeAnchorModule,
+        resizableOutlineModule,
+      ],
       // assignee/candidateGroups — атрибуты Camunda: без расширения bpmn-js
       // пишет их в пустом неймспейсе, и XML перестаёт проходить XSD.
       moddleExtensions: { camunda: camundaModdle, bs: bsModdle },
@@ -981,6 +1518,7 @@ export function DiagramEditor({
         setCustomColors(stored.customColors);
       }
       setCanvasTheme(stored.canvas);
+      setStages(stored.stages ?? []);
       applyAllStyles(modeler);
       setRevision((value) => value + 1);
       setSave((current) => (current.kind === 'saving' ? current : { kind: 'dirty' }));
@@ -1006,10 +1544,13 @@ export function DiagramEditor({
           setCustomColors(stored.customColors);
         }
         setCanvasTheme(stored.canvas);
+        setStages(stored.stages ?? []);
+        setViewbox(modeler.get<CanvasLike>('canvas').viewbox());
+        const normalized = normalizeImportedAssociations(modeler);
         applyAllStyles(modeler);
         setReady(true);
-        // Первая загрузка не считается изменением: сохраняем «чистое» состояние.
-        setSave({ kind: 'saved' });
+        // Миграция диагональных связей — реальное изменение, его нужно сохранить.
+        setSave({ kind: normalized ? 'dirty' : 'saved' });
       })
       .catch((reason: unknown) => {
         if (!disposed) {
@@ -1039,6 +1580,48 @@ export function DiagramEditor({
       modeler.destroy();
     };
   }, [initialXml, scheduleLocalDraft, scheduleServerSave]);
+
+  // Полосы этапов живут в координатах холста: следим за зумом/панорамой.
+  useEffect(() => {
+    const modeler = modelerRef.current;
+    if (!ready || !modeler) {
+      return;
+    }
+    const canvas = modeler.get<CanvasLike>('canvas');
+    const eventBus = modeler.get<EventBusLike>('eventBus');
+    setViewbox(canvas.viewbox());
+    const onViewboxChanged = (event: EditorEvent) => {
+      if (event.viewbox) {
+        setViewbox(event.viewbox);
+      }
+    };
+    eventBus.on('canvas.viewbox.changed', onViewboxChanged);
+    return () => eventBus.off?.('canvas.viewbox.changed', onViewboxChanged);
+  }, [ready]);
+
+  // Свёрнутый этап прячет фигуры внутри полосы; модель и XML не меняются.
+  useEffect(() => {
+    const modeler = modelerRef.current;
+    if (!ready || !modeler) {
+      return;
+    }
+    const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+    const hidden = hiddenStageElementIds(stages, registry.getAll());
+    for (const element of registry.getAll()) {
+      const gfx = registry.getGraphics(element);
+      if (gfx) {
+        gfx.style.display = hidden.has(element.id) ? 'none' : '';
+      }
+    }
+    return () => {
+      for (const element of registry.getAll()) {
+        const gfx = registry.getGraphics(element);
+        if (gfx) {
+          gfx.style.display = '';
+        }
+      }
+    };
+  }, [stages, ready, revision]);
 
   // Маркеры открытых обсуждений: цифра на элементе открывает панель.
   useEffect(() => {
@@ -1461,6 +2044,14 @@ export function DiagramEditor({
           : allLocked
             ? 'Открепить элемент'
             : 'Закрепить элемент';
+      const replaceProvider = modeler.get<ReplaceMenuProviderLike>('replaceMenuProvider', false);
+      let replaceEntries: ReplaceEntry[] = [];
+      try {
+        replaceEntries = Object.values(replaceProvider?.getPopupMenuEntries(target) ?? {});
+      } catch {
+        replaceEntries = [];
+      }
+
       items = [
         {
           id: 'rename',
@@ -1511,6 +2102,20 @@ export function DiagramEditor({
           onSelect: () => pasteAtPointer(),
         },
       ];
+
+      if (replaceEntries.length > 0) {
+        items.push({
+          id: 'replace',
+          label: 'Сменить тип',
+          icon: '⟳',
+          onSelect: () =>
+            setReplaceMenu({
+              x: event.clientX,
+              y: event.clientY,
+              entries: replaceEntries,
+            }),
+        });
+      }
 
       const isDirectedFlow =
         target.type === 'bpmn:SequenceFlow' || target.type === 'bpmn:MessageFlow';
@@ -1707,96 +2312,127 @@ export function DiagramEditor({
     );
   })();
 
+  // 1.3.22: все действия тулбара — в одном меню с подписями и значками.
+  const openActionsMenu = () => {
+    if (actionsMenuOpen) {
+      setMenu(null);
+      setActionsMenuOpen(false);
+      return;
+    }
+    const rect = actionsButtonRef.current?.getBoundingClientRect();
+    const active = (on: boolean) => (on ? ' · вкл' : '');
+    const commentCount = openCommentCount(comments);
+    setMenu({
+      x: rect?.left ?? 8,
+      y: (rect?.bottom ?? 8) + 4,
+      items: [
+        {
+          id: 'undo',
+          icon: '↶',
+          label: 'Отменить',
+          hint: formatCombo(shortcuts.undo),
+          disabled: !canUndo,
+          onSelect: () => executeAction('undo'),
+        },
+        {
+          id: 'redo',
+          icon: '↷',
+          label: 'Повторить',
+          hint: formatCombo(shortcuts.redo),
+          disabled: !canRedo,
+          onSelect: () => executeAction('redo'),
+        },
+        { id: 'sep-history', label: '', separator: true },
+        {
+          id: 'fit',
+          icon: '⤢',
+          label: 'Вписать',
+          hint: formatCombo(shortcuts.fit),
+          onSelect: () => executeAction('fit'),
+        },
+        {
+          id: 'minimap',
+          icon: '▦',
+          label: `Мини-карта${active(minimapOpen)}`,
+          hint: formatCombo(shortcuts.toggleMinimap),
+          onSelect: () => executeAction('toggleMinimap'),
+        },
+        { id: 'sep-view', label: '', separator: true },
+        {
+          id: 'theme',
+          icon: '🎨',
+          label: 'Тема',
+          onSelect: () => setThemeOpen(true),
+        },
+        {
+          id: 'legend',
+          icon: '▤',
+          label: `Легенда${active(legendOpen)}`,
+          onSelect: () => setLegendOpen((value) => !value),
+        },
+        {
+          id: 'comments',
+          icon: '💬',
+          label: `Комментарии${commentCount ? ` (${commentCount})` : ''}${active(commentsOpen)}`,
+          onSelect: () => setCommentsOpen((value) => !value),
+        },
+        {
+          id: 'properties',
+          icon: '☰',
+          label: 'Свойства',
+          onSelect: () => setInspectorOpen((value) => !value),
+        },
+        {
+          id: 'stages',
+          icon: '▥',
+          label: 'Этапы…',
+          onSelect: () => setStagesOpen(true),
+        },
+        { id: 'sep-settings', label: '', separator: true },
+        {
+          id: 'status',
+          icon: '•',
+          label: saveStateLabel(save),
+          disabled: true,
+        },
+        {
+          id: 'shortcuts',
+          icon: '⌨',
+          label: 'Клавиши',
+          hint: formatCombo(shortcuts.settings),
+          onSelect: () => setShortcutsOpen(true),
+        },
+        {
+          id: 'save',
+          icon: '💾',
+          label: 'Сохранить',
+          hint: formatCombo(shortcuts.save),
+          disabled: save.kind === 'saved' || save.kind === 'saving',
+          onSelect: () => executeAction('save'),
+        },
+      ],
+    });
+    setActionsMenuOpen(true);
+  };
+
   return (
     <div className="workspace">
       <div className="workspace__main">
         <div className="editor-toolbar">
           <div className="editor-toolbar__group">
             <button
+              ref={actionsButtonRef}
               type="button"
-              className="ghost-button"
-              onClick={() => executeAction('undo')}
-              disabled={!canUndo}
-              title={`Отменить (${formatCombo(shortcuts.undo)})`}
+              className="ghost-button ghost-button--menu"
+              aria-haspopup="menu"
+              aria-expanded={actionsMenuOpen}
+              onClick={openActionsMenu}
             >
-              Отменить
-            </button>
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => executeAction('redo')}
-              disabled={!canRedo}
-              title={`Повторить (${formatCombo(shortcuts.redo)})`}
-            >
-              Повторить
-            </button>
-            <span className="editor-toolbar__divider" aria-hidden="true" />
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => executeAction('fit')}
-              title={`Вписать диаграмму (${formatCombo(shortcuts.fit)})`}
-            >
-              Вписать
-            </button>
-            <button
-              type="button"
-              className={minimapOpen ? 'ghost-button ghost-button--active' : 'ghost-button'}
-              onClick={() => executeAction('toggleMinimap')}
-              title={`Мини-карта (${formatCombo(shortcuts.toggleMinimap)})`}
-            >
-              Мини-карта
-            </button>
-            <button type="button" className="ghost-button" onClick={() => setThemeOpen(true)}>
-              Тема
-            </button>
-            <button
-              type="button"
-              className={legendOpen ? 'ghost-button ghost-button--active' : 'ghost-button'}
-              onClick={() => setLegendOpen((value) => !value)}
-            >
-              Легенда
-            </button>
-            <button
-              type="button"
-              className={commentsOpen ? 'ghost-button ghost-button--active' : 'ghost-button'}
-              onClick={() => setCommentsOpen((value) => !value)}
-              title="Обсуждение выбранного элемента"
-            >
-              Комментарии{openCommentCount(comments) ? ` (${openCommentCount(comments)})` : ''}
-            </button>
-            <button
-              type="button"
-              className={
-                inspectorOpen
-                  ? 'ghost-button ghost-button--active narrow-only'
-                  : 'ghost-button narrow-only'
-              }
-              onClick={() => setInspectorOpen((value) => !value)}
-              title="Показать свойства элемента"
-            >
-              Свойства
+              <span aria-hidden="true">☰</span> Действия
             </button>
           </div>
           <div className="editor-toolbar__group">
             <SaveBadge state={save} />
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => setShortcutsOpen(true)}
-              title={`Горячие клавиши (${formatCombo(shortcuts.settings)})`}
-            >
-              Клавиши
-            </button>
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => executeAction('save')}
-              disabled={save.kind === 'saved' || save.kind === 'saving'}
-              title={`Сохранить (${formatCombo(shortcuts.save)})`}
-            >
-              Сохранить
-            </button>
           </div>
         </div>
 
@@ -1862,11 +2498,11 @@ export function DiagramEditor({
             <span className="editor-toolbar__divider" aria-hidden="true" />
             {(
               [
-                ['left', 'Л', 'По левому краю'],
-                ['center', 'Ц', 'По центру'],
-                ['right', 'П', 'По правому краю'],
+                ['left', 'По левому краю'],
+                ['center', 'По центру'],
+                ['right', 'По правому краю'],
               ] as const
-            ).map(([value, label, title]) => (
+            ).map(([value, title]) => (
               <button
                 key={value}
                 type="button"
@@ -1877,10 +2513,36 @@ export function DiagramEditor({
                 }
                 disabled={!selectedInspector}
                 title={title}
+                aria-label={title}
                 aria-pressed={(selectedInspector?.textAlign || 'center') === value}
                 onClick={() => applyPatch({ textAlign: value })}
               >
-                {label}
+                <AlignIcon align={value} />
+              </button>
+            ))}
+            <span className="editor-toolbar__divider" aria-hidden="true" />
+            {(
+              [
+                ['', 'Направление текста: горизонтально'],
+                ['vertical', 'Направление текста: вертикально'],
+                ['rotate', 'Направление текста: поворот'],
+              ] as const
+            ).map(([value, title]) => (
+              <button
+                key={value}
+                type="button"
+                className={
+                  (selectedInspector?.textDirection || '') === value
+                    ? 'ghost-button ghost-button--small ghost-button--active'
+                    : 'ghost-button ghost-button--small'
+                }
+                disabled={!selectedInspector}
+                title={title}
+                aria-label={title}
+                aria-pressed={(selectedInspector?.textDirection || '') === value}
+                onClick={() => applyPatch({ textDirection: value })}
+              >
+                <DirectionIcon value={value} />
               </button>
             ))}
           </div>
@@ -2002,6 +2664,7 @@ export function DiagramEditor({
             data-revision={revision}
             onContextMenu={openContextMenu}
           />
+          <StageBands stages={stages} viewbox={viewbox} onToggle={toggleStage} />
           {marquee ? (
             <div
               className="canvas-marquee"
@@ -2066,6 +2729,12 @@ export function DiagramEditor({
         }}
       />
 
+      <StagesDialog
+        open={stagesOpen}
+        stages={stages}
+        onChange={updateStages}
+        onClose={() => setStagesOpen(false)}
+      />
       <ConnectionAnchors
         open={anchorEditor !== null}
         sourceName={
@@ -2094,15 +2763,28 @@ export function DiagramEditor({
           if (!sourceBounds || !targetBounds) {
             return;
           }
-          const waypoints = [...(connection.waypoints as { x: number; y: number }[])];
-          waypoints[0] = anchorPoint(sourceBounds, source);
-          waypoints[waypoints.length - 1] = anchorPoint(targetBounds, target);
-          modeler.get<ModelingLike>('modeling').updateWaypoints(connection, waypoints);
+          const modeling = modeler.get<ModelingLike>('modeling');
+          // Считаем маршрут layouter'ом с новыми концами — старые изломы
+          // могут пересекать фигуры после переноса точки примыкания.
+          // У `modeling.layoutConnection` нет возврата: это команда.
+          const waypoints = modeler.get<LayouterLike>('layouter').layoutConnection(connection, {
+            connectionStart: anchorPoint(sourceBounds, source),
+            connectionEnd: anchorPoint(targetBounds, target),
+          });
+          modeling.updateWaypoints(connection, waypoints);
           setAnchorEditor(null);
         }}
         onClose={() => setAnchorEditor(null)}
       />
-      <ContextMenu menu={menu} onClose={() => setMenu(null)} />
+      <ContextMenu
+        menu={menu}
+        onClose={() => {
+          setMenu(null);
+          setActionsMenuOpen(false);
+        }}
+        ignoreRef={actionsButtonRef}
+      />
+      <ReplaceMenu menu={replaceMenu} onClose={() => setReplaceMenu(null)} />
       <ThemeSettings
         open={themeOpen}
         value={themeId}
@@ -2129,6 +2811,19 @@ export function DiagramEditor({
       />
     </div>
   );
+}
+
+function saveStateLabel(state: SaveState): string {
+  switch (state.kind) {
+    case 'saving':
+      return 'сохраняю…';
+    case 'dirty':
+      return 'есть изменения';
+    case 'error':
+      return 'не сохранено';
+    default:
+      return 'сохранено';
+  }
 }
 
 function SaveBadge({ state }: { state: SaveState }) {

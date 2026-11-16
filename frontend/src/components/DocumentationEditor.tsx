@@ -2,33 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 
 import { applyFormat, type FormatKind, type TextSelection } from '../lib/markdown-toolbar';
 import { MarkdownView } from './MarkdownView';
-
-interface ToolbarItem {
-  kind: FormatKind;
-  label: string;
-  title: string;
-}
-
-const TOOLBAR: ToolbarItem[] = [
-  { kind: 'bold', label: 'Ж', title: 'Жирный (**текст**)' },
-  { kind: 'italic', label: 'К', title: 'Курсив (*текст*)' },
-  { kind: 'code', label: '‹›', title: 'Код (`текст`)' },
-  { kind: 'heading', label: 'З', title: 'Заголовок (## текст)' },
-  { kind: 'bulletList', label: '•—', title: 'Маркированный список' },
-  { kind: 'orderedList', label: '1.', title: 'Нумерованный список' },
-  { kind: 'link', label: '🔗', title: 'Ссылка [текст](url)' },
-];
+import { MARKDOWN_TOOLS, MarkdownWindow } from './MarkdownWindow';
 
 /** Документация элемента: Markdown с панелью форматирования и предпросмотром. */
 export function DocumentationEditor({
   value,
+  title,
   onChange,
 }: {
   value: string;
+  title?: string;
   onChange: (next: string) => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [preview, setPreview] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   // Выделение, которое нужно восстановить после обновления value из родителя.
   const [pendingSelection, setPendingSelection] = useState<
     (TextSelection & { nonce: number }) | null
@@ -60,7 +48,7 @@ export function DocumentationEditor({
   return (
     <div className="docs-editor">
       <div className="docs-editor__toolbar" role="group" aria-label="Форматирование документации">
-        {TOOLBAR.map((item) => (
+        {MARKDOWN_TOOLS.map((item) => (
           <button
             key={item.kind}
             type="button"
@@ -83,6 +71,14 @@ export function DocumentationEditor({
         >
           {preview ? 'Редактирование' : 'Предпросмотр'}
         </button>
+        <button
+          type="button"
+          className="docs-editor__preview"
+          title="Открыть большое окно с предпросмотром"
+          onClick={() => setExpanded(true)}
+        >
+          Окно
+        </button>
       </div>
       {preview ? (
         <div className="docs-editor__preview-pane">
@@ -97,6 +93,18 @@ export function DocumentationEditor({
           onChange={(event) => onChange(event.target.value)}
         />
       )}
+      <p className="docs-editor__hint">
+        Поддерживается: заголовки <code>#</code>, маркированные и нумерованные списки,{' '}
+        <code>**жирный**</code>, <code>*курсив*</code>, <code>`код`</code> и{' '}
+        <code>[ссылки](https://…)</code>. Вложенные списки, цитаты и HTML не поддерживаются.
+      </p>
+      <MarkdownWindow
+        open={expanded}
+        title={title || 'элемент'}
+        value={value}
+        onChange={onChange}
+        onClose={() => setExpanded(false)}
+      />
     </div>
   );
 }
