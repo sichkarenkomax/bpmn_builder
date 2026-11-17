@@ -16,11 +16,7 @@ export interface Point {
  * угол — углом. В отличие от штатного bpmn-js, не оставляет старую точку
  * снаружи/внутри новой рамки (из-за этого стрелка «съезжала» при ресайзе).
  */
-export function proportionalAnchor(
-  point: Point,
-  oldBounds: Bounds,
-  newBounds: Bounds,
-): Point {
+export function proportionalAnchor(point: Point, oldBounds: Bounds, newBounds: Bounds): Point {
   if (oldBounds.width === 0 || oldBounds.height === 0) {
     return { x: point.x, y: point.y };
   }

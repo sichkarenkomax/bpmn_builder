@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     s3_access_key: str = "minioadmin"
     s3_secret_key: str = "minioadmin"
 
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost"])
+    cors_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost", "http://localhost:5173"]
+    )
 
     @field_validator("database_url")
     @classmethod

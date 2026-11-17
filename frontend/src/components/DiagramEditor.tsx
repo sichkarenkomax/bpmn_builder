@@ -331,10 +331,8 @@ class OrthogonalAssociationLayouter extends BpmnLayouter {
   ): LayoutPoint[] {
     if (is(connection, 'bpmn:Association') || is(connection, 'bpmn:DataAssociation')) {
       const association = connection as unknown as DiagramElement;
-      const source =
-        (hints.source as unknown as DiagramElement | undefined) ?? association.source;
-      const target =
-        (hints.target as unknown as DiagramElement | undefined) ?? association.target;
+      const source = (hints.source as unknown as DiagramElement | undefined) ?? association.source;
+      const target = (hints.target as unknown as DiagramElement | undefined) ?? association.target;
       const sourceBounds = shapeBounds(source);
       const targetBounds = shapeBounds(target);
       if (sourceBounds && targetBounds) {
@@ -450,10 +448,7 @@ class ResizeAllShapesRules extends RuleProvider {
       if (!shape || shape.type === 'label') {
         return undefined;
       }
-      if (
-        context.newBounds &&
-        (context.newBounds.width < 12 || context.newBounds.height < 12)
-      ) {
+      if (context.newBounds && (context.newBounds.width < 12 || context.newBounds.height < 12)) {
         return false;
       }
       return shape.type?.startsWith('bpmn:') ? true : undefined;
@@ -512,8 +507,7 @@ class AssociationRoutingProvider {
         current.length === next.length &&
         current.every(
           (point, index) =>
-            Math.abs(point.x - next[index]!.x) < 0.5 &&
-            Math.abs(point.y - next[index]!.y) < 0.5,
+            Math.abs(point.x - next[index]!.x) < 0.5 && Math.abs(point.y - next[index]!.y) < 0.5,
         )
       ) {
         return;
@@ -577,7 +571,11 @@ interface LayoutHintsLike {
 
 interface LayoutContextLike {
   shape?: ShapeLike;
-  connection?: DiagramElement & { waypoints?: Point[]; source?: DiagramElement; target?: DiagramElement };
+  connection?: DiagramElement & {
+    waypoints?: Point[];
+    source?: DiagramElement;
+    target?: DiagramElement;
+  };
   hints?: LayoutHintsLike;
 }
 
@@ -590,7 +588,11 @@ class ResizeAnchorProvider {
   static $inject = ['eventBus'];
 
   constructor(eventBus: {
-    on: (events: string, priority: number, handler: (event: { context?: LayoutContextLike }) => void) => void;
+    on: (
+      events: string,
+      priority: number,
+      handler: (event: { context?: LayoutContextLike }) => void,
+    ) => void;
   }) {
     const oldBounds = new Map<string, Bounds>();
 
@@ -1244,9 +1246,7 @@ export function DiagramEditor({
 
   const toggleStage = (stage: DiagramStage) => {
     updateStages(
-      stages.map((item) =>
-        item.id === stage.id ? { ...item, collapsed: !item.collapsed } : item,
-      ),
+      stages.map((item) => (item.id === stage.id ? { ...item, collapsed: !item.collapsed } : item)),
     );
   };
 

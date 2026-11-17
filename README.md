@@ -32,9 +32,9 @@ uv run uvicorn app.main:app --reload --port 8000
 cd frontend && npm ci && npm run dev
 ```
 
-Фронтенд слушает 80. В Docker это норма (процесс root), а при запуске на хосте
-Linux без root понадобится разрешение на привилегированный порт, например:
-`sudo setcap cap_net_bind_service=+ep $(readlink -f $(which node))`.
+Фронтенд откроется на http://localhost:5173. В Docker он по-прежнему доступен
+на http://localhost: порт 80 задаётся явно в команде контейнера, поэтому root-права
+на хосте для локальной разработки не нужны.
 
 Хосты в `.env` рассчитаны на compose (`postgres`, `redis`), поэтому при локальном
 запуске переменные нужно переопределить, как показано выше.

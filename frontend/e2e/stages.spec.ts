@@ -31,17 +31,21 @@ test('этапы: полоса на холсте, переименование, 
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Добавить этап' }).click();
     await dialog.getByLabel('Название этапа 1').fill('Согласование');
+    await dialog.getByRole('button', { name: 'Добавить веху к этапу 1' }).click();
+    await dialog.getByLabel('Название вехи 1 этапа 1').fill('Проверка');
     await dialog.getByRole('button', { name: 'Применить' }).click();
 
     const band = page.locator('.stage-band').first();
     await expect(band).toBeVisible();
     await expect(band.locator('.stage-band__name')).toHaveText('Согласование');
+    await expect(band.locator('.stage-milestone__label')).toHaveText('Проверка');
     await expect(task).toBeVisible();
 
     // Свёрнутый этап прячет задачу, но XML остаётся прежним.
     await band.getByRole('button', { name: 'Свернуть этап «Согласование»' }).click();
     await expect(page.locator('.stage-band').first()).toHaveAttribute('data-collapsed', 'true');
     await expect(task).toBeHidden();
+    await expect(band.locator('.stage-milestone')).toHaveCount(0);
 
     await Promise.all([
       page.waitForResponse(
@@ -55,12 +59,14 @@ test('этапы: полоса на холсте, переименование, 
     const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
     expect(xml).toContain('bs:stages');
     expect(xml).toContain('Согласование');
+    expect(xml).toContain('Проверка');
 
     // После перезагрузки этап и его свёрнутость на месте.
     await page.reload();
     await expect(page.locator('.stage-band').first()).toBeVisible();
     await expect(page.locator('.stage-band').first()).toHaveAttribute('data-collapsed', 'true');
     await expect(page.locator('[data-element-id="Task_Review"]').first()).toBeHidden();
+    await expect(page.locator('.stage-milestone')).toHaveCount(0);
 
     // Разворачивание возвращает элементы.
     await page
@@ -69,6 +75,7 @@ test('этапы: полоса на холсте, переименование, 
       .getByRole('button', { name: 'Развернуть этап «Согласование»' })
       .click();
     await expect(page.locator('[data-element-id="Task_Review"]').first()).toBeVisible();
+    await expect(page.locator('.stage-milestone__label')).toHaveText('Проверка');
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }

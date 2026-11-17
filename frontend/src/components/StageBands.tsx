@@ -45,9 +45,7 @@ export function StageBands({
               <span className="stage-band__name" title={stage.name}>
                 {stage.name || 'Без названия'}
               </span>
-              {stage.collapsed ? (
-                <span className="stage-band__collapsed-note">свёрнут</span>
-              ) : null}
+              {stage.collapsed ? <span className="stage-band__collapsed-note">свёрнут</span> : null}
               <button
                 type="button"
                 className="stage-band__toggle"

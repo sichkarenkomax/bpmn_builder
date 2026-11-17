@@ -52,11 +52,7 @@ export function StagesDialog({
     );
   };
 
-  const patchMilestone = (
-    stageId: string,
-    milestoneId: string,
-    next: Partial<StageMilestone>,
-  ) => {
+  const patchMilestone = (stageId: string, milestoneId: string, next: Partial<StageMilestone>) => {
     setDraft((current) =>
       current.map((stage) =>
         stage.id === stageId
@@ -88,9 +84,9 @@ export function StagesDialog({
         </header>
 
         <p className="dialog__hint">
-          Этап — горизонтальная полоса поверх пулов. Свёрнутый этап прячет фигуры внутри полосы,
-          не меняя XML; «Отступ» и «Высота» задаются в координатах холста. Веха — вертикальная
-          отметка внутри этапа.
+          Этап — горизонтальная полоса поверх пулов. Свёрнутый этап прячет фигуры внутри полосы, не
+          меняя XML; «Отступ» и «Высота» задаются в координатах холста. Веха — вертикальная отметка
+          внутри этапа.
         </p>
 
         {draft.length === 0 ? (

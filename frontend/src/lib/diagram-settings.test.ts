@@ -54,9 +54,7 @@ describe('настройки в документе', () => {
 
   it('хранит и читает этапы в bs:stages', () => {
     const properties = diagramSettingsProperties({
-      stages: [
-        { id: 's1', name: 'Этап', y: 10, height: 120, collapsed: true, milestones: [] },
-      ],
+      stages: [{ id: 's1', name: 'Этап', y: 10, height: 120, collapsed: true, milestones: [] }],
     });
     const settings = readDiagramSettings({ $attrs: { 'bs:stages': properties['stages']! } });
 

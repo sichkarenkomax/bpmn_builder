@@ -56,7 +56,14 @@ describe('этапы схемы (1.3.14)', () => {
 
   it('новый этап встаёт ниже существующих', () => {
     const stage = createStage([
-      { id: 's1', name: 'Первый', y: 20, height: STAGE_DEFAULT_HEIGHT, collapsed: false, milestones: [] },
+      {
+        id: 's1',
+        name: 'Первый',
+        y: 20,
+        height: STAGE_DEFAULT_HEIGHT,
+        collapsed: false,
+        milestones: [],
+      },
     ]);
 
     expect(stage.y).toBe(20 + STAGE_DEFAULT_HEIGHT + 24);
@@ -96,7 +103,15 @@ describe('этапы схемы (1.3.14)', () => {
       },
       { id: 'Outside', type: 'bpmn:Task', x: 200, y: 400, width: 100, height: 80 },
       { id: 'Pool', type: 'bpmn:Participant', x: 0, y: 20, width: 800, height: 300 },
-      { id: 'Label', type: 'label', x: 200, y: 80, width: 50, height: 20, labelTarget: { id: 'Task' } },
+      {
+        id: 'Label',
+        type: 'label',
+        x: 200,
+        y: 80,
+        width: 50,
+        height: 20,
+        labelTarget: { id: 'Task' },
+      },
     ];
 
     expect([...hiddenStageElementIds(stages, elements)].sort()).toEqual([

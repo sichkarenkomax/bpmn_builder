@@ -70,12 +70,7 @@ export function MarkdownWindow({
     if (!textarea) {
       return;
     }
-    const result = applyFormat(
-      kind,
-      draft,
-      textarea.selectionStart,
-      textarea.selectionEnd,
-    );
+    const result = applyFormat(kind, draft, textarea.selectionStart, textarea.selectionEnd);
     setDraft(result.value);
     setPendingSelection({ ...result, nonce: Date.now() });
   };
