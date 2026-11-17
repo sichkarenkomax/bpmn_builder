@@ -4,8 +4,6 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
 
-import { openActions } from './helpers';
-
 /**
  * Ключевой сценарий редактора (перенесён из ручных прогонов в /tmp):
  * чёрные стрелки, толстая граница завершающего события, своя тема,
@@ -213,8 +211,7 @@ test('тема, комментарии и сохранение пережива�
     expect(endStroke).toBe('4px');
 
     // 1.3.11: своя тема — цвета по категориям и тёмный фон холста.
-    await openActions(page);
-    await page.getByRole('menuitem', { name: 'Тема' }).click();
+    await page.getByRole('button', { name: 'Тема' }).click();
     const dialog = page.getByRole('dialog', { name: 'Тема оформления' });
     await expect(dialog).toBeVisible();
     await dialog.locator('input[name="diagram-theme"][value="custom"]').check();
@@ -257,12 +254,20 @@ test('тема, комментарии и сохранение пережива�
 
     // 1.3.8: комментарий к выбранному элементу и маркер на холсте.
     await task.click();
-    await openActions(page);
-    await page.getByRole('menuitem', { name: /^Комментарии/ }).click();
+    await page.getByRole('button', { name: /^Комментарии/ }).click();
     const panel = page.getByRole('region', { name: 'Комментарии' });
-    await panel.getByLabel('Новый комментарий').fill('Проверить SLA до пятницы');
+    await expect(panel.getByRole('button', { name: 'Жирный (**текст**)' })).toBeVisible();
+    await panel
+      .getByLabel('Новый комментарий')
+      .fill('**Проверить SLA** до пятницы\n\n- [ ] позвонить клиенту');
+    await panel.getByRole('button', { name: 'Предпросмотр' }).click();
+    await expect(panel.locator('.comments-panel__preview strong')).toHaveText('Проверить SLA');
+    await expect(
+      panel.locator('.comments-panel__preview input[type="checkbox"]'),
+    ).not.toBeChecked();
     await panel.getByRole('button', { name: 'Отправить' }).click();
-    await expect(panel.getByText('Проверить SLA до пятницы')).toBeVisible();
+    await expect(panel.locator('.comment__body strong')).toHaveText('Проверить SLA');
+    await expect(panel.locator('.comment__body input[type="checkbox"]')).not.toBeChecked();
     await expect(page.locator('.comment-pin')).toHaveText('1');
 
     await page.reload();
@@ -291,7 +296,7 @@ test('тема, комментарии и сохранение пережива�
     // Resolve убирает маркер, но сообщение остаётся в ветке.
     await page.locator('.comment-pin').click();
     const reopened = page.getByRole('region', { name: 'Комментарии' });
-    await expect(reopened.getByText('Проверить SLA до пятницы')).toBeVisible();
+    await expect(reopened.locator('.comment__body strong')).toHaveText('Проверить SLA');
     await reopened.getByRole('button', { name: 'Решить' }).click();
     await expect(page.locator('.comment-pin')).toHaveCount(0);
     await expect(reopened.getByText('решено')).toBeVisible();

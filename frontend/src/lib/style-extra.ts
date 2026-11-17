@@ -236,6 +236,14 @@ type ExternalLabelElement = {
   type?: string;
   x?: number;
   y?: number;
+  width?: number;
+  height?: number;
+  di?: {
+    label?: {
+      bounds?: { x?: number; y?: number; width?: number; height?: number };
+    };
+    [key: string]: unknown;
+  };
   labelTarget?: {
     x?: number;
     y?: number;
@@ -267,14 +275,20 @@ export function applyExternalLabelLayout(
     return;
   }
 
-  const rotatesFrame = direction === 'rotate' && !host.waypoints;
-  for (const label of gfx.querySelectorAll<SVGTextElement>('.djs-label')) {
-    // При повороте подписи вращаем её фрейм целиком, иначе текст
-    // поворачивается внутри неподвижной рамки и вылезает за неё.
-    applyTextDirection(label, direction, !rotatesFrame);
+  const rotatesFrame = direction === 'rotate';
+  const label = gfx.querySelector<SVGTextElement>('.djs-label');
+  if (!label) {
+    return;
   }
+  applyTextDirection(label, direction, !rotatesFrame);
   if (typeof element.y !== 'number' || typeof element.x !== 'number') {
     return;
+  }
+
+  const textBox = safeTextBox(label);
+  if (textBox && typeof host.x === 'number' && typeof host.width === 'number') {
+    fitExternalLabelFrame(gfx, element, host, textBox, align);
+    label.style.transform = '';
   }
 
   let shift = 0;
@@ -320,11 +334,86 @@ export function applyExternalLabelLayout(
         ? host.x + host.width - padding
         : host.x + host.width / 2;
   const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
-  for (const label of gfx.querySelectorAll<SVGTextElement>('.djs-label')) {
-    label.setAttribute('text-anchor', anchor);
-    for (const line of label.querySelectorAll<SVGTextElement>('tspan')) {
-      line.setAttribute('x', String(target - element.x));
+  label.setAttribute('text-anchor', anchor);
+  for (const line of label.querySelectorAll<SVGTextElement>('tspan')) {
+    line.setAttribute('x', String(target - element.x));
+  }
+}
+
+/**
+ * Подгоняет невидимый фрейм вынесенной подписи под реальный текст.
+ *
+ * bpmn-js при импорте сохраняет записанную в DI ширину, а кегль подписей
+ * в приложении меняется. Из-за этого текст больше фрейма: по центру он
+ * выглядит неровно, а по краям вылезает наружу. Расширяем фрейм вокруг
+ * выбранной стороны и центрируем строки по вертикали.
+ */
+function fitExternalLabelFrame(
+  gfx: SVGGElement,
+  element: ExternalLabelElement,
+  host: NonNullable<ExternalLabelElement['labelTarget']>,
+  textBox: { x: number; y: number; width: number; height: number },
+  align: string,
+): void {
+  if (textBox.width <= 0 || textBox.height <= 0) {
+    return;
+  }
+  const padding = Math.min(EXTERNAL_LABEL_PADDING, host.width! / 4);
+  const width = Math.ceil(textBox.width + padding * 2);
+  const height = Math.ceil(textBox.height + 4);
+  const x =
+    align === 'left'
+      ? host.x!
+      : align === 'right'
+        ? host.x! + host.width! - width
+        : host.x! + host.width! / 2 - width / 2;
+  const centerY = element.y! + (element.height ?? height) / 2;
+  const y = centerY - height / 2;
+
+  if (element.x !== x || element.y !== y || element.width !== width || element.height !== height) {
+    element.x = x;
+    element.y = y;
+    element.width = width;
+    element.height = height;
+
+    const bounds = element.di?.label?.bounds;
+    if (bounds) {
+      bounds.x = x;
+      bounds.y = y;
+      bounds.width = width;
+      bounds.height = height;
     }
+    gfx.setAttribute('transform', `matrix(1 0 0 1 ${x} ${y})`);
+    const hit = gfx.querySelector<SVGRectElement>('.djs-hit');
+    if (hit) {
+      hit.setAttribute('x', '0');
+      hit.setAttribute('y', '0');
+      hit.setAttribute('width', String(width));
+      hit.setAttribute('height', String(height));
+    }
+  }
+
+  // Строки bpmn-js раскладывает от верхнего края; центрируем готовый текст
+  // по вертикали, чтобы подпись не прилипала к верхней границе фрейма.
+  const delta = height / 2 - (textBox.y + textBox.height / 2);
+  if (Math.abs(delta) > 0.1) {
+    for (const line of gfx.querySelectorAll<SVGTextElement>('.djs-label tspan')) {
+      const current = Number.parseFloat(line.getAttribute('y') ?? '0');
+      if (Number.isFinite(current)) {
+        line.setAttribute('y', String(current + delta));
+      }
+    }
+  }
+}
+
+function safeTextBox(
+  element: SVGTextElement,
+): { x: number; y: number; width: number; height: number } | null {
+  try {
+    const box = element.getBBox();
+    return Number.isFinite(box.width) && Number.isFinite(box.height) ? box : null;
+  } catch {
+    return null;
   }
 }
 

@@ -4,8 +4,6 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
 
-import { openActions } from './helpers';
-
 /**
  * 1.3.12: документация элемента в Markdown — панель форматирования,
  * предпросмотр, сохранение в XML и переключатель в настройках.
@@ -93,8 +91,7 @@ test('Markdown-панель документации: форматировани
     );
 
     // Переключатель в настройках: панель отключается и переживает перезагрузку.
-    await openActions(page);
-    await page.getByRole('menuitem', { name: 'Клавиши' }).click();
+    await page.getByRole('button', { name: 'Клавиши' }).click();
     const settings = page.getByRole('dialog', { name: 'Горячие клавиши' });
     await expect(settings).toBeVisible();
     await settings.getByLabel('Markdown-панель в документации элемента').uncheck();

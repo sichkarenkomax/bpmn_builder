@@ -11,12 +11,15 @@ describe('parseMarkdown', () => {
       {
         kind: 'list',
         ordered: false,
-        items: [[{ kind: 'text', value: 'первый' }], [{ kind: 'text', value: 'второй' }]],
+        items: [
+          { inlines: [{ kind: 'text', value: 'первый' }], checked: null },
+          { inlines: [{ kind: 'text', value: 'второй' }], checked: null },
+        ],
       },
       {
         kind: 'list',
         ordered: true,
-        items: [[{ kind: 'text', value: 'третий' }]],
+        items: [{ inlines: [{ kind: 'text', value: 'третий' }], checked: null }],
       },
     ]);
   });
@@ -30,10 +33,45 @@ describe('parseMarkdown', () => {
     });
   });
 
-  it('уровень заголовка ограничен четырьмя решётками', () => {
-    const blocks = parseMarkdown('#### мелкий\n##### не заголовок');
-    expect(blocks[0]).toMatchObject({ kind: 'heading', level: 4 });
-    expect(blocks[1]).toMatchObject({ kind: 'paragraph' });
+  it('поддерживает шесть уровней заголовков', () => {
+    const blocks = parseMarkdown('#### четвёртый\n##### пятый\n###### шестой');
+    expect(blocks).toEqual([
+      { kind: 'heading', level: 4, inlines: [{ kind: 'text', value: 'четвёртый' }] },
+      { kind: 'heading', level: 5, inlines: [{ kind: 'text', value: 'пятый' }] },
+      { kind: 'heading', level: 6, inlines: [{ kind: 'text', value: 'шестой' }] },
+    ]);
+  });
+
+  it('разбирает чек-лист и обычный список отдельно', () => {
+    const blocks = parseMarkdown('- [ ] сделать\n- [x] готово\n\n- обычный');
+    expect(blocks[0]).toEqual({
+      kind: 'list',
+      ordered: false,
+      items: [
+        { inlines: [{ kind: 'text', value: 'сделать' }], checked: false },
+        { inlines: [{ kind: 'text', value: 'готово' }], checked: true },
+      ],
+    });
+    expect(blocks[1]).toMatchObject({ kind: 'list', ordered: false });
+  });
+
+  it('разбирает цитату, линию и блок кода', () => {
+    const blocks = parseMarkdown('> важно\n> ещё\n\n---\n\n```ts\nconst x = 1;\n```');
+    expect(blocks[0]).toMatchObject({ kind: 'blockquote' });
+    expect(blocks[1]).toEqual({ kind: 'hr' });
+    expect(blocks[2]).toEqual({ kind: 'code', language: 'ts', code: 'const x = 1;' });
+  });
+
+  it('разбирает таблицу с выравниванием колонок', () => {
+    const blocks = parseMarkdown('| Имя | Статус |\n| :--- | ---: |\n| Заявка | **готово** |');
+    expect(blocks).toEqual([
+      {
+        kind: 'table',
+        align: ['left', 'right'],
+        headers: [[{ kind: 'text', value: 'Имя' }], [{ kind: 'text', value: 'Статус' }]],
+        rows: [[[{ kind: 'text', value: 'Заявка' }], [{ kind: 'strong', value: 'готово' }]]],
+      },
+    ]);
   });
 
   it('пустой и неопределённый текст дают пустой документ', () => {
@@ -56,6 +94,12 @@ describe('parseInline', () => {
       { kind: 'code', value: 'x=1' },
       { kind: 'text', value: ', ссылка ' },
       { kind: 'link', value: 'docs', url: 'https://example.com' },
+    ]);
+  });
+
+  it('разбирает изображение отдельно от ссылки', () => {
+    expect(parseInline('![схема](https://example.com/a.png)')).toEqual([
+      { kind: 'image', value: 'схема', url: 'https://example.com/a.png' },
     ]);
   });
 

@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { DiagramComment } from '../lib/api';
 import { commentAuthorLabel, formatCommentTime } from '../lib/comments';
+import { applyFormat, type FormatKind, type TextSelection } from '../lib/markdown-toolbar';
+import { MarkdownView } from './MarkdownView';
+import { MARKDOWN_TOOLS } from './MarkdownWindow';
 
 /** Панель обсуждения выбранного элемента (1.3.8). */
 export function CommentsPanel({
@@ -24,6 +27,23 @@ export function CommentsPanel({
   onClose: () => void;
 }) {
   const [body, setBody] = useState('');
+  const [preview, setPreview] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<
+    (TextSelection & { nonce: number }) | null
+  >(null);
+
+  useEffect(() => {
+    if (!pendingSelection) {
+      return;
+    }
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.focus();
+      textarea.setSelectionRange(pendingSelection.start, pendingSelection.end);
+    }
+    setPendingSelection(null);
+  }, [pendingSelection]);
 
   const submit = () => {
     const trimmed = body.trim();
@@ -32,6 +52,17 @@ export function CommentsPanel({
     }
     onCreate(trimmed);
     setBody('');
+    setPreview(false);
+  };
+
+  const format = (kind: FormatKind) => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    const result = applyFormat(kind, body, textarea.selectionStart, textarea.selectionEnd);
+    setBody(result.value);
+    setPendingSelection({ ...result, nonce: Date.now() });
   };
 
   return (
@@ -71,7 +102,9 @@ export function CommentsPanel({
                   <span className="comment__time">{formatCommentTime(comment.created_at)}</span>
                   {comment.resolved_at ? <span className="comment__badge">решено</span> : null}
                 </header>
-                <p className="comment__body">{comment.body}</p>
+                <div className="comment__body">
+                  <MarkdownView text={comment.body} />
+                </div>
                 <div className="comment__actions">
                   <button
                     type="button"
@@ -100,29 +133,70 @@ export function CommentsPanel({
 
       {elementName ? (
         <div className="comments-panel__composer">
-          <textarea
-            className="comments-panel__input"
-            aria-label="Новый комментарий"
-            placeholder="Написать комментарий…"
-            rows={2}
-            value={body}
-            disabled={busy}
-            onChange={(event) => setBody(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                event.preventDefault();
-                submit();
-              }
-            }}
-          />
-          <button
-            type="button"
-            className="ghost-button ghost-button--primary ghost-button--small"
-            disabled={busy || body.trim() === ''}
-            onClick={submit}
+          <div
+            className="comments-panel__tools"
+            role="group"
+            aria-label="Форматирование комментария"
           >
-            Отправить
-          </button>
+            {MARKDOWN_TOOLS.map((item) => (
+              <button
+                key={item.kind}
+                type="button"
+                className="docs-editor__tool"
+                disabled={busy || preview}
+                title={item.title}
+                aria-label={item.title}
+                onClick={() => format(item.kind)}
+              >
+                {item.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={
+                preview
+                  ? 'docs-editor__preview docs-editor__preview--active'
+                  : 'docs-editor__preview'
+              }
+              aria-pressed={preview}
+              onClick={() => setPreview((current) => !current)}
+            >
+              {preview ? 'Редактирование' : 'Предпросмотр'}
+            </button>
+          </div>
+          {preview ? (
+            <div className="comments-panel__preview">
+              <MarkdownView text={body} />
+            </div>
+          ) : (
+            <textarea
+              ref={textareaRef}
+              className="comments-panel__input"
+              aria-label="Новый комментарий"
+              placeholder="Markdown: **важно**, `код`, [ссылка](https://…)"
+              rows={3}
+              value={body}
+              disabled={busy}
+              onChange={(event) => setBody(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault();
+                  submit();
+                }
+              }}
+            />
+          )}
+          <div className="comments-panel__send">
+            <span className="comments-panel__hint">Markdown · Ctrl+Enter — отправить</span>
+            <button
+              type="button"
+              className="ghost-button ghost-button--primary ghost-button--small"
+              disabled={busy || body.trim() === ''}
+              onClick={submit}
+            >
+              Отправить
+            </button>
+          </div>
         </div>
       ) : null}
     </section>

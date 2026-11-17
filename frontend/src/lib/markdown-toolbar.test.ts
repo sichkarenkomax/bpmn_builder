@@ -79,4 +79,16 @@ describe('applyFormat', () => {
     const result = apply('bulletList', 'антоним\nвыделенная строка', 8, 25);
     expect(result.value).toBe('антоним\n- выделенная строка');
   });
+
+  it('добавляет цитату и чек-лист к выделенным строкам', () => {
+    expect(apply('quote', 'важно', 0, 6).value).toBe('> важно');
+    expect(apply('checklist', 'сделать', 0, 7).value).toBe('- [ ] сделать');
+  });
+
+  it('вставляет блок кода, таблицу, линию и изображение', () => {
+    expect(apply('codeBlock', 'const x = 1;', 0, 12).value).toBe('```\nconst x = 1;\n```');
+    expect(apply('table', '', 0, 0).value).toContain('| Колонка 1 | Колонка 2 |');
+    expect(apply('hr', '', 0, 0).value).toBe('\n\n---\n\n');
+    expect(apply('image', 'схема', 0, 5).value).toBe('![схема](https://…)');
+  });
 });

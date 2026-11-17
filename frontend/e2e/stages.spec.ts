@@ -4,8 +4,6 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
 
-import { openActions } from './helpers';
-
 const here = dirname(fileURLToPath(import.meta.url));
 const sampleXml = readFileSync(resolve(here, 'fixtures/simple.bpmn'), 'utf8');
 const API = '/api/v1';
@@ -25,8 +23,7 @@ test('этапы: полоса на холсте, переименование, 
     const task = page.locator('[data-element-id="Task_Review"]').first();
     await expect(task).toBeVisible();
 
-    await openActions(page);
-    await page.getByRole('menuitem', { name: 'Этапы…' }).click();
+    await page.getByRole('button', { name: 'Этапы' }).click();
     const dialog = page.getByRole('dialog', { name: 'Этапы схемы' });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Добавить этап' }).click();

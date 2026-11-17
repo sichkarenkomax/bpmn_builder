@@ -3,7 +3,19 @@
 // значение и выделение, которое нужно восстановить после обновления value.
 
 export type FormatKind =
-  'bold' | 'italic' | 'code' | 'heading' | 'bulletList' | 'orderedList' | 'link';
+  | 'bold'
+  | 'italic'
+  | 'code'
+  | 'heading'
+  | 'bulletList'
+  | 'orderedList'
+  | 'link'
+  | 'image'
+  | 'quote'
+  | 'checklist'
+  | 'codeBlock'
+  | 'table'
+  | 'hr';
 
 export interface TextSelection {
   start: number;
@@ -131,6 +143,53 @@ export function applyFormat(
         pattern: /^\d{1,3}[.)]\s+/,
         build: (index) => `${index + 1}. `,
       });
+    case 'quote':
+      return prefixLines(value, start, end, {
+        pattern: /^>\s?/,
+        build: () => '> ',
+      });
+    case 'checklist':
+      return prefixLines(value, start, end, {
+        pattern: /^[-*+]\s+\[[ xX]]\s+/,
+        build: () => '- [ ] ',
+      });
+    case 'codeBlock': {
+      const selected = value.slice(start, end) || 'код';
+      const fence = '```';
+      const before = `${value.slice(0, start)}${fence}\n`;
+      const after = `\n${fence}${value.slice(end)}`;
+      return {
+        value: `${before}${selected}${after}`,
+        start: start + 4,
+        end: start + 4 + selected.length,
+      };
+    }
+    case 'table': {
+      const inserted = '\n| Колонка 1 | Колонка 2 |\n| --- | --- |\n|  |  |\n';
+      return {
+        value: `${value.slice(0, start)}${inserted}${value.slice(end)}`,
+        start: start + 3,
+        end: start + 12,
+      };
+    }
+    case 'hr': {
+      const inserted = '\n\n---\n\n';
+      return {
+        value: `${value.slice(0, start)}${inserted}${value.slice(end)}`,
+        start: start + inserted.length,
+        end: start + inserted.length,
+      };
+    }
+    case 'image': {
+      const selected = value.slice(start, end) || 'описание';
+      const inserted = `![${selected}](https://…)`;
+      const urlStart = start + selected.length + 4;
+      return {
+        value: `${value.slice(0, start)}${inserted}${value.slice(end)}`,
+        start: urlStart,
+        end: urlStart + 9,
+      };
+    }
     case 'link': {
       const selected = value.slice(start, end);
       if (selected === '') {

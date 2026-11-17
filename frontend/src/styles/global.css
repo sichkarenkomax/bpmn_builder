@@ -442,7 +442,8 @@ code {
   gap: 6px;
 }
 
-.editor-toolbar--format {
+.editor-toolbar--format,
+.editor-toolbar--actions {
   justify-content: flex-start;
   flex-wrap: wrap;
   gap: 6px 10px;
@@ -450,6 +451,22 @@ code {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.editor-toolbar__section--end {
+  margin-inline-start: auto;
+}
+
+.editor-toolbar__count {
+  min-width: 14px;
+  margin-inline-start: 2px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
 }
 
 .editor-toolbar__section {
@@ -612,6 +629,15 @@ code {
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-muted);
+}
+
+.inspector__readonly {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 12.5px;
 }
 
 .inspector__colors {
@@ -1568,6 +1594,28 @@ code {
   gap: 6px;
 }
 
+.comments-panel__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.comments-panel__send {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.comments-panel__preview {
+  max-height: 180px;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-muted);
+}
+
 .comments-panel__input {
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -1613,8 +1661,12 @@ code {
 
 .comment__body {
   margin: 0 0 6px;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font-size: 12.5px;
+}
+
+.comment__body .md-doc > :last-child {
+  margin-bottom: 0;
 }
 
 .comment__actions {
@@ -1889,13 +1941,39 @@ code {
   overflow: auto;
 }
 
+.md-doc h1,
+.md-doc h2,
 .md-doc h3,
 .md-doc h4,
 .md-doc h5,
 .md-doc h6 {
-  margin: 6px 0 2px;
-  font-size: 13px;
+  margin: 8px 0 3px;
   line-height: 1.3;
+}
+
+.md-doc h1 {
+  font-size: 18px;
+}
+
+.md-doc h2 {
+  font-size: 16px;
+}
+
+.md-doc h3 {
+  font-size: 14.5px;
+}
+
+.md-doc h4 {
+  font-size: 13px;
+}
+
+.md-doc h5 {
+  font-size: 12.5px;
+}
+
+.md-doc h6 {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .md-doc p {
@@ -1913,6 +1991,22 @@ code {
   margin: 2px 0;
 }
 
+.md-checklist {
+  padding-left: 4px;
+  list-style: none;
+}
+
+.md-checklist__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.md-checklist__item input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
 .md-doc code {
   font-family: 'Courier New', monospace;
   font-size: 11.5px;
@@ -1923,6 +2017,94 @@ code {
 
 .md-doc a {
   color: var(--accent);
+}
+
+.md-doc blockquote {
+  margin: 0 0 6px;
+  padding: 4px 0 4px 10px;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--text-muted);
+}
+
+.md-doc hr {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.md-doc .md-image {
+  display: block;
+  max-width: 100%;
+  margin: 6px 0;
+  border-radius: 6px;
+}
+
+.md-table-wrap {
+  max-width: 100%;
+  margin: 0 0 8px;
+  overflow-x: auto;
+}
+
+.md-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.md-doc th,
+.md-doc td {
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.md-doc th {
+  background: var(--surface-muted);
+  font-weight: 600;
+}
+
+.md-code {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-muted) 82%, #0f172a);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.md-code code {
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  white-space: pre;
+}
+
+.md-code__keyword {
+  color: #a78bfa;
+}
+
+.md-code__string {
+  color: #34d399;
+}
+
+.md-code__comment {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.md-code__number {
+  color: #fbbf24;
+}
+
+.md-code__tag {
+  color: #60a5fa;
+}
+
+.md-code__attr {
+  color: #fda4af;
 }
 
 .md-doc--empty {

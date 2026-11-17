@@ -94,9 +94,9 @@ export function DocumentationEditor({
         />
       )}
       <p className="docs-editor__hint">
-        Поддерживается: заголовки <code>#</code>, маркированные и нумерованные списки,{' '}
-        <code>**жирный**</code>, <code>*курсив*</code>, <code>`код`</code> и{' '}
-        <code>[ссылки](https://…)</code>. Вложенные списки, цитаты и HTML не поддерживаются.
+        Заголовки 1–6, списки и чек-листы, цитаты, таблицы, линии, блоки кода с подсветкой,
+        изображения, <code>**жирный**</code>, <code>*курсив*</code>, <code>`код`</code> и{' '}
+        <code>[ссылки](https://…)</code>. Вложенные списки и HTML не поддерживаются.
       </p>
       <MarkdownWindow
         open={expanded}

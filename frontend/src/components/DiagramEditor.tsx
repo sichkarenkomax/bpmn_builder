@@ -1031,8 +1031,6 @@ export function DiagramEditor({
     source: AnchorSide;
     target: AnchorSide;
   } | null>(null);
-  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
-  const actionsButtonRef = useRef<HTMLButtonElement | null>(null);
   const [stages, setStages] = useState<DiagramStage[]>([]);
   const [stagesOpen, setStagesOpen] = useState(false);
   const [viewbox, setViewbox] = useState({ x: 0, y: 0, scale: 1 });
@@ -2312,126 +2310,184 @@ export function DiagramEditor({
     );
   })();
 
-  // 1.3.22: все действия тулбара — в одном меню с подписями и значками.
-  const openActionsMenu = () => {
-    if (actionsMenuOpen) {
-      setMenu(null);
-      setActionsMenuOpen(false);
-      return;
-    }
-    const rect = actionsButtonRef.current?.getBoundingClientRect();
-    const active = (on: boolean) => (on ? ' · вкл' : '');
-    const commentCount = openCommentCount(comments);
-    setMenu({
-      x: rect?.left ?? 8,
-      y: (rect?.bottom ?? 8) + 4,
-      items: [
-        {
-          id: 'undo',
-          icon: '↶',
-          label: 'Отменить',
-          hint: formatCombo(shortcuts.undo),
-          disabled: !canUndo,
-          onSelect: () => executeAction('undo'),
-        },
-        {
-          id: 'redo',
-          icon: '↷',
-          label: 'Повторить',
-          hint: formatCombo(shortcuts.redo),
-          disabled: !canRedo,
-          onSelect: () => executeAction('redo'),
-        },
-        { id: 'sep-history', label: '', separator: true },
-        {
-          id: 'fit',
-          icon: '⤢',
-          label: 'Вписать',
-          hint: formatCombo(shortcuts.fit),
-          onSelect: () => executeAction('fit'),
-        },
-        {
-          id: 'minimap',
-          icon: '▦',
-          label: `Мини-карта${active(minimapOpen)}`,
-          hint: formatCombo(shortcuts.toggleMinimap),
-          onSelect: () => executeAction('toggleMinimap'),
-        },
-        { id: 'sep-view', label: '', separator: true },
-        {
-          id: 'theme',
-          icon: '🎨',
-          label: 'Тема',
-          onSelect: () => setThemeOpen(true),
-        },
-        {
-          id: 'legend',
-          icon: '▤',
-          label: `Легенда${active(legendOpen)}`,
-          onSelect: () => setLegendOpen((value) => !value),
-        },
-        {
-          id: 'comments',
-          icon: '💬',
-          label: `Комментарии${commentCount ? ` (${commentCount})` : ''}${active(commentsOpen)}`,
-          onSelect: () => setCommentsOpen((value) => !value),
-        },
-        {
-          id: 'properties',
-          icon: '☰',
-          label: 'Свойства',
-          onSelect: () => setInspectorOpen((value) => !value),
-        },
-        {
-          id: 'stages',
-          icon: '▥',
-          label: 'Этапы…',
-          onSelect: () => setStagesOpen(true),
-        },
-        { id: 'sep-settings', label: '', separator: true },
-        {
-          id: 'status',
-          icon: '•',
-          label: saveStateLabel(save),
-          disabled: true,
-        },
-        {
-          id: 'shortcuts',
-          icon: '⌨',
-          label: 'Клавиши',
-          hint: formatCombo(shortcuts.settings),
-          onSelect: () => setShortcutsOpen(true),
-        },
-        {
-          id: 'save',
-          icon: '💾',
-          label: 'Сохранить',
-          hint: formatCombo(shortcuts.save),
-          disabled: save.kind === 'saved' || save.kind === 'saving',
-          onSelect: () => executeAction('save'),
-        },
-      ],
-    });
-    setActionsMenuOpen(true);
-  };
-
   return (
     <div className="workspace">
       <div className="workspace__main">
-        <div className="editor-toolbar">
-          <div className="editor-toolbar__group">
+        <div
+          className="editor-toolbar editor-toolbar--actions"
+          role="toolbar"
+          aria-label="Действия редактора"
+        >
+          <div className="editor-toolbar__section" role="group" aria-label="Правка">
+            <span className="editor-toolbar__label">Правка</span>
             <button
-              ref={actionsButtonRef}
               type="button"
-              className="ghost-button ghost-button--menu"
-              aria-haspopup="menu"
-              aria-expanded={actionsMenuOpen}
-              onClick={openActionsMenu}
+              className="ghost-button ghost-button--small"
+              title={`Отменить (${formatCombo(shortcuts.undo)})`}
+              aria-label="Отменить"
+              disabled={!canUndo}
+              onClick={() => executeAction('undo')}
             >
-              <span aria-hidden="true">☰</span> Действия
+              <span aria-hidden="true">↶</span>
+            </button>
+            <button
+              type="button"
+              className="ghost-button ghost-button--small"
+              title={`Повторить (${formatCombo(shortcuts.redo)})`}
+              aria-label="Повторить"
+              disabled={!canRedo}
+              onClick={() => executeAction('redo')}
+            >
+              <span aria-hidden="true">↷</span>
             </button>
           </div>
-          <div className="editor-toolbar__group">
+
+          <div className="editor-toolbar__section" role="group" aria-label="Вид">
+            <span className="editor-toolbar__label">Вид</span>
+            <button
+              type="button"
+              className="ghost-button ghost-button--small"
+              title={`Вписать (${formatCombo(shortcuts.fit)})`}
+              aria-label="Вписать"
+              onClick={() => executeAction('fit')}
+            >
+              <span aria-hidden="true">⤢</span>
+            </button>
+            <button
+              type="button"
+              className={
+                minimapOpen
+                  ? 'ghost-button ghost-button--small ghost-button--active'
+                  : 'ghost-button ghost-button--small'
+              }
+              title={`Мини-карта (${formatCombo(shortcuts.toggleMinimap)})`}
+              aria-label="Мини-карта"
+              aria-pressed={minimapOpen}
+              onClick={() => executeAction('toggleMinimap')}
+            >
+              <span aria-hidden="true">▦</span>
+            </button>
+            <button
+              type="button"
+              className="ghost-button ghost-button--small"
+              title="Тема"
+              aria-label="Тема"
+              onClick={() => setThemeOpen(true)}
+            >
+              <span aria-hidden="true">🎨</span>
+            </button>
+            <button
+              type="button"
+              className={
+                legendOpen
+                  ? 'ghost-button ghost-button--small ghost-button--active'
+                  : 'ghost-button ghost-button--small'
+              }
+              title="Легенда"
+              aria-label="Легенда"
+              aria-pressed={legendOpen}
+              onClick={() => setLegendOpen((value) => !value)}
+            >
+              <span aria-hidden="true">▤</span>
+            </button>
+          </div>
+
+          <div className="editor-toolbar__section" role="group" aria-label="Панели">
+            <span className="editor-toolbar__label">Панели</span>
+            <button
+              type="button"
+              className={
+                commentsOpen
+                  ? 'ghost-button ghost-button--small ghost-button--active'
+                  : 'ghost-button ghost-button--small'
+              }
+              title="Комментарии"
+              aria-label="Комментарии"
+              aria-pressed={commentsOpen}
+              onClick={() => setCommentsOpen((value) => !value)}
+            >
+              <span aria-hidden="true">💬</span>
+              {openCommentCount(comments) > 0 ? (
+                <span className="editor-toolbar__count">{openCommentCount(comments)}</span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className={
+                inspectorOpen
+                  ? 'ghost-button ghost-button--small ghost-button--active'
+                  : 'ghost-button ghost-button--small'
+              }
+              title="Свойства"
+              aria-label="Свойства"
+              aria-pressed={inspectorOpen}
+              onClick={() => setInspectorOpen((value) => !value)}
+            >
+              <span aria-hidden="true">☰</span>
+            </button>
+            <button
+              type="button"
+              className="ghost-button ghost-button--small"
+              title="Этапы схемы"
+              aria-label="Этапы"
+              onClick={() => setStagesOpen(true)}
+            >
+              <span aria-hidden="true">▥</span>
+            </button>
+          </div>
+
+          <div className="editor-toolbar__section" role="group" aria-label="Выравнивание текста">
+            <span className="editor-toolbar__label">Текст</span>
+            {(
+              [
+                ['left', 'По левому краю'],
+                ['center', 'По центру'],
+                ['right', 'По правому краю'],
+              ] as const
+            ).map(([value, title]) => (
+              <button
+                key={value}
+                type="button"
+                className={
+                  (selectedInspector?.textAlign || 'center') === value
+                    ? 'ghost-button ghost-button--small ghost-button--active'
+                    : 'ghost-button ghost-button--small'
+                }
+                disabled={!selectedInspector}
+                title={title}
+                aria-label={title}
+                aria-pressed={(selectedInspector?.textAlign || 'center') === value}
+                onClick={() => applyPatch({ textAlign: value })}
+              >
+                <AlignIcon align={value} />
+              </button>
+            ))}
+          </div>
+
+          <div
+            className="editor-toolbar__section editor-toolbar__section--end"
+            role="group"
+            aria-label="Сохранение"
+          >
+            <button
+              type="button"
+              className="ghost-button ghost-button--small"
+              title={`Клавиши (${formatCombo(shortcuts.settings)})`}
+              aria-label="Клавиши"
+              onClick={() => setShortcutsOpen(true)}
+            >
+              <span aria-hidden="true">⌨</span>
+            </button>
+            <button
+              type="button"
+              className="ghost-button ghost-button--small"
+              title={`Сохранить (${formatCombo(shortcuts.save)})`}
+              aria-label="Сохранить"
+              disabled={save.kind === 'saved' || save.kind === 'saving'}
+              onClick={() => executeAction('save')}
+            >
+              <span aria-hidden="true">💾</span>
+            </button>
             <SaveBadge state={save} />
           </div>
         </div>
@@ -2495,31 +2551,6 @@ export function DiagramEditor({
                 onChange={(event) => applyPatch({ fontColor: event.target.value })}
               />
             </label>
-            <span className="editor-toolbar__divider" aria-hidden="true" />
-            {(
-              [
-                ['left', 'По левому краю'],
-                ['center', 'По центру'],
-                ['right', 'По правому краю'],
-              ] as const
-            ).map(([value, title]) => (
-              <button
-                key={value}
-                type="button"
-                className={
-                  (selectedInspector?.textAlign || 'center') === value
-                    ? 'ghost-button ghost-button--small ghost-button--active'
-                    : 'ghost-button ghost-button--small'
-                }
-                disabled={!selectedInspector}
-                title={title}
-                aria-label={title}
-                aria-pressed={(selectedInspector?.textAlign || 'center') === value}
-                onClick={() => applyPatch({ textAlign: value })}
-              >
-                <AlignIcon align={value} />
-              </button>
-            ))}
             <span className="editor-toolbar__divider" aria-hidden="true" />
             {(
               [
@@ -2776,14 +2807,7 @@ export function DiagramEditor({
         }}
         onClose={() => setAnchorEditor(null)}
       />
-      <ContextMenu
-        menu={menu}
-        onClose={() => {
-          setMenu(null);
-          setActionsMenuOpen(false);
-        }}
-        ignoreRef={actionsButtonRef}
-      />
+      <ContextMenu menu={menu} onClose={() => setMenu(null)} />
       <ReplaceMenu menu={replaceMenu} onClose={() => setReplaceMenu(null)} />
       <ThemeSettings
         open={themeOpen}
@@ -2811,19 +2835,6 @@ export function DiagramEditor({
       />
     </div>
   );
-}
-
-function saveStateLabel(state: SaveState): string {
-  switch (state.kind) {
-    case 'saving':
-      return 'сохраняю…';
-    case 'dirty':
-      return 'есть изменения';
-    case 'error':
-      return 'не сохранено';
-    default:
-      return 'сохранено';
-  }
 }
 
 function SaveBadge({ state }: { state: SaveState }) {

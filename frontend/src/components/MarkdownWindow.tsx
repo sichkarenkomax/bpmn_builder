@@ -8,9 +8,15 @@ export const MARKDOWN_TOOLS: { kind: FormatKind; label: string; title: string }[
   { kind: 'italic', label: 'К', title: 'Курсив (*текст*)' },
   { kind: 'code', label: '‹›', title: 'Код (`текст`)' },
   { kind: 'heading', label: 'З', title: 'Заголовок (## текст)' },
+  { kind: 'quote', label: '❝', title: 'Цитата (> текст)' },
   { kind: 'bulletList', label: '•—', title: 'Маркированный список' },
   { kind: 'orderedList', label: '1.', title: 'Нумерованный список' },
+  { kind: 'checklist', label: '☑', title: 'Чек-лист (- [ ] пункт)' },
   { kind: 'link', label: '🔗', title: 'Ссылка [текст](url)' },
+  { kind: 'image', label: '🖼', title: 'Изображение ![описание](url)' },
+  { kind: 'codeBlock', label: '{ }', title: 'Блок кода (```)' },
+  { kind: 'table', label: '▦', title: 'Таблица' },
+  { kind: 'hr', label: '—', title: 'Горизонтальная линия' },
 ];
 
 /** Большое окно документации (1.3.23): поле ввода и предпросмотр рядом. */
@@ -126,8 +132,9 @@ export function MarkdownWindow({
         </div>
 
         <p className="docs-editor__hint">
-          Поддерживается: заголовки <code>#</code>, списки, <code>**жирный**</code>,{' '}
-          <code>*курсив*</code>, <code>`код`</code> и <code>[ссылки](https://…)</code>.
+          Заголовки 1–6, списки и чек-листы, цитаты, таблицы, линии, блоки кода с подсветкой,
+          изображения, <code>**жирный**</code>, <code>*курсив*</code>, <code>`код`</code> и{' '}
+          <code>[ссылки](https://…)</code>. HTML не исполняется.
         </p>
 
         <footer className="dialog__footer">

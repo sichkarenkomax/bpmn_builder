@@ -1,6 +1,7 @@
+import { highlightCode } from '../lib/code-highlight';
 import { isSafeUrl, parseMarkdown, type MdBlock, type MdInline } from '../lib/markdown';
 
-/** Отрисовка Markdown-токенов как React-элементов — без innerHTML, вставленная разметка остаётся текстом. */
+/** Отрисовка Markdown-токенов как React-элементов — без innerHTML, поэтому HTML остаётся текстом. */
 export function MarkdownView({ text }: { text: string }) {
   const blocks = parseMarkdown(text);
   if (blocks.length === 0) {
@@ -12,31 +13,91 @@ export function MarkdownView({ text }: { text: string }) {
 function renderBlock(block: MdBlock, key: number) {
   switch (block.kind) {
     case 'heading': {
-      const content = block.inlines.map(renderInline);
-      if (block.level === 1) {
-        return <h3 key={key}>{content}</h3>;
-      }
-      if (block.level === 2) {
-        return <h4 key={key}>{content}</h4>;
-      }
-      if (block.level === 3) {
-        return <h5 key={key}>{content}</h5>;
-      }
-      return <h6 key={key}>{content}</h6>;
+      const Tag = `h${block.level}` as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+      return <Tag key={key}>{block.inlines.map(renderInline)}</Tag>;
     }
     case 'list': {
       const Tag = block.ordered ? 'ol' : 'ul';
       return (
-        <Tag key={key}>
+        <Tag
+          key={key}
+          className={block.items.some((item) => item.checked !== null) ? 'md-checklist' : undefined}
+        >
           {block.items.map((item, index) => (
-            <li key={index}>{item.map(renderInline)}</li>
+            <li key={index} className={item.checked === null ? undefined : 'md-checklist__item'}>
+              {item.checked === null ? (
+                item.inlines.map(renderInline)
+              ) : (
+                <>
+                  <input
+                    type="checkbox"
+                    checked={item.checked}
+                    readOnly
+                    disabled
+                    aria-label={item.checked ? 'выполнено' : 'не выполнено'}
+                  />
+                  <span>{item.inlines.map(renderInline)}</span>
+                </>
+              )}
+            </li>
           ))}
         </Tag>
       );
     }
     case 'paragraph':
       return <p key={key}>{block.inlines.map(renderInline)}</p>;
+    case 'blockquote':
+      return (
+        <blockquote key={key}>
+          {block.blocks.map((child, index) => renderBlock(child, index))}
+        </blockquote>
+      );
+    case 'code':
+      return (
+        <pre key={key} className="md-code">
+          <code>
+            {highlightCode(block.code, block.language).map((token, index) => (
+              <span key={index} className={`md-code__${token.kind}`}>
+                {token.text}
+              </span>
+            ))}
+          </code>
+        </pre>
+      );
+    case 'hr':
+      return <hr key={key} />;
+    case 'table':
+      return (
+        <div key={key} className="md-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {block.headers.map((cell, index) => (
+                  <th key={index} style={alignStyle(block.align[index])}>
+                    {cell.map(renderInline)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={cellIndex} style={alignStyle(block.align[cellIndex])}>
+                      {cell.map(renderInline)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
   }
+}
+
+function alignStyle(align: 'left' | 'center' | 'right' | null | undefined) {
+  return align ? { textAlign: align } : undefined;
 }
 
 function renderInline(token: MdInline, key: number) {
@@ -52,9 +113,24 @@ function renderInline(token: MdInline, key: number) {
         return <span key={key}>{token.value}</span>;
       }
       return (
-        <a key={key} href={token.url} target="_blank" rel="noreferrer">
+        <a key={key} href={token.url} target="_blank" rel="noreferrer noopener">
           {token.value}
         </a>
+      );
+    }
+    case 'image': {
+      if (!isSafeUrl(token.url)) {
+        return <span key={key}>{token.value}</span>;
+      }
+      return (
+        <img
+          key={key}
+          className="md-image"
+          src={token.url}
+          alt={token.value}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+        />
       );
     }
     case 'text':

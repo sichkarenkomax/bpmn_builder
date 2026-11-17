@@ -11,6 +11,7 @@ import {
   type InspectorElement,
   type InspectorPatch,
 } from '../lib/inspector';
+import { elementTypeLabel } from '../lib/element-types';
 import { FILL_SWATCHES, STROKE_SWATCHES } from '../lib/style-palette';
 import { DocumentationEditor } from './DocumentationEditor';
 import { attributeValuePlaceholder, validateAttributeValue } from '../lib/attributes';
@@ -160,7 +161,7 @@ export function PropertiesPanel({
         </button>
       </div>
       <p className="inspector__hint">
-        {element.type} · <code>{element.id}</code>
+        <code>{element.id}</code>
       </p>
 
       <fieldset className="inspector__section">
@@ -184,6 +185,10 @@ export function PropertiesPanel({
               }
             }}
           />
+        </Field>
+
+        <Field label="Тип" hint={element.type}>
+          <output className="inspector__readonly">{elementTypeLabel(element.type)}</output>
         </Field>
 
         <Field
