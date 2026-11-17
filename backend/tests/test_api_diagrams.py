@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -93,13 +94,59 @@ async def test_create_rejects_oversized_xml(
     assert response.status_code == 413
 
 
+async def test_put_requires_if_match(db_client: AsyncClient, sample_xml: str) -> None:
+    diagram = await _create(db_client, "Без предусловия")
+
+    response = await db_client.put(
+        f"{API}/diagrams/{diagram['id']}/bpmn",
+        content=sample_xml.encode(),
+    )
+
+    assert response.status_code == 428
+    assert response.json()["detail"]["code"] == "IfMatchRequired"
+
+
+async def test_put_rejects_oversized_content_length(
+    db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    diagram = await _create(db_client, "Большое тело")
+    monkeypatch.setattr("app.api.routes.diagrams.MAX_XML_BYTES", 100)
+
+    response = await db_client.put(
+        f"{API}/diagrams/{diagram['id']}/bpmn",
+        content=b"x" * 200,
+        headers={"If-Match": f'"{diagram["etag"]}"'},
+    )
+
+    assert response.status_code == 413
+
+
+async def test_put_rejects_oversized_stream_without_content_length(
+    db_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    diagram = await _create(db_client, "Поток")
+    monkeypatch.setattr("app.api.routes.diagrams.MAX_XML_BYTES", 100)
+
+    async def chunks() -> AsyncIterator[bytes]:
+        yield b"x" * 60
+        yield b"x" * 60
+
+    response = await db_client.put(
+        f"{API}/diagrams/{diagram['id']}/bpmn",
+        content=chunks(),
+        headers={"If-Match": f'"{diagram["etag"]}"'},
+    )
+
+    assert response.status_code == 413
+
+
 async def test_put_rejects_non_utf8_body(db_client: AsyncClient) -> None:
     diagram = await _create(db_client, "Кодировка")
 
     response = await db_client.put(
         f"{API}/diagrams/{diagram['id']}/bpmn",
         content=b"\xff\xfe<bpmn:definitions",
-        headers={"content-type": "application/xml"},
+        headers={"If-Match": f'"{diagram["etag"]}"', "content-type": "application/xml"},
     )
 
     assert response.status_code == 400
@@ -113,7 +160,10 @@ async def test_put_creates_new_version(db_client: AsyncClient, sample_xml: str) 
     response = await db_client.put(
         f"{API}/diagrams/{diagram['id']}/bpmn",
         content=sample_xml.encode(),
-        headers={"content-type": "application/xml"},
+        headers={
+            "If-Match": f'"{diagram["etag"]}"',
+            "content-type": "application/xml",
+        },
     )
 
     assert response.status_code == 200
@@ -131,7 +181,9 @@ async def test_put_same_xml_does_not_create_version(
     diagram = await _create(db_client, "Идемпотентность", sample_xml)
 
     response = await db_client.put(
-        f"{API}/diagrams/{diagram['id']}/bpmn", content=sample_xml.encode()
+        f"{API}/diagrams/{diagram['id']}/bpmn",
+        content=sample_xml.encode(),
+        headers={"If-Match": f'"{diagram["etag"]}"'},
     )
 
     assert response.status_code == 200
@@ -150,13 +202,18 @@ async def test_put_with_stale_etag_conflicts(db_client: AsyncClient, sample_xml:
     )
 
     assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "EtagMismatch"
 
 
 async def test_put_invalid_xml_returns_position(db_client: AsyncClient) -> None:
     diagram = await _create(db_client, "Ошибка")
 
     broken = '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
-    response = await db_client.put(f"{API}/diagrams/{diagram['id']}/bpmn", content=broken.encode())
+    response = await db_client.put(
+        f"{API}/diagrams/{diagram['id']}/bpmn",
+        content=broken.encode(),
+        headers={"If-Match": f'"{diagram["etag"]}"'},
+    )
 
     assert response.status_code == 400
     assert response.json()["detail"]["line"] is not None

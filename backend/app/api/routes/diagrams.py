@@ -49,7 +49,61 @@ def _validated(xml: str) -> None:
 def _check_size(xml: str) -> None:
     if len(xml.encode("utf-8")) > MAX_XML_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="XML больше 5 МиБ"
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="XML больше 5 МиБ"
+        )
+
+
+async def _read_limited_body(request: Request, limit: int) -> bytes:
+    """Читает тело порциями и обрывает запрос при превышении лимита.
+
+    `request.body()` сначала буферизует всё тело, поэтому для недоверенного XML
+    нельзя проверять размер уже после него: запрос на гигабайты успел бы занять
+    память. Content-Length проверяем сразу, а для chunked-запросов считаем
+    фактически прочитанные байты.
+    """
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        try:
+            if int(declared) > limit:
+                raise HTTPException(
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="XML больше 5 МиБ"
+                )
+        except ValueError:
+            pass
+
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > limit:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="XML больше 5 МиБ"
+            )
+        body.extend(chunk)
+    return bytes(body)
+
+
+def _check_if_match(diagram: Diagram, if_match: str | None) -> None:
+    """Сохранение существующей диаграммы требует актуальный ETag.
+
+    Без `If-Match` два редактора молча затирают правки друг друга. 428 говорит
+    клиенту, что precondition обязателен, 409 — что версия уже устарела.
+    """
+    if not if_match or not if_match.strip():
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail={
+                "code": "IfMatchRequired",
+                "message": "передайте If-Match с текущим ETag диаграммы",
+                "etag": diagram.etag,
+            },
+        )
+    if diagram.etag is None or if_match.strip().strip('"') != diagram.etag:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "EtagMismatch",
+                "message": "диаграмма изменилась: обновите и повторите сохранение",
+                "etag": diagram.etag,
+            },
         )
 
 
@@ -166,11 +220,8 @@ async def put_bpmn(
     session: AsyncSession = Depends(get_session),
 ) -> BpmnSaved:
     diagram = await _load(session, diagram_id)
-    body = await request.body()
-    if len(body) > MAX_XML_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="XML больше 5 МиБ"
-        )
+    _check_if_match(diagram, if_match)
+    body = await _read_limited_body(request, MAX_XML_BYTES)
 
     try:
         xml = body.decode("utf-8")
@@ -184,11 +235,6 @@ async def put_bpmn(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
     _validated(xml)
 
-    if if_match and diagram.etag and if_match.strip('"') != diagram.etag:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="диаграмма изменилась: обновите и повторите сохранение",
-        )
     if diagram.etag and _etag(xml) == diagram.etag:
         return BpmnSaved(etag=diagram.etag, version_id=diagram.current_version_id or "")
 

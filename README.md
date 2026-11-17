@@ -61,7 +61,7 @@ scripts/tasks.py    сводка прогресса по дорожной кар
 | `GET` | `/api/v1/diagrams` | список, `?limit=&offset=` |
 | `GET/PATCH/DELETE` | `/api/v1/diagrams/{id}` | метаданные, переименование, удаление |
 | `GET` | `/api/v1/diagrams/{id}/bpmn` | BPMN XML как `application/xml`, с `ETag` |
-| `PUT` | `/api/v1/diagrams/{id}/bpmn` | сохранить XML: XSD-валидация, опциональный `If-Match` (иначе 409) |
+| `PUT` | `/api/v1/diagrams/{id}/bpmn` | сохранить XML: XSD-валидация, обязательный `If-Match` (нет — 428, устарел — 409), тело до 5 МиБ читается потоково |
 | `GET` | `/api/v1/diagrams/{id}/versions` | история версий |
 
 Правила простые: XML проверяется по официальной XSD BPMN 2.0, ошибка возвращается

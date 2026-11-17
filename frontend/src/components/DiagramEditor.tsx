@@ -1139,9 +1139,11 @@ export function DiagramEditor({
       const message =
         error instanceof ApiError && error.status === 409
           ? 'диаграмму изменил кто-то другой: обновите страницу'
-          : error instanceof Error
-            ? error.message
-            : 'не удалось сохранить';
+          : error instanceof ApiError && error.status === 428
+            ? 'сервер требует подтвердить версию диаграммы: обновите страницу'
+            : error instanceof Error
+              ? error.message
+              : 'не удалось сохранить';
       setSave({ kind: 'error', message });
     }
   }, [diagramId]);
