@@ -21,6 +21,7 @@ ROADMAP_PATH = Path(__file__).resolve().parent.parent / "docs" / "ROADMAP.md"
 
 TASK_RE = re.compile(r"^- \[(?P<mark>[ x~!])\] (?P<task_id>\d+(?:\.\d+)+) (?P<title>.+)$")
 STAGE_RE = re.compile(r"^## \d+\. ЭТАП (?P<number>\d+) — (?P<title>.+)$")
+DETAIL_STAGE_RE = re.compile(r"^### Этап (?P<number>\d+) — (?P<title>.+)$")
 PARENS_RE = re.compile(r"\s*\([^)]*\)\s*$")
 
 STATUS_BY_MARK = {" ": "todo", "x": "done", "~": "doing", "!": "blocked"}
@@ -53,7 +54,7 @@ def parse(markdown: str) -> list[Stage]:
     stages: dict[int, Stage] = {}
 
     for line in markdown.splitlines():
-        stage_match = STAGE_RE.match(line)
+        stage_match = STAGE_RE.match(line) or DETAIL_STAGE_RE.match(line)
         if stage_match:
             number = int(stage_match.group("number"))
             titles[number] = PARENS_RE.sub("", stage_match.group("title")).strip()
