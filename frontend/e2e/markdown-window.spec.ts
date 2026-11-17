@@ -9,6 +9,7 @@ const sampleXml = readFileSync(resolve(here, 'fixtures/simple.bpmn'), 'utf8');
 const API = '/api/v1';
 
 test('большое окно Markdown: предпросмотр, применение и сохранение', async ({ page, request }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
   const created = await request.post(`${API}/diagrams`, {
     data: { title: `E2E md window ${Date.now()}`, bpmn_xml: sampleXml },
   });
@@ -44,8 +45,42 @@ test('большое окно Markdown: предпросмотр, примене
       'https://example.com/pic.png',
     );
 
+    const previewToggle = dialog.getByRole('button', { name: 'Предпросмотр' });
+    await expect(previewToggle).toHaveAttribute('aria-pressed', 'true');
+    await previewToggle.click();
+    await expect(previewToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(preview).toHaveCount(0);
+    await expect(dialog.locator('.docs-window__body--single')).toBeVisible();
+    await previewToggle.click();
+    await expect(preview).toBeVisible();
+    await expect(textarea).toHaveValue(/Регламент/);
+
+    await expect
+      .poll(() => dialog.evaluate((element) => getComputedStyle(element).resize))
+      .toBe('both');
+    const initialBox = await dialog.boundingBox();
+    expect(initialBox).not.toBeNull();
+    if (initialBox) {
+      await page.mouse.move(
+        initialBox.x + initialBox.width - 4,
+        initialBox.y + initialBox.height - 4,
+      );
+      await page.mouse.down();
+      await page.mouse.move(
+        initialBox.x + initialBox.width + 70,
+        initialBox.y + initialBox.height + 50,
+        { steps: 5 },
+      );
+      await page.mouse.up();
+      const resizedBox = await dialog.boundingBox();
+      expect(resizedBox?.width).toBeGreaterThan(initialBox.width);
+      expect(resizedBox?.height).toBeGreaterThan(initialBox.height);
+    }
+
+    await expect(textarea).toHaveValue(/Регламент/);
     await dialog.getByRole('button', { name: 'Применить' }).click();
     await expect(dialog).toHaveCount(0);
+    await expect(page.locator('.docs-editor textarea')).toHaveValue(/Регламент/);
 
     await Promise.all([
       page.waitForResponse(

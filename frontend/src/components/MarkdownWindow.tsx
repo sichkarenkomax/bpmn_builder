@@ -34,13 +34,22 @@ export function MarkdownWindow({
   onClose: () => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const dirtyRef = useRef(false);
   const [draft, setDraft] = useState(value);
+  const [showPreview, setShowPreview] = useState(true);
   const [pendingSelection, setPendingSelection] = useState<
     (TextSelection & { nonce: number }) | null
   >(null);
 
   useEffect(() => {
-    if (open) {
+    if (!open) {
+      dirtyRef.current = false;
+      setDraft(value);
+      return;
+    }
+    // Пока пользователь не начал править черновик, подхватываем актуальное
+    // значение: инспектор может получить документацию уже после открытия окна.
+    if (!dirtyRef.current) {
       setDraft(value);
     }
   }, [open, value]);
@@ -77,6 +86,7 @@ export function MarkdownWindow({
       return;
     }
     const result = applyFormat(kind, draft, textarea.selectionStart, textarea.selectionEnd);
+    dirtyRef.current = true;
     setDraft(result.value);
     setPendingSelection({ ...result, nonce: Date.now() });
   };
@@ -92,9 +102,20 @@ export function MarkdownWindow({
       >
         <header className="dialog__header">
           <h2 className="dialog__title">Документация: {title}</h2>
-          <button type="button" className="ghost-button" onClick={onClose}>
-            Закрыть
-          </button>
+          <div className="docs-window__actions">
+            <button
+              type="button"
+              className={showPreview ? 'ghost-button ghost-button--active' : 'ghost-button'}
+              aria-pressed={showPreview}
+              title="Показать или скрыть предпросмотр"
+              onClick={() => setShowPreview((current) => !current)}
+            >
+              Предпросмотр
+            </button>
+            <button type="button" className="ghost-button" onClick={onClose}>
+              Закрыть
+            </button>
+          </div>
         </header>
 
         <div className="docs-window__toolbar" role="group" aria-label="Форматирование документации">
@@ -112,23 +133,32 @@ export function MarkdownWindow({
           ))}
         </div>
 
-        <div className="docs-window__body">
+        <div
+          className={
+            showPreview ? 'docs-window__body' : 'docs-window__body docs-window__body--single'
+          }
+        >
           <label className="docs-window__pane">
             <span className="docs-window__caption">Markdown</span>
             <textarea
               ref={textareaRef}
               aria-label="Текст документации"
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => {
+                dirtyRef.current = true;
+                setDraft(event.target.value);
+              }}
               placeholder="# Заголовок&#10;&#10;- пункт списка&#10;&#10;**жирный**, *курсив*, `код`, [ссылка](https://example.com)"
             />
           </label>
-          <div className="docs-window__pane">
-            <span className="docs-window__caption">Предпросмотр</span>
-            <div className="docs-window__preview">
-              <MarkdownView text={draft} />
+          {showPreview ? (
+            <div className="docs-window__pane">
+              <span className="docs-window__caption">Предпросмотр</span>
+              <div className="docs-window__preview">
+                <MarkdownView text={draft} />
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
 
         <p className="docs-editor__hint">
