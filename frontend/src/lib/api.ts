@@ -117,6 +117,7 @@ export async function exportServerDocument(
   xml: string,
   options: {
     pngBase64?: string;
+    svg?: string;
     page?: 'A4' | 'A3';
     orientation?: 'portrait' | 'landscape';
   } = {},
@@ -127,6 +128,7 @@ export async function exportServerDocument(
     body: JSON.stringify({
       xml,
       png_base64: options.pngBase64 ?? null,
+      svg: options.svg ?? null,
       page: options.page ?? 'A4',
       orientation: options.orientation ?? 'portrait',
     }),

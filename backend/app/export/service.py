@@ -10,12 +10,19 @@ import base64
 import binascii
 import csv
 import io
+import re
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Literal
 
 from docx import Document as DocxDocument
 from openpyxl import Workbook  # type: ignore[import-untyped]
 from PIL import Image, UnidentifiedImageError
+from reportlab.pdfbase import pdfmetrics  # type: ignore[import-untyped]
+from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
+from reportlab.pdfgen import canvas as pdf_canvas  # type: ignore[import-untyped]
+from svglib.svglib import register_font as register_svg_font
+from svglib.svglib import svg2rlg
 
 from app.bpmn import parse_and_validate_bpmn
 
@@ -55,7 +62,39 @@ _PAGE_PIXELS: dict[PdfPage, tuple[int, int]] = {
     "A4": (1240, 1754),
     "A3": (1754, 2480),
 }
+_PAGE_POINTS: dict[PdfPage, tuple[float, float]] = {
+    "A4": (595.276, 841.89),
+    "A3": (841.89, 1190.551),
+}
 _PDF_DPI = 150
+_PDF_PADDING = 18.0
+_FONT_DIR = Path(__file__).with_name("fonts")
+_VECTOR_FONT = "BPMNStudioSans"
+_VECTOR_FONT_FAMILY = "DejaVu Sans"
+
+
+def _register_vector_fonts() -> bool:
+    """Регистрирует DejaVu Sans: без неё reportlab теряет кириллицу."""
+    regular = _FONT_DIR / "DejaVuSans.ttf"
+    bold = _FONT_DIR / "DejaVuSans-Bold.ttf"
+    if not regular.is_file() or not bold.is_file():
+        return False
+    try:
+        pdfmetrics.registerFont(TTFont(_VECTOR_FONT, str(regular)))
+        pdfmetrics.registerFont(TTFont(f"{_VECTOR_FONT}-Bold", str(bold)))
+        register_svg_font(_VECTOR_FONT_FAMILY, str(regular), rlgFontName=_VECTOR_FONT)
+        register_svg_font(
+            _VECTOR_FONT_FAMILY,
+            str(bold),
+            weight="bold",
+            rlgFontName=f"{_VECTOR_FONT}-Bold",
+        )
+    except Exception:
+        return False
+    return True
+
+
+_VECTOR_FONTS_READY = _register_vector_fonts()
 
 
 def export_document(
@@ -63,6 +102,7 @@ def export_document(
     fmt: ExportFormat,
     *,
     png_base64: str | None = None,
+    svg: str | None = None,
     page: PdfPage = "A4",
     orientation: PdfOrientation = "portrait",
 ) -> tuple[bytes, str, str]:
@@ -78,10 +118,18 @@ def export_document(
     elif fmt == "docx":
         payload = _docx_bytes(document.id, document.target_namespace, _rows(document))
     else:
-        if not png_base64:
-            msg = "для PDF нужен PNG текущего холста"
+        if svg:
+            try:
+                payload = _svg_pdf_bytes(svg, page=page, orientation=orientation)
+            except ValueError:
+                if not png_base64:
+                    raise
+                payload = _pdf_bytes(png_base64, page=page, orientation=orientation)
+        elif png_base64:
+            payload = _pdf_bytes(png_base64, page=page, orientation=orientation)
+        else:
+            msg = "для PDF нужен SVG или PNG текущего холста"
             raise ValueError(msg)
-        payload = _pdf_bytes(png_base64, page=page, orientation=orientation)
 
     return payload, _MEDIA_TYPES[fmt], _EXTENSIONS[fmt]
 
@@ -247,6 +295,62 @@ def _docx_bytes(title: str, namespace: str, rows: list[dict[str, str]]) -> bytes
 
     buffer = io.BytesIO()
     document.save(buffer)
+    return buffer.getvalue()
+
+
+def _svg_pdf_bytes(
+    svg: str,
+    *,
+    page: PdfPage,
+    orientation: PdfOrientation,
+) -> bytes:
+    """Векторный PDF из SVG холста; при несовместимом SVG — ValueError.
+
+    headless Chromium не нужен: svglib/reportlab сохраняют фигуры и текст
+    вектором и умеют разбивать высокую схему на страницы.
+    """
+    # bpmn-js добавляет стандартный DOCTYPE SVG 1.1; он безопасен при
+    # resolve_entities=False. Внутренний subset и ENTITY не принимаем.
+    if "<!ENTITY" in svg or re.search(r"<!DOCTYPE[^>]*\[", svg, re.IGNORECASE):
+        raise ValueError("SVG с DTD-сущностями не поддерживается")
+    if _VECTOR_FONTS_READY:
+        # bpmn-js не пишет font-family в SVG: без подстановки reportlab
+        # рисует кириллицу пустыми квадратами.
+        svg = re.sub(
+            r"<text\b(?![^>]*\bfont-family=)",
+            f'<text font-family="{_VECTOR_FONT_FAMILY}"',
+            svg,
+        )
+    try:
+        drawing = svg2rlg(io.BytesIO(svg.encode("utf-8")), external_reference_root="/nonexistent")
+    except Exception as exc:  # svglib кидает разные ошибки разбора
+        raise ValueError("не удалось разобрать SVG холста") from exc
+    if drawing is None or drawing.width <= 0 or drawing.height <= 0:
+        raise ValueError("SVG холста пустой")
+
+    width, height = _PAGE_POINTS[page]
+    if orientation == "landscape":
+        width, height = height, width
+    available_width = width - 2 * _PDF_PADDING
+    available_height = height - 2 * _PDF_PADDING
+    scale = available_width / drawing.width
+    scaled_height = drawing.height * scale
+    pages = max(1, int(-(-scaled_height // available_height)))
+
+    buffer = io.BytesIO()
+    pdf = pdf_canvas.Canvas(buffer, pagesize=(width, height), pageCompression=1)
+    try:
+        drawing.scale(scale, scale)
+        for index in range(pages):
+            if pages == 1:
+                y = (height - scaled_height) / 2
+            else:
+                y = height - _PDF_PADDING - scaled_height - index * available_height
+            drawing.drawOn(pdf, _PDF_PADDING, y)
+            pdf.showPage()
+        pdf.save()
+    except Exception as exc:  # несовместимый SVG не должен ломать экспорт
+        raise ValueError("SVG холста не удалось перевести в PDF") from exc
     return buffer.getvalue()
 
 

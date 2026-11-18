@@ -40,6 +40,7 @@ import {
 } from '../lib/api';
 import { blobToBase64, downloadBlob, downloadText, modelerSvg, svgToPng } from '../lib/export';
 import { ExportDialog, type ExportKind } from './ExportDialog';
+import { useToast } from './ToastProvider';
 import {
   COMMENT_OVERLAY_TYPE,
   commentsForElement,
@@ -947,6 +948,7 @@ export function DiagramEditor({
   initialEtag: string | null;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const { notify } = useToast();
   const modelerRef = useRef<Modeler | null>(null);
   const etagRef = useRef<string | null>(initialEtag);
   const selectedRef = useRef<DiagramElement | null>(null);
@@ -1144,6 +1146,7 @@ export function DiagramEditor({
                 ? error.message
                 : 'не удалось сохранить';
       setSave({ kind: 'error', message });
+      notify('error', `Сохранение не удалось: ${message}`);
     } finally {
       window.clearTimeout(timeout);
       if (saveAbortRef.current === controller) {
@@ -1155,7 +1158,7 @@ export function DiagramEditor({
         window.setTimeout(() => void persistRef.current(), 0);
       }
     }
-  }, [diagramId]);
+  }, [diagramId, notify]);
   persistRef.current = persist;
 
   const runExport = async (
@@ -1169,6 +1172,7 @@ export function DiagramEditor({
     setExportBusy(true);
     setExportError(null);
     const stem = `bpmn-${diagramId.slice(0, 8)}`;
+    const done = (label: string) => notify('success', `Экспорт ${label} готов`);
     try {
       const xmlResult = (await modeler.saveXML({ format: true })) as { xml?: string };
       if (!xmlResult.xml) {
@@ -1178,34 +1182,43 @@ export function DiagramEditor({
 
       if (kind === 'bpmn') {
         downloadText(xml, `${stem}.bpmn`, 'application/xml');
+        done('BPMN XML');
         return;
       }
       if (kind === 'svg') {
         downloadText(await modelerSvg(modeler), `${stem}.svg`, 'image/svg+xml');
+        done('SVG');
         return;
       }
       if (kind === 'png1x' || kind === 'png2x' || kind === 'png4x') {
         const scale = kind === 'png1x' ? 1 : kind === 'png2x' ? 2 : 4;
         downloadBlob(await svgToPng(await modelerSvg(modeler), scale), `${stem}.png`);
+        done(`PNG ${scale}×`);
         return;
       }
 
       if (kind === 'pdf') {
-        const png = await svgToPng(await modelerSvg(modeler), 2);
+        const svg = await modelerSvg(modeler);
+        const png = await svgToPng(svg, 2);
         const blob = await exportServerDocument(diagramId, 'pdf', xml, {
+          svg,
           pngBase64: await blobToBase64(png),
           page: options.page,
           orientation: options.orientation,
         });
         downloadBlob(blob, `${stem}.pdf`);
+        done('PDF');
         return;
       }
 
       const format: ServerExportFormat = kind;
       const blob = await exportServerDocument(diagramId, format, xml);
       downloadBlob(blob, `${stem}.${format}`);
+      done(format.toUpperCase());
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : 'не удалось экспортировать');
+      const message = error instanceof Error ? error.message : 'не удалось экспортировать';
+      setExportError(message);
+      notify('error', `Экспорт не удался: ${message}`);
     } finally {
       setExportBusy(false);
     }
@@ -1245,7 +1258,9 @@ export function DiagramEditor({
             etag: etagRef.current,
           }).then((outcome) => {
             if (outcome === 'failed') {
-              setDraftWarning('не удалось сохранить локальный черновик — проверьте квоту браузера');
+              const message = 'не удалось сохранить локальный черновик — проверьте квоту браузера';
+              setDraftWarning(message);
+              notify('error', message);
             } else {
               setDraftWarning(null);
             }
@@ -1253,7 +1268,7 @@ export function DiagramEditor({
         }
       });
     }, LOCAL_DRAFT_DEBOUNCE_MS);
-  }, [diagramId]);
+  }, [diagramId, notify]);
 
   // Тема и позиция легенды хранятся в документе (1.3.5) как `bs:*` на
   // `bpmn:definitions`. Пишем в `$attrs`: так bpmn-js сериализует чужие
@@ -1508,9 +1523,11 @@ export function DiagramEditor({
       }
       // Панели bpmn-js (context pad, палитра, popup) лежат внутри контейнера,
       // но не являются пустым холстом: иначе рамка съедает их клики.
+      // contenteditable обязателен: без него mousedown внутри прямого
+      // редактирования отменяет нативное выделение слова двойным щелчком.
       if (
         target.closest(
-          'button, a, input, select, textarea, [role="button"], .djs-context-pad, .djs-popup, .djs-palette, .djs-overlay, .djs-minimap, .layer-resizers, .djs-resizer, .djs-bendpoint, .djs-segment-dragger',
+          'button, a, input, select, textarea, [contenteditable="true"], .djs-direct-editing-parent, [role="button"], .djs-context-pad, .djs-popup, .djs-palette, .djs-overlay, .djs-minimap, .layer-resizers, .djs-resizer, .djs-bendpoint, .djs-segment-dragger',
         )
       ) {
         return;
@@ -1894,6 +1911,9 @@ export function DiagramEditor({
         ShortcutAction,
         string,
       ][]) {
+        if (editable && action !== 'save') {
+          continue;
+        }
         if (active[action] !== combo && matchesCombo(event, combo)) {
           event.preventDefault();
           event.stopPropagation();
@@ -2275,6 +2295,11 @@ export function DiagramEditor({
             modeling.addLane(target, 'bottom');
           },
         });
+        items.push({
+          id: 'open-stages',
+          label: 'Этапы схемы…',
+          onSelect: () => setStagesOpen(true),
+        });
       }
       if (isLane) {
         items.push({
@@ -2351,6 +2376,11 @@ export function DiagramEditor({
           onSelect: () => executeAction('redo'),
         },
         { id: 'sep-3', label: '', separator: true },
+        {
+          id: 'stages',
+          label: 'Этапы схемы…',
+          onSelect: () => setStagesOpen(true),
+        },
         {
           id: 'shortcuts',
           label: 'Горячие клавиши…',
@@ -2521,11 +2551,12 @@ export function DiagramEditor({
             <button
               type="button"
               className="ghost-button ghost-button--small"
-              title="Этапы схемы"
+              title="Этапы схемы: полосы поверх пулов"
               aria-label="Этапы"
               onClick={() => setStagesOpen(true)}
             >
               <span aria-hidden="true">▥</span>
+              <span className="ghost-button__label">Этапы</span>
             </button>
           </div>
 
@@ -2582,6 +2613,7 @@ export function DiagramEditor({
               }}
             >
               <span aria-hidden="true">⤓</span>
+              <span className="ghost-button__label">Экспорт</span>
             </button>
             <button
               type="button"

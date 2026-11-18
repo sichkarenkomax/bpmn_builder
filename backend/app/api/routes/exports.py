@@ -12,16 +12,19 @@ from app.export import ExportFormat, export_document
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 router = APIRouter(prefix="/diagrams", tags=["exports"])
 
 MAX_EXPORT_XML_BYTES = 5 * 1024 * 1024
 MAX_PNG_BASE64_CHARS = 24 * 1024 * 1024
+MAX_SVG_CHARS = 12 * 1024 * 1024
 
 
 class ExportRequest(BaseModel):
     xml: str = Field(min_length=1)
     png_base64: str | None = None
+    svg: str | None = None
     page: Literal["A4", "A3"] = "A4"
     orientation: Literal["portrait", "landscape"] = "portrait"
 
@@ -58,12 +61,18 @@ async def export_diagram(
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="PNG холста слишком большой"
         )
+    if payload.svg and len(payload.svg) > MAX_SVG_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="SVG холста слишком большой"
+        )
 
     try:
-        content, media_type, extension = export_document(
+        content, media_type, extension = await run_in_threadpool(
+            export_document,
             payload.xml,
             fmt,
             png_base64=payload.png_base64,
+            svg=payload.svg,
             page=payload.page,
             orientation=payload.orientation,
         )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import re
 from pathlib import Path
 from typing import Any
 
@@ -103,6 +104,59 @@ async def test_pdf_export_wraps_canvas(db_client: AsyncClient, sample_xml: str) 
     assert response.headers["content-type"] == "application/pdf"
 
 
+async def test_pdf_prefers_vector_svg(db_client: AsyncClient, sample_xml: str) -> None:
+    diagram = await _diagram(db_client, sample_xml)
+    svg = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" '
+        '"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200">'
+        '<rect x="10" y="10" width="160" height="80" fill="#dbeafe" '
+        'stroke="#2563eb"/>'
+        '<text x="30" y="55" font-family="Arial" font-size="18">Задача</text>'
+        "</svg>"
+    )
+
+    response = await db_client.post(
+        f"{API}/diagrams/{diagram['id']}/exports/pdf",
+        json={"xml": sample_xml, "svg": svg, "page": "A4"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.content.startswith(b"%PDF")
+    assert b"/Subtype /Image" not in response.content
+
+
+async def test_tall_svg_pdf_has_multiple_pages(db_client: AsyncClient, sample_xml: str) -> None:
+    diagram = await _diagram(db_client, sample_xml)
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="6000">'
+        '<rect x="10" y="10" width="300" height="5900" fill="#fff" stroke="#111"/>'
+        "</svg>"
+    )
+
+    response = await db_client.post(
+        f"{API}/diagrams/{diagram['id']}/exports/pdf",
+        json={"xml": sample_xml, "svg": svg, "page": "A4", "orientation": "portrait"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert len(re.findall(rb"/Type\s*/Page[^s]", response.content)) > 1
+
+
+async def test_pdf_svg_with_dtd_is_rejected(db_client: AsyncClient, sample_xml: str) -> None:
+    diagram = await _diagram(db_client, sample_xml)
+    response = await db_client.post(
+        f"{API}/diagrams/{diagram['id']}/exports/pdf",
+        json={
+            "xml": sample_xml,
+            "svg": '<!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><svg/>',
+        },
+    )
+
+    assert response.status_code == 400
+
+
 async def test_pdf_requires_png(db_client: AsyncClient, sample_xml: str) -> None:
     diagram = await _diagram(db_client, sample_xml)
 
@@ -111,6 +165,7 @@ async def test_pdf_requires_png(db_client: AsyncClient, sample_xml: str) -> None
     )
 
     assert response.status_code == 400
+    assert "SVG или PNG" in response.text
 
 
 async def test_export_rejects_invalid_xml(db_client: AsyncClient) -> None:

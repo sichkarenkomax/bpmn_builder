@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help up up-full down ps logs build restart test test-backend test-frontend lint typecheck fmt fmt-check tasks migrate seed check clean
+.PHONY: help up up-full down ps logs build restart test test-backend test-frontend lint typecheck fmt fmt-check tasks migrate seed check audit coverage clean
 
 help: ## Показать команды
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -63,6 +63,13 @@ seed: ## Создать демонстрационные диаграммы на
 	cd backend && uv run python ../scripts/seed_demo.py
 
 check: lint typecheck test fmt-check ## Всё, что должен проходить PR
+
+audit: ## Проверить зависимости на известные CVE
+	cd backend && uv run pip-audit --progress-spinner off
+	cd frontend && npm audit --omit=dev
+
+coverage: ## Покрытие app/bpmn с порогом 80%
+	cd backend && uv run pytest --cov=app.bpmn --cov-fail-under=80
 
 clean: ## Удалить артефакты сборки
 	rm -rf frontend/dist frontend/node_modules backend/.venv

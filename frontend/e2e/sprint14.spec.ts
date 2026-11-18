@@ -8,6 +8,38 @@ const here = dirname(fileURLToPath(import.meta.url));
 const sampleXml = readFileSync(resolve(here, 'fixtures/simple.bpmn'), 'utf8');
 const API = '/api/v1';
 
+test('двойной и тройной щелчок выделяют текст при редактировании', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E label ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const task = page.locator('[data-element-id="Task_Review"]').first();
+    await expect(task).toBeVisible();
+    await task.dblclick();
+
+    const editor = page.locator('.djs-direct-editing-content');
+    await expect(editor).toBeVisible();
+    await editor.dblclick();
+    const word = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+    expect(word.length).toBeGreaterThan(0);
+
+    await editor.click({ clickCount: 3 });
+    const line = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+    expect(line).toContain('Проверить');
+    expect(line).toContain('заявку');
+    await editor.press('ControlOrMeta+a');
+    const all = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+    expect(all).toContain('Проверить');
+    await expect(editor).toBeVisible();
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
 test('экспорт SVG и JSON из текущего холста, фокус остаётся в диалоге', async ({
   page,
   request,
@@ -50,6 +82,17 @@ test('экспорт SVG и JSON из текущего холста, фокус 
         processes: { nodes: unknown[] }[];
       };
       expect(payload.processes[0]?.nodes.length).toBeGreaterThan(0);
+    }
+
+    const pdfDownload = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: /PDF/ }).click();
+    const pdf = await pdfDownload;
+    const pdfPath = await pdf.path();
+    expect(pdfPath).toBeTruthy();
+    if (pdfPath) {
+      const content = readFileSync(pdfPath);
+      expect(content.subarray(0, 5).toString()).toBe('%PDF-');
+      expect(content.includes(Buffer.from('/Subtype /Image'))).toBe(false);
     }
 
     await page.keyboard.press('Escape');

@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 
 import { App } from './App';
+import { ToastProvider } from './components/ToastProvider';
 import { applyTheme, loadTheme } from './lib/theme';
 
 applyTheme(loadTheme(), document.documentElement);
@@ -17,7 +18,9 @@ if (!container) {
 createRoot(container).render(
   <StrictMode>
     <BrowserRouter>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </BrowserRouter>
   </StrictMode>,
 );
