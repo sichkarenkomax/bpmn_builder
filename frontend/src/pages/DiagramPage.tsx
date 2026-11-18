@@ -6,6 +6,7 @@ import { DiagramEditor } from '../components/DiagramEditor';
 import { TemplatePicker } from '../components/TemplatePicker';
 import { useDiagram } from '../hooks/useDiagram';
 import { createDiagram, updateDiagram, type DiagramSummary } from '../lib/api';
+import { withPortalDefaults } from '../lib/portal-defaults';
 
 const DEMO_TITLE = 'Демонстрационный процесс';
 
@@ -183,7 +184,7 @@ export function DiagramPage() {
     setCreating(true);
     setCreateError(null);
     try {
-      const diagram = await createDiagram(DEMO_TITLE, demoXml);
+      const diagram = await createDiagram(DEMO_TITLE, withPortalDefaults(demoXml));
       navigate(`/d/${diagram.id}`);
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : 'не удалось создать диаграмму');

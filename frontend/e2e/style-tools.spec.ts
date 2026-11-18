@@ -8,6 +8,27 @@ const here = dirname(fileURLToPath(import.meta.url));
 const sampleXml = readFileSync(resolve(here, 'fixtures/simple.bpmn'), 'utf8');
 const API = '/api/v1';
 
+const gatewayXml = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:bs="http://bpmn-studio.local/schema/bs" id="D" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="P" isExecutable="false">
+    <bpmn:exclusiveGateway id="Gateway_1">
+      <bpmn:outgoing>Flow_a</bpmn:outgoing>
+      <bpmn:outgoing>Flow_b</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_a" name="Да" />
+    <bpmn:task id="Task_b" name="Нет" />
+    <bpmn:sequenceFlow id="Flow_a" sourceRef="Gateway_1" targetRef="Task_a" />
+    <bpmn:sequenceFlow id="Flow_b" sourceRef="Gateway_1" targetRef="Task_b" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1"><bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="P">
+    <bpmndi:BPMNShape id="Gateway_1_di" bpmnElement="Gateway_1"><dc:Bounds x="200" y="200" width="50" height="50" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Task_a_di" bpmnElement="Task_a" bs:font-size="20"><dc:Bounds x="350" y="120" width="100" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Task_b_di" bpmnElement="Task_b"><dc:Bounds x="350" y="260" width="100" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNEdge id="Flow_a_di" bpmnElement="Flow_a"><di:waypoint x="225" y="225" /><di:waypoint x="300" y="160" /><di:waypoint x="350" y="160" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Flow_b_di" bpmnElement="Flow_b"><di:waypoint x="225" y="225" /><di:waypoint x="300" y="300" /><di:waypoint x="350" y="300" /></bpmndi:BPMNEdge>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+
 const annotationXml = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="D" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="P" isExecutable="false">
@@ -21,6 +42,16 @@ const annotationXml = `<?xml version="1.0" encoding="UTF-8"?>
     <bpmndi:BPMNEdge id="Association_1_di" bpmnElement="Association_1"><di:waypoint x="300" y="180" /><di:waypoint x="450" y="300" /></bpmndi:BPMNEdge>
   </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
+
+function withResizeOthers(xml: string): string {
+  return xml.replace(
+    '<bpmn:definitions ',
+    '<bpmn:definitions xmlns:bs="https://bpmn-studio.dev/schema/1.0" bs:resize-others="true" ',
+  );
+}
+
+const resizableSampleXml = withResizeOthers(sampleXml);
+const resizableAnnotationXml = withResizeOthers(annotationXml);
 
 function shapeBounds(xml: string, elementId: string) {
   const pattern = new RegExp(
@@ -52,6 +83,22 @@ function edgeWaypoints(xml: string, elementId: string) {
   }));
 }
 
+async function clickConnection(page: Page, elementId: string, button: 'left' | 'right' = 'left') {
+  const point = await page
+    .locator(`[data-element-id="${elementId}"] path.djs-hit`)
+    .first()
+    .evaluate((node) => {
+      const path = node as SVGPathElement;
+      const local = path.getPointAtLength(path.getTotalLength() / 2);
+      const matrix = path.getScreenCTM()!;
+      return {
+        x: local.x * matrix.a + local.y * matrix.c + matrix.e,
+        y: local.x * matrix.b + local.y * matrix.d + matrix.f,
+      };
+    });
+  await page.mouse.click(point.x, point.y, { button });
+}
+
 async function saveDiagram(page: Page, diagramId: string) {
   await Promise.all([
     page.waitForResponse(
@@ -64,10 +111,7 @@ async function saveDiagram(page: Page, diagramId: string) {
   ]);
 }
 
-test('связь комментария примыкает точками и идёт без диагоналей', async ({
-  page,
-  request,
-}) => {
+test('связь комментария примыкает точками и идёт без диагоналей', async ({ page, request }) => {
   const created = await request.post(`${API}/diagrams`, {
     data: { title: `E2E association ${Date.now()}`, bpmn_xml: annotationXml },
   });
@@ -96,9 +140,10 @@ test('связь комментария примыкает точками и и�
       xml,
     )?.[0];
     expect(edge).toBeTruthy();
-    const points = [...edge!.matchAll(/<di:waypoint x="([\d.]+)" y="([\d.]+)"/g)].map(
-      (match) => ({ x: Number(match[1]), y: Number(match[2]) }),
-    );
+    const points = [...edge!.matchAll(/<di:waypoint x="([\d.]+)" y="([\d.]+)"/g)].map((match) => ({
+      x: Number(match[1]),
+      y: Number(match[2]),
+    }));
     expect(points.length).toBeGreaterThanOrEqual(4);
     for (let index = 1; index < points.length; index += 1) {
       const previous = points[index - 1]!;
@@ -133,11 +178,9 @@ test('подпись двигается свободно, а выравнива�
     const before = (await label.boundingBox())!;
     await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
     await page.mouse.down();
-    await page.mouse.move(
-      before.x + before.width / 2 + 80,
-      before.y + before.height / 2 + 24,
-      { steps: 8 },
-    );
+    await page.mouse.move(before.x + before.width / 2 + 80, before.y + before.height / 2 + 24, {
+      steps: 8,
+    });
     await page.mouse.up();
 
     const moved = (await label.boundingBox())!;
@@ -175,12 +218,9 @@ test('связи документа и БД тоже идут ортогонал
       <bpmn:dataObjectReference id="DataObjectReference_1" dataObjectRef="DataObject_1" name="Документ" />
       <bpmn:dataStoreReference id="DataStoreReference_1" name="БД" />`,
     )
+    .replace(/<bpmn:textAnnotation[\s\S]*?<\/bpmn:textAnnotation>\s*<bpmn:association[^>]*\/>/, '')
     .replace(
-      /<bpmn:textAnnotation[\s\S]*?<\/bpmn:textAnnotation>\s*<bpmn:association[^>]*\/>/,
-      '',
-    )
-    .replace(
-      /<bpmndi:BPMNShape id="Annotation_1_di"[\s\S]*?<\/bpmndi:BPMNShape>/, 
+      /<bpmndi:BPMNShape id="Annotation_1_di"[\s\S]*?<\/bpmndi:BPMNShape>/,
       '<bpmndi:BPMNShape id="DataObjectReference_1_di" bpmnElement="DataObjectReference_1"><dc:Bounds x="120" y="80" width="36" height="50" /></bpmndi:BPMNShape>\n    <bpmndi:BPMNShape id="DataStoreReference_1_di" bpmnElement="DataStoreReference_1"><dc:Bounds x="500" y="380" width="50" height="50" /></bpmndi:BPMNShape>',
     )
     .replace(
@@ -201,9 +241,9 @@ test('связи документа и БД тоже идут ортогонал
     const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
 
     for (const id of ['DataInputAssociation_1', 'DataOutputAssociation_1']) {
-      const edge = new RegExp(`<bpmndi:BPMNEdge[^>]*bpmnElement="${id}"[\\s\\S]*?</bpmndi:BPMNEdge>`).exec(
-        xml,
-      )?.[0];
+      const edge = new RegExp(
+        `<bpmndi:BPMNEdge[^>]*bpmnElement="${id}"[\\s\\S]*?</bpmndi:BPMNEdge>`,
+      ).exec(xml)?.[0];
       expect(edge).toBeTruthy();
       const points = [...edge!.matchAll(/<di:waypoint x="([\d.]+)" y="([\d.]+)"/g)].map(
         (match) => ({ x: Number(match[1]), y: Number(match[2]) }),
@@ -220,10 +260,7 @@ test('связи документа и БД тоже идут ортогонал
   }
 });
 
-test('ПКМ: смена типа открывается компактным меню только с иконками', async ({
-  page,
-  request,
-}) => {
+test('ПКМ: смена типа открывается компактным меню только с иконками', async ({ page, request }) => {
   const created = await request.post(`${API}/diagrams`, {
     data: { title: `E2E replace menu ${Date.now()}`, bpmn_xml: sampleXml },
   });
@@ -254,7 +291,7 @@ test('ПКМ: смена типа открывается компактным м
 
 test('ресайз события: ручки доступны, размер сохраняется', async ({ page, request }) => {
   const created = await request.post(`${API}/diagrams`, {
-    data: { title: `E2E event resize ${Date.now()}`, bpmn_xml: sampleXml },
+    data: { title: `E2E event resize ${Date.now()}`, bpmn_xml: resizableSampleXml },
   });
   expect(created.ok()).toBeTruthy();
   const diagram = (await created.json()) as { id: string };
@@ -296,6 +333,141 @@ test('ресайз события: ручки доступны, размер с�
   }
 });
 
+test('событие при ресайзе остаётся круглым, контур совпадает', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E event outline ${Date.now()}`, bpmn_xml: resizableSampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const event = page.locator('[data-element-id="EndEvent_1"]').first();
+    await expect(event).toBeVisible();
+    await event.click();
+
+    const handle = page.locator('.djs-resizer-EndEvent_1.djs-resizer-e .djs-resizer-hit');
+    const box = (await handle.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+
+    await saveDiagram(page, diagram.id);
+    const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+    const bounds = shapeBounds(xml, 'EndEvent_1');
+    // Круг не должен превращаться в овал: рамка остаётся квадратной.
+    expect(bounds.width).toBeGreaterThan(36);
+    expect(bounds.width).toBeCloseTo(bounds.height, 0);
+
+    // Событие рисуется кругом r=(w+h)/4; контур — на 6 px больше (и +1 у финиша).
+    const outlineR = await event
+      .locator('.djs-outline')
+      .evaluate((node) => Number(node.getAttribute('r')));
+    expect(outlineR).toBeCloseTo((bounds.width + bounds.height) / 4 + 7, 0);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('контур стартового события остаётся круглым после ресайза', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E start event outline ${Date.now()}`, bpmn_xml: resizableSampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const event = page.locator('[data-element-id="StartEvent_1"]').first();
+    await expect(event).toBeVisible();
+    await event.click();
+    await expect(event.locator('.djs-outline')).toHaveJSProperty('tagName', 'circle');
+
+    const handle = page.locator('.djs-resizer-StartEvent_1.djs-resizer-e .djs-resizer-hit');
+    const box = (await handle.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+
+    const outline = await event.locator('.djs-outline').evaluate((node) => ({
+      tag: node.tagName,
+      cx: Number(node.getAttribute('cx')),
+      cy: Number(node.getAttribute('cy')),
+      r: Number(node.getAttribute('r')),
+    }));
+    const circle = await event
+      .locator('.djs-visual circle')
+      .first()
+      .evaluate((node) => Number(node.getAttribute('r')));
+    expect(outline.tag).toBe('circle');
+    expect(outline.cx).toBeCloseTo(outline.cy, 0);
+    expect(outline.r).toBeGreaterThan(circle + 5);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('поток по умолчанию из ПКМ и сброс размера', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E default flow ${Date.now()}`, bpmn_xml: gatewayXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    await expect(page.locator('[data-element-id="Gateway_1"]').first()).toBeVisible();
+
+    // ПКМ по потоку от шлюза: назначаем поток по умолчанию.
+    await clickConnection(page, 'Flow_a', 'right');
+    await page.getByRole('menuitem', { name: 'Сделать потоком по умолчанию' }).click();
+    await saveDiagram(page, diagram.id);
+    let xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+    expect(xml).toContain('default="Flow_a"');
+
+    // Повторный ПКМ снимает признак.
+    await clickConnection(page, 'Flow_a', 'right');
+    await page.getByRole('menuitem', { name: 'Снять поток по умолчанию' }).click();
+    await saveDiagram(page, diagram.id);
+    xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+    expect(xml).not.toContain('default="Flow_a"');
+
+    // Горячая клавиша Shift+D назначает поток по умолчанию.
+    await clickConnection(page, 'Flow_b');
+    await page.keyboard.press('Shift+D');
+    await saveDiagram(page, diagram.id);
+    xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+    expect(xml).toContain('default="Flow_b"');
+
+    // Ресайз задачи и сброс к стандартным 100×80.
+    await page.locator('[data-element-id="Task_a"]').first().click();
+    const handle = page.locator('.djs-resizer-Task_a.djs-resizer-se .djs-resizer-hit');
+    const box = (await handle.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 20, { steps: 5 });
+    await page.mouse.up();
+    await page.locator('[data-element-id="Task_a"]').first().click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Сбросить размер' }).click();
+    await saveDiagram(page, diagram.id);
+    xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+    const bounds = shapeBounds(xml, 'Task_a');
+    expect(bounds.width).toBe(100);
+    expect(bounds.height).toBe(80);
+
+    // Сброс форматирования убирает bs-атрибуты стиля.
+    await page.locator('[data-element-id="Task_a"]').first().click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Сбросить форматирование' }).click();
+    await saveDiagram(page, diagram.id);
+    xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+    expect(xml).not.toContain('bs:font-size');
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
 test('направление текста сохраняется в DI', async ({ page, request }) => {
   const created = await request.post(`${API}/diagrams`, {
     data: { title: `E2E style tools ${Date.now()}`, bpmn_xml: sampleXml },
@@ -328,7 +500,10 @@ test('направление текста сохраняется в DI', async (
     const taskHandle = page.locator('.djs-resizer-Task_Review.djs-resizer-se .djs-resizer-hit');
     await expect(taskHandle).toBeVisible();
     const taskHandleBox = (await taskHandle.boundingBox())!;
-    await page.mouse.move(taskHandleBox.x + taskHandleBox.width / 2, taskHandleBox.y + taskHandleBox.height / 2);
+    await page.mouse.move(
+      taskHandleBox.x + taskHandleBox.width / 2,
+      taskHandleBox.y + taskHandleBox.height / 2,
+    );
     await page.mouse.down();
     await page.mouse.move(
       taskHandleBox.x + taskHandleBox.width / 2 + 40,
@@ -347,17 +522,97 @@ test('направление текста сохраняется в DI', async (
     // Исходящий поток остаётся на середине правой стороны задачи.
     const flow = edgeWaypoints(xml, 'Flow_2');
     expect(Math.abs(flow[0]!.x - (resizedTask.x + resizedTask.width))).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(flow[0]!.y - (resizedTask.y + resizedTask.height / 2)),
-    ).toBeLessThanOrEqual(1);
+    expect(Math.abs(flow[0]!.y - (resizedTask.y + resizedTask.height / 2))).toBeLessThanOrEqual(1);
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }
 });
 
+test('настройки ресайза скрывают ручки и сохраняются в схеме', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E resize settings ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const event = page.locator('[data-element-id="StartEvent_1"]').first();
+    const task = page.locator('[data-element-id="Task_Review"]').first();
+    await expect(event).toBeVisible();
+
+    // По умолчанию задачи ресайзятся, события — нет.
+    await event.click();
+    await expect(page.locator('.djs-resizer-StartEvent_1')).toHaveCount(0);
+    await task.click();
+    await expect(page.locator('.djs-resizer-Task_Review')).toHaveCount(8);
+
+    await page.getByRole('button', { name: 'Тема' }).click();
+    await page.getByLabel('Разрешить менять размеры событий, шлюзов, данных и аннотаций').check();
+    await page.getByLabel('Разрешить менять размеры задач и подпроцессов').uncheck();
+    await page.getByRole('button', { name: 'Готово' }).click();
+
+    await event.click();
+    await expect(page.locator('.djs-resizer-StartEvent_1')).toHaveCount(8);
+    await task.click();
+    await expect(page.locator('.djs-resizer-Task_Review')).toHaveCount(0);
+
+    await saveDiagram(page, diagram.id);
+    const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+    expect(xml).toContain('bs:resize-tasks="false"');
+    expect(xml).toContain('bs:resize-others="true"');
+
+    // Настройки переживают перезагрузку и не сбрасываются на дефолты.
+    await page.reload();
+    await expect(page.locator('[data-element-id="Task_Review"]').first()).toBeVisible();
+    await page.locator('[data-element-id="StartEvent_1"]').first().click();
+    await expect(page.locator('.djs-resizer-StartEvent_1')).toHaveCount(8);
+    await page.locator('[data-element-id="Task_Review"]').first().click();
+    await expect(page.locator('.djs-resizer-Task_Review')).toHaveCount(0);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('портальные дефолты применяются к новой схеме', async ({ page, request }) => {
+  await page.goto('/');
+  await page.evaluate(() => {
+    window.localStorage.setItem(
+      'bpmn-studio.portal-defaults',
+      JSON.stringify({
+        theme: 'warm',
+        canvas: 'dark',
+        resizeTasks: false,
+        resizeOthers: true,
+      }),
+    );
+  });
+  await page.reload();
+  const created = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/v1/diagrams') &&
+      response.request().method() === 'POST' &&
+      response.ok(),
+  );
+  await page.getByRole('button', { name: 'Создать' }).first().click();
+  await page.waitForURL(/\/d\/[0-9a-f-]+/);
+  const diagram = (await (await created).json()) as { id: string };
+
+  try {
+    const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+    expect(xml).toContain('bs:resize-tasks="false"');
+    expect(xml).toContain('bs:resize-others="true"');
+    expect(xml).toContain('bs:theme="warm"');
+    expect(xml).toContain('bs:canvas="dark"');
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+    await page.evaluate(() => window.localStorage.removeItem('bpmn-studio.portal-defaults'));
+  }
+});
+
 test('ручки ресайза стоят на углах повёрнутого фрейма', async ({ page, request }) => {
   const created = await request.post(`${API}/diagrams`, {
-    data: { title: `E2E rotated resizers ${Date.now()}`, bpmn_xml: annotationXml },
+    data: { title: `E2E rotated resizers ${Date.now()}`, bpmn_xml: resizableAnnotationXml },
   });
   expect(created.ok()).toBeTruthy();
   const diagram = (await created.json()) as { id: string };
@@ -389,6 +644,10 @@ test('ручки ресайза стоят на углах повёрнутог�
       handleBox.y + handleBox.height / 2 + 20,
       { steps: 5 },
     );
+    // Превью тоже должно быть повёрнуто, а не растягиваться в ширину.
+    await expect
+      .poll(() => page.locator('.djs-resize-overlay').getAttribute('transform'))
+      .toContain('rotate(90 ');
     await page.mouse.up();
 
     await saveDiagram(page, diagram.id);
@@ -396,6 +655,29 @@ test('ручки ресайза стоят на углах повёрнутог�
     const resized = shapeBounds(xml, 'Annotation_1');
     expect(resized.width).toBeGreaterThan(100);
     expect(resized.height).toBeGreaterThan(30);
+
+    // В осях холста правый верхний угол повёрнутой рамки остаётся на месте:
+    // при ±90° видимая рамка — это (x + (w-h)/2, y + (h-w)/2, h, w).
+    const visual = (bounds: { x: number; y: number; width: number; height: number }) => ({
+      x: bounds.x + (bounds.width - bounds.height) / 2,
+      y: bounds.y + (bounds.height - bounds.width) / 2,
+      width: bounds.height,
+      height: bounds.width,
+    });
+    const beforeVisual = visual({ x: 450, y: 300, width: 100, height: 30 });
+    const afterVisual = visual(resized);
+    expect(afterVisual.x + afterVisual.width).toBeCloseTo(beforeVisual.x + beforeVisual.width, 0);
+    expect(afterVisual.y).toBeCloseTo(beforeVisual.y, 0);
+
+    // После перезагрузки контур создаётся лениво и тоже должен быть повёрнут.
+    await page.reload();
+    const reloaded = page.locator('[data-element-id="Annotation_1"]').first();
+    await reloaded.click();
+    await expect
+      .poll(() =>
+        reloaded.locator('.djs-outline').evaluate((node) => (node as SVGElement).style.transform),
+      )
+      .toContain('rotate(90deg)');
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }

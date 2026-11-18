@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { createDiagram } from '../lib/api';
+import { withPortalDefaults } from '../lib/portal-defaults';
 import { DIAGRAM_TEMPLATES, type TemplateId } from '../lib/templates';
 
 export function TemplatePicker({ compact = false }: { compact?: boolean }) {
@@ -18,7 +19,7 @@ export function TemplatePicker({ compact = false }: { compact?: boolean }) {
     setBusy(true);
     setError(null);
     try {
-      const diagram = await createDiagram(template.title, template.build());
+      const diagram = await createDiagram(template.title, withPortalDefaults(template.build()));
       navigate(`/d/${diagram.id}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'не удалось создать диаграмму');

@@ -18,7 +18,13 @@ export type DiagramSettings = {
   customColors: ThemeColorsMap | null;
   canvas: CanvasTheme;
   stages: DiagramStage[] | null;
+  resizeTasks: boolean;
+  resizeOthers: boolean;
 };
+
+/** Задачи и подпроцессы по умолчанию ресайзятся, остальные элементы — нет. */
+export const DEFAULT_RESIZE_TASKS = true;
+export const DEFAULT_RESIZE_OTHERS = false;
 
 /** Минимальная форма `bpmn:Definitions` от moddle: прямые свойства и `$attrs`. */
 export type DefinitionsLike = {
@@ -48,6 +54,8 @@ export function readDiagramSettings(definitions: DefinitionsLike | undefined): D
   const x = Number(attribute(definitions, 'legend-x', 'legend-x'));
   const y = Number(attribute(definitions, 'legend-y', 'legend-y'));
   const canvas = attribute(definitions, 'canvas', 'canvas');
+  const resizeTasks = attribute(definitions, 'resize-tasks', 'resize-tasks');
+  const resizeOthers = attribute(definitions, 'resize-others', 'resize-others');
 
   return {
     theme: isThemeId(theme) ? theme : null,
@@ -56,6 +64,10 @@ export function readDiagramSettings(definitions: DefinitionsLike | undefined): D
     customColors: parseCustomTheme(attribute(definitions, 'custom-theme', 'custom-theme')),
     canvas: canvas === 'dark' ? 'dark' : 'light',
     stages: parseStages(attribute(definitions, 'stages', 'stages')),
+    // Отсутствие атрибута — значение по умолчанию: так старые схемы
+    // получают привычное поведение без миграции.
+    resizeTasks: resizeTasks === undefined ? DEFAULT_RESIZE_TASKS : resizeTasks !== 'false',
+    resizeOthers: resizeOthers === undefined ? DEFAULT_RESIZE_OTHERS : resizeOthers === 'true',
   };
 }
 
@@ -66,6 +78,8 @@ export function diagramSettingsProperties(settings: {
   customColors?: ThemeColorsMap;
   canvas?: CanvasTheme;
   stages?: DiagramStage[];
+  resizeTasks?: boolean;
+  resizeOthers?: boolean;
 }): Record<string, string | undefined> {
   const properties: Record<string, string | undefined> = {};
   if (settings.theme !== undefined) {
@@ -83,6 +97,14 @@ export function diagramSettingsProperties(settings: {
   }
   if (settings.stages !== undefined) {
     properties['stages'] = serializeStages(settings.stages);
+  }
+  if (settings.resizeTasks !== undefined) {
+    properties['resize-tasks'] =
+      settings.resizeTasks === DEFAULT_RESIZE_TASKS ? undefined : 'false';
+  }
+  if (settings.resizeOthers !== undefined) {
+    properties['resize-others'] =
+      settings.resizeOthers === DEFAULT_RESIZE_OTHERS ? undefined : 'true';
   }
   return properties;
 }

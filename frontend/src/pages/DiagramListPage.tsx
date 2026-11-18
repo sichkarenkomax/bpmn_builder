@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import demoXml from '../assets/demo-process.bpmn?raw';
 import { useDiagramList } from '../hooks/useDiagram';
 import { createDiagram } from '../lib/api';
+import { withPortalDefaults } from '../lib/portal-defaults';
 import { TemplatePicker } from '../components/TemplatePicker';
 
 export function DiagramListPage() {
@@ -16,7 +17,7 @@ export function DiagramListPage() {
     setCreating(true);
     setError(null);
     try {
-      const diagram = await createDiagram('Демонстрационный процесс', demoXml);
+      const diagram = await createDiagram('Демонстрационный процесс', withPortalDefaults(demoXml));
       navigate(`/d/${diagram.id}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'не удалось создать диаграмму');

@@ -84,6 +84,30 @@ describe('настройки в документе', () => {
     expect(readDiagramSettings({ $attrs: { 'bs:canvas': 'dark' } }).canvas).toBe('dark');
     expect(readDiagramSettings({}).canvas).toBe('light');
   });
+
+  it('по умолчанию ресайз задач включён, остальных элементов — выключен', () => {
+    const settings = readDiagramSettings(undefined);
+
+    expect(settings.resizeTasks).toBe(true);
+    expect(settings.resizeOthers).toBe(false);
+  });
+
+  it('читает и пишет настройки ресайза только при отличии от дефолта', () => {
+    expect(
+      readDiagramSettings({
+        $attrs: { 'bs:resize-tasks': 'false', 'bs:resize-others': 'true' },
+      }),
+    ).toMatchObject({ resizeTasks: false, resizeOthers: true });
+
+    expect(diagramSettingsProperties({ resizeTasks: true, resizeOthers: false })).toEqual({
+      'resize-tasks': undefined,
+      'resize-others': undefined,
+    });
+    expect(diagramSettingsProperties({ resizeTasks: false, resizeOthers: true })).toEqual({
+      'resize-tasks': 'false',
+      'resize-others': 'true',
+    });
+  });
 });
 
 describe('своя тема (1.3.11)', () => {

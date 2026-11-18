@@ -17,18 +17,26 @@ export function ThemeSettings({
   value,
   customColors,
   canvas,
+  resizeTasks,
+  resizeOthers,
   onChange,
   onCustomColorsChange,
   onCanvasChange,
+  onResizeChange,
+  onSavePortalDefaults,
   onClose,
 }: {
   open: boolean;
   value: ThemeId;
   customColors: ThemeColorsMap;
   canvas: CanvasTheme;
+  resizeTasks: boolean;
+  resizeOthers: boolean;
   onChange: (id: ThemeId) => void;
   onCustomColorsChange: (colors: ThemeColorsMap) => void;
   onCanvasChange: (canvas: CanvasTheme) => void;
+  onResizeChange: (patch: { tasks?: boolean; others?: boolean }) => void;
+  onSavePortalDefaults: () => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -165,6 +173,39 @@ export function ThemeSettings({
             />
             <span>Тёмный фон холста (для презентаций и тёмных тем)</span>
           </label>
+        </fieldset>
+
+        <fieldset className="theme-editor">
+          <legend className="theme-editor__title">Изменение размеров</legend>
+          <label className="theme-editor__toggle">
+            <input
+              type="checkbox"
+              checked={resizeTasks}
+              onChange={(event) => onResizeChange({ tasks: event.target.checked })}
+            />
+            <span>Разрешить менять размеры задач и подпроцессов</span>
+          </label>
+          <label className="theme-editor__toggle">
+            <input
+              type="checkbox"
+              checked={resizeOthers}
+              onChange={(event) => onResizeChange({ others: event.target.checked })}
+            />
+            <span>Разрешить менять размеры событий, шлюзов, данных и аннотаций</span>
+          </label>
+          <p className="theme-editor__hint">
+            Без разрешения у элементов не показываются ручки изменения размера. Включённые значения
+            сохраняются вместе со схемой.
+          </p>
+          <div className="theme-editor__actions">
+            <button
+              type="button"
+              className="ghost-button ghost-button--small"
+              onClick={onSavePortalDefaults}
+            >
+              Сделать значениями по умолчанию для новых схем
+            </button>
+          </div>
         </fieldset>
 
         <footer className="dialog__footer">

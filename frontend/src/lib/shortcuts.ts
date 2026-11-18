@@ -15,6 +15,8 @@ export type ShortcutAction =
   | 'fit'
   | 'toggleMinimap'
   | 'editLabel'
+  | 'changeType'
+  | 'toggleDefaultFlow'
   | 'settings';
 
 export type ShortcutGroup = 'Файл' | 'Правка' | 'Вид' | 'Элемент';
@@ -41,6 +43,13 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { action: 'fit', label: 'Вписать диаграмму', group: 'Вид', combo: 'mod+0' },
   { action: 'toggleMinimap', label: 'Мини-карта', group: 'Вид', combo: 'mod+m' },
   { action: 'editLabel', label: 'Редактировать название', group: 'Элемент', combo: 'f2' },
+  { action: 'changeType', label: 'Сменить тип элемента', group: 'Элемент', combo: 'r' },
+  {
+    action: 'toggleDefaultFlow',
+    label: 'Поток по умолчанию',
+    group: 'Элемент',
+    combo: 'shift+d',
+  },
   { action: 'settings', label: 'Горячие клавиши', group: 'Элемент', combo: 'mod+/' },
 ];
 

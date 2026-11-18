@@ -80,6 +80,8 @@ import {
 } from '../lib/diagram-theme';
 import {
   DEFAULT_LEGEND_POSITION,
+  DEFAULT_RESIZE_OTHERS,
+  DEFAULT_RESIZE_TASKS,
   diagramSettingsProperties,
   readDiagramSettings,
   type CanvasTheme,
@@ -88,6 +90,7 @@ import {
 } from '../lib/diagram-settings';
 import bsModdle from '../lib/bs-moddle.json';
 import { attributeTypeForXml, parseAttributeType } from '../lib/attributes';
+import { savePortalDefaults } from '../lib/portal-defaults';
 import { isElementLocked } from '../lib/lock';
 import {
   clearLocalDraft,
@@ -258,7 +261,14 @@ interface SelectionLike {
 interface EditorEvent {
   newSelection?: DiagramElement[];
   element?: DiagramElement;
-  context?: { shape?: DiagramElement; connection?: DiagramElement };
+  gfx?: SVGGElement;
+  context?: {
+    shape?: DiagramElement;
+    connection?: DiagramElement;
+    direction?: string;
+    newBounds?: { x: number; y: number; width: number; height: number };
+    frame?: SVGRectElement;
+  };
   viewbox?: { x: number; y: number; width: number; height: number; scale: number };
   dx?: number;
   dy?: number;
@@ -423,6 +433,134 @@ function AlignIcon({ align }: { align: 'left' | 'center' | 'right' }) {
   );
 }
 
+/** Стандартные габариты элемента — для сброса размера из ПКМ. */
+function defaultShapeSize(
+  element: DiagramElement | null | undefined,
+): { width: number; height: number } | null {
+  const type = element?.type ?? '';
+  if (
+    !element ||
+    type === 'label' ||
+    type === 'bpmn:Participant' ||
+    type === 'bpmn:Lane' ||
+    type === 'bpmn:Group'
+  ) {
+    return null;
+  }
+  if (type === 'bpmn:DataObjectReference') {
+    return {
+      width: DATA_OBJECT_REFERENCE_STANDARD_SIZE.width,
+      height: DATA_OBJECT_REFERENCE_STANDARD_SIZE.height,
+    };
+  }
+  if (type === 'bpmn:DataStoreReference') {
+    return {
+      width: DATA_STORE_REFERENCE_STANDARD_SIZE.width,
+      height: DATA_STORE_REFERENCE_STANDARD_SIZE.height,
+    };
+  }
+  if (type.endsWith('Gateway')) {
+    return { width: 50, height: 50 };
+  }
+  if (type.endsWith('Event')) {
+    return { width: 36, height: 36 };
+  }
+  if (type === 'bpmn:TextAnnotation') {
+    return { width: 100, height: 30 };
+  }
+  return { width: 100, height: 80 };
+}
+
+/** Любое событие BPMN: стартовое, промежуточное, граничное, финиш. */
+function isEventElement(element: DiagramElement | null | undefined): boolean {
+  return (element?.type ?? '').endsWith('Event');
+}
+
+/** События и шлюзы рисуются кругом/ромбом: держим их рамку квадратной. */
+function keepsSquareFrame(element: DiagramElement | null | undefined): boolean {
+  const type = element?.type ?? '';
+  return type.endsWith('Event') || type.endsWith('Gateway');
+}
+
+/** Квадратная рамка с якорем на стороне, противоположной перетаскиваемой. */
+function squareResizeBounds(
+  old: { x: number; y: number; width: number; height: number },
+  next: { x: number; y: number; width: number; height: number },
+  direction: string,
+): { x: number; y: number; width: number; height: number } {
+  const size =
+    direction.includes('e') || direction.includes('w')
+      ? next.width
+      : direction.includes('n') || direction.includes('s')
+        ? next.height
+        : Math.max(next.width, next.height);
+  const centerX = old.x + old.width / 2;
+  const centerY = old.y + old.height / 2;
+  const x = direction.includes('w')
+    ? old.x + old.width - size
+    : direction.includes('e')
+      ? old.x
+      : centerX - size / 2;
+  const y = direction.includes('n')
+    ? old.y + old.height - size
+    : direction.includes('s')
+      ? old.y
+      : centerY - size / 2;
+  return { x, y, width: size, height: size };
+}
+
+/** Сырые рамки последнего превью: CommandStack копирует только свои поля. */
+const resizeRawBounds = new Map<string, { x: number; y: number; width: number; height: number }>();
+
+/**
+ * Сдвигает рамку так, чтобы при повороте вокруг нового центра её
+ * неподвижная сторона осталась на месте в осях холста.
+ */
+function compensateRotatedBounds(
+  shape: DiagramElement,
+  bounds: { x: number; y: number; width: number; height: number },
+  angle: number,
+): void {
+  if (
+    typeof shape.x !== 'number' ||
+    typeof shape.y !== 'number' ||
+    typeof shape.width !== 'number' ||
+    typeof shape.height !== 'number'
+  ) {
+    return;
+  }
+  const radians = (angle * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const shiftX = bounds.x + bounds.width / 2 - (shape.x + shape.width / 2);
+  const shiftY = bounds.y + bounds.height / 2 - (shape.y + shape.height / 2);
+  bounds.x += shiftX * cos - shiftY * sin - shiftX;
+  bounds.y += shiftX * sin + shiftY * cos - shiftY;
+}
+
+/** Поворот контура подписи/аннотации; при angle=0 возвращает штатный вид. */
+function syncRotatedOutline(
+  element: DiagramElement | null | undefined,
+  gfx: SVGGElement | undefined,
+): void {
+  if (!element) {
+    return;
+  }
+  const rotatesFrame =
+    element.type === 'label' || element.businessObject?.$type === 'bpmn:TextAnnotation';
+  if (!rotatesFrame) {
+    return;
+  }
+  const outline = gfx?.querySelector<SVGGElement>('.djs-outline');
+  if (!outline) {
+    return;
+  }
+  const angle = rotatedFrameAngle(element);
+  outline.style.transformBox = angle ? 'fill-box' : '';
+  outline.style.transformOrigin = angle ? 'center' : '';
+  outline.style.transform = angle ? `rotate(${angle}deg)` : '';
+}
+
 /** Угол поворота фрейма подписи/аннотации; 0 — фрейм не повёрнут. */
 function rotatedFrameAngle(element: DiagramElement | null | undefined): number {
   if (!element) {
@@ -522,6 +660,45 @@ interface ResizeRuleContext {
 }
 
 /** Разрешает ресайз всем фигурам BPMN, не только задачам/пулам (1.3.27). */
+/** Текущие разрешения на ресайз: их читают ручки и правило изменения размера. */
+const resizePermissions = {
+  tasks: DEFAULT_RESIZE_TASKS,
+  others: DEFAULT_RESIZE_OTHERS,
+};
+
+function isTaskShape(type: string): boolean {
+  return (
+    type.endsWith('Task') ||
+    type === 'bpmn:SubProcess' ||
+    type === 'bpmn:CallActivity' ||
+    type === 'bpmn:Transaction'
+  );
+}
+
+function isOtherResizableShape(type: string): boolean {
+  return (
+    type.endsWith('Event') ||
+    type.endsWith('Gateway') ||
+    type === 'bpmn:DataObjectReference' ||
+    type === 'bpmn:DataStoreReference' ||
+    type === 'bpmn:TextAnnotation'
+  );
+}
+
+/** Дорожки и пулы — структура схемы, их размеры не прячем за настройкой. */
+function mayResizeShape(type: string | undefined): boolean {
+  if (!type || !type.startsWith('bpmn:')) {
+    return true;
+  }
+  if (isTaskShape(type)) {
+    return resizePermissions.tasks;
+  }
+  if (isOtherResizableShape(type)) {
+    return resizePermissions.others;
+  }
+  return true;
+}
+
 class ResizeAllShapesRules extends RuleProvider {
   static override $inject = ['eventBus'];
 
@@ -532,11 +709,24 @@ class ResizeAllShapesRules extends RuleProvider {
       if (!shape || shape.type === 'label') {
         return undefined;
       }
+      if (!mayResizeShape(shape.type)) {
+        return false;
+      }
       if (context.newBounds && (context.newBounds.width < 12 || context.newBounds.height < 12)) {
         return false;
       }
       return shape.type?.startsWith('bpmn:') ? true : undefined;
     });
+  }
+}
+
+/** Пересоздаёт ручки выбранного элемента после смены настроек ресайза. */
+function refreshResizeHandles(modeler: Modeler): void {
+  const selection = modeler.get<SelectionLike>('selection');
+  const current = selection.get();
+  selection.select([]);
+  if (current.length > 0) {
+    selection.select(current);
   }
 }
 
@@ -752,7 +942,7 @@ class ResizableOutlineProvider {
   }
 
   getOutline(element: DiagramElement): SVGElement | undefined {
-    if (element.type === 'bpmn:EndEvent' || element.type === 'bpmn:Event') {
+    if (isEventElement(element)) {
       const outline = this.create('circle');
       this.updateEventOutline(outline, element);
       return outline;
@@ -782,7 +972,7 @@ class ResizableOutlineProvider {
   }
 
   updateOutline(element: DiagramElement, outline: SVGElement): boolean {
-    if (element.type === 'bpmn:EndEvent' || element.type === 'bpmn:Event') {
+    if (isEventElement(element)) {
       this.updateEventOutline(outline, element);
       return true;
     }
@@ -808,7 +998,12 @@ class ResizableOutlineProvider {
     const height = element.height ?? 0;
     outline.setAttribute('cx', String(width / 2));
     outline.setAttribute('cy', String(height / 2));
-    outline.setAttribute('r', String(width / 2 + 6 + (element.type === 'bpmn:EndEvent' ? 1 : 0)));
+    // bpmn-js рисует событие кругом с r = (width + height) / 4: при ресайзе
+    // одной стороны контур должен повторять именно эту окружность.
+    outline.setAttribute(
+      'r',
+      String((width + height) / 4 + 6 + (element.type === 'bpmn:EndEvent' ? 1 : 0)),
+    );
   }
 
   private updateGatewayOutline(outline: SVGElement, element: DiagramElement): void {
@@ -1063,6 +1258,10 @@ export function DiagramEditor({
   const customColorsRef = useRef(customColors);
   customColorsRef.current = customColors;
   const [canvasTheme, setCanvasTheme] = useState<CanvasTheme>('light');
+  const [resizeSettings, setResizeSettings] = useState({
+    tasks: DEFAULT_RESIZE_TASKS,
+    others: DEFAULT_RESIZE_OTHERS,
+  });
   const [legendPosition, setLegendPosition] = useState<LegendPosition>(DEFAULT_LEGEND_POSITION);
   const [comments, setComments] = useState<DiagramComment[]>([]);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -1394,6 +1593,8 @@ export function DiagramEditor({
     customColors?: ThemeColorsMap;
     canvas?: CanvasTheme;
     stages?: DiagramStage[];
+    resizeTasks?: boolean;
+    resizeOthers?: boolean;
   }) => {
     const modeler = modelerRef.current;
     const definitions = modeler ? findDefinitions(modeler) : undefined;
@@ -1439,6 +1640,18 @@ export function DiagramEditor({
   const updateCanvasTheme = (next: CanvasTheme) => {
     setCanvasTheme(next);
     writeDiagramSettings({ canvas: next });
+  };
+
+  const updateResizeSettings = (patch: { tasks?: boolean; others?: boolean }) => {
+    const next = { ...resizeSettings, ...patch };
+    setResizeSettings(next);
+    resizePermissions.tasks = next.tasks;
+    resizePermissions.others = next.others;
+    writeDiagramSettings({ resizeTasks: next.tasks, resizeOthers: next.others });
+    const modeler = modelerRef.current;
+    if (modeler) {
+      refreshResizeHandles(modeler);
+    }
   };
 
   const updateStages = (next: DiagramStage[]) => {
@@ -1929,6 +2142,7 @@ export function DiagramEditor({
 
     const eventBus = modeler.get<EventBusLike>('eventBus');
     const commandStack = modeler.get<CommandStackLike>('commandStack');
+    const elementRegistry = modeler.get<ElementRegistryLike>('elementRegistry');
 
     eventBus.on('selection.changed', (event) => {
       const element = event.newSelection?.[0] ?? null;
@@ -1947,6 +2161,35 @@ export function DiagramEditor({
       );
     });
 
+    // Контур создаётся лениво на выделении. Разворачиваем его уже после
+    // bpmn-js, иначе после перезагрузки он остаётся горизонтальным.
+    eventBus.on('selection.changed', 500, (event) => {
+      for (const element of event.newSelection ?? []) {
+        syncRotatedOutline(
+          element,
+          elementRegistry.getGraphics(element) as SVGGElement | undefined,
+        );
+      }
+    });
+    eventBus.on('shape.changed', 400, (event) => {
+      const element = event.element;
+      if (element) {
+        syncRotatedOutline(
+          element,
+          event.gfx ?? (elementRegistry.getGraphics(element) as SVGGElement | undefined),
+        );
+      }
+    });
+
+    // Снаппинг bpmn-js считает дельту в осях холста и на повёрнутой рамке
+    // портит её; для таких элементов отключаем привязку на время ресайза.
+    eventBus.on('resize.move', 1600, (event) => {
+      if (!rotatedFrameAngle(event.context?.shape ?? selectedRef.current)) {
+        return;
+      }
+      (event as { snapped?: { x: boolean; y: boolean } }).snapped = { x: true, y: true };
+    });
+
     // Ручки стоят на повёрнутой рамке, поэтому движение мыши переводим
     // в оси самой рамки: иначе перетаскивание угла меняет не ту сторону.
     eventBus.on('resize.move', 1500, (event) => {
@@ -1961,6 +2204,96 @@ export function DiagramEditor({
       const dy = -event.dx * sin + event.dy * cos;
       event.dx = dx;
       event.dy = dy;
+    });
+
+    // Повёрнутый фрейм bpmn-js крутит вокруг центра. Когда меняется одна
+    // сторона, центр смещается и весь фрейм «уезжает» вбок. Сдвигаем рамку
+    // так, чтобы неподвижная сторона осталась на месте в осях холста.
+    eventBus.on('resize.move', 900, (event) => {
+      const shape = event.context?.shape;
+      const bounds = event.context?.newBounds;
+      const angle = rotatedFrameAngle(shape);
+      if (!angle || !bounds || !shape) {
+        return;
+      }
+      // Запоминаем рамку до сдвига: на коммите высота аннотации уже
+      // подогнана под текст, и компенсацию нужно считать заново.
+      if (shape.id) {
+        resizeRawBounds.set(shape.id, {
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+        });
+      }
+      compensateRotatedBounds(shape, bounds, angle);
+    });
+
+    // Аннотация после ресайза подгоняет высоту под текст (TextAnnotationBehavior),
+    // поэтому финальную рамку выравниваем уже по итоговым размерам.
+    eventBus.on('commandStack.shape.resize.preExecute', 500, (event) => {
+      const shape = event.context?.shape;
+      const bounds = event.context?.newBounds;
+      const angle = rotatedFrameAngle(shape);
+      if (!angle || !bounds || !shape) {
+        return;
+      }
+      const raw = shape.id ? resizeRawBounds.get(shape.id) : undefined;
+      if (raw) {
+        // Ширину и позицию берём из последнего превью, высоту — итоговую
+        // (TextAnnotationBehavior уже подогнал её под текст).
+        bounds.x = raw.x;
+        bounds.width = raw.width;
+        resizeRawBounds.delete(shape.id!);
+      }
+      compensateRotatedBounds(shape, bounds, angle);
+    });
+
+    // Круги событий и ромбы шлюзов рисуются по средней величине сторон:
+    // при свободном ресайзе рамка расходится с фигурой, поэтому держим
+    // такие элементы квадратными.
+    eventBus.on('resize.move', 750, (event) => {
+      const context = event.context;
+      const shape = context?.shape;
+      const next = context?.newBounds;
+      const direction = context?.direction;
+      if (
+        !context ||
+        !shape ||
+        !next ||
+        !direction ||
+        !keepsSquareFrame(shape) ||
+        typeof shape.x !== 'number' ||
+        typeof shape.y !== 'number' ||
+        typeof shape.width !== 'number' ||
+        typeof shape.height !== 'number'
+      ) {
+        return;
+      }
+      context.newBounds = squareResizeBounds(
+        { x: shape.x, y: shape.y, width: shape.width, height: shape.height },
+        next,
+        direction,
+      );
+    });
+
+    // Превью ресайза diagram-js рисует по непревращённой рамке: разворачиваем
+    // его вместе с фреймом, иначе при перетаскивании кажется, что он растёт
+    // в ширину, а не вдоль текста.
+    eventBus.on('resize.move', 400, (event) => {
+      const frame = event.context?.frame;
+      const bounds = event.context?.newBounds;
+      const angle = rotatedFrameAngle(event.context?.shape ?? selectedRef.current);
+      if (!frame) {
+        return;
+      }
+      if (!angle || !bounds) {
+        frame.removeAttribute('transform');
+        return;
+      }
+      const cx = bounds.x + bounds.width / 2;
+      const cy = bounds.y + bounds.height / 2;
+      frame.setAttribute('transform', `rotate(${angle} ${cx} ${cy})`);
     });
 
     eventBus.on('commandStack.shape.create.postExecuted', (event) => {
@@ -1991,6 +2324,15 @@ export function DiagramEditor({
       }
       setCanvasTheme(stored.canvas);
       setStages(stored.stages ?? []);
+      const resizeChanged =
+        stored.resizeTasks !== resizePermissions.tasks ||
+        stored.resizeOthers !== resizePermissions.others;
+      resizePermissions.tasks = stored.resizeTasks;
+      resizePermissions.others = stored.resizeOthers;
+      setResizeSettings({ tasks: stored.resizeTasks, others: stored.resizeOthers });
+      if (resizeChanged) {
+        refreshResizeHandles(modeler);
+      }
       applyAllStyles(modeler);
       setRevision((value) => value + 1);
       setSave((current) => (current.kind === 'saving' ? current : { kind: 'dirty' }));
@@ -2017,6 +2359,9 @@ export function DiagramEditor({
         }
         setCanvasTheme(stored.canvas);
         setStages(stored.stages ?? []);
+        resizePermissions.tasks = stored.resizeTasks;
+        resizePermissions.others = stored.resizeOthers;
+        setResizeSettings({ tasks: stored.resizeTasks, others: stored.resizeOthers });
         setViewbox(modeler.get<CanvasLike>('canvas').viewbox());
         const normalized = normalizeImportedAssociations(modeler);
         applyAllStyles(modeler);
@@ -2259,6 +2604,37 @@ export function DiagramEditor({
           if (element) {
             modeler.get<DirectEditingLike>('directEditing').activate(element);
           }
+          return;
+        }
+        case 'changeType': {
+          const element = modeler.get<SelectionLike>('selection').get()[0];
+          const provider = modeler.get<ReplaceMenuProviderLike>('replaceMenuProvider', false);
+          if (!element || !provider) {
+            return;
+          }
+          try {
+            const entries = Object.values(provider.getPopupMenuEntries(element));
+            if (entries.length > 0) {
+              const point = pointerRef.current ?? { x: 240, y: 160 };
+              setReplaceMenu({ x: point.x, y: point.y, entries });
+            }
+          } catch {
+            // Для типов без замены меню не открываем.
+          }
+          return;
+        }
+        case 'toggleDefaultFlow': {
+          const element = modeler.get<SelectionLike>('selection').get()[0];
+          const source = element?.source;
+          if (!element || !source || !source.type.endsWith('Gateway')) {
+            return;
+          }
+          const current = source.businessObject.default as { id?: string } | undefined;
+          const isDefault =
+            current === element.businessObject || current?.id === element.businessObject.id;
+          modeler.get<ModelingLike>('modeling').updateProperties(source, {
+            default: isDefault ? undefined : element.businessObject,
+          });
           return;
         }
       }
@@ -2612,6 +2988,61 @@ export function DiagramEditor({
           label: 'Изменить направление',
           onSelect: () => modeling.reconnect(target, flowTarget, flowSource),
         });
+        if (flowSource.type.endsWith('Gateway')) {
+          const current = flowSource.businessObject.default as { id?: string } | undefined;
+          const isDefault =
+            current === target.businessObject || current?.id === target.businessObject.id;
+          items.push({
+            id: 'default-flow',
+            label: isDefault ? 'Снять поток по умолчанию' : 'Сделать потоком по умолчанию',
+            icon: isDefault ? '★' : '☆',
+            hint: hint('toggleDefaultFlow'),
+            onSelect: () => applyPatch({ isDefaultFlow: !isDefault }),
+          });
+        }
+      }
+
+      if (!target.waypoints) {
+        items.push(
+          {
+            id: 'reset-formatting',
+            label: 'Сбросить форматирование',
+            onSelect: () =>
+              applyPatch({
+                fontFamily: '',
+                fontSize: '',
+                fontColor: '',
+                isBold: false,
+                isItalic: false,
+                textAlign: '',
+                textDirection: '',
+                opacity: '',
+                strokeWidth: '',
+                strokeStyle: '',
+                fillColor: '',
+                strokeColor: '',
+              }),
+          },
+          {
+            id: 'reset-size',
+            label: 'Сбросить размер',
+            disabled: !defaultShapeSize(target),
+            onSelect: () => {
+              const size = defaultShapeSize(target);
+              if (!size || typeof target.x !== 'number' || typeof target.y !== 'number') {
+                return;
+              }
+              const centerX = target.x + (target.width ?? size.width) / 2;
+              const centerY = target.y + (target.height ?? size.height) / 2;
+              modeling.resizeShape(target, {
+                x: centerX - size.width / 2,
+                y: centerY - size.height / 2,
+                width: size.width,
+                height: size.height,
+              });
+            },
+          },
+        );
       }
 
       const sourceBounds = shapeBounds(target.source);
@@ -3345,9 +3776,21 @@ export function DiagramEditor({
         value={themeId}
         customColors={customColors}
         canvas={canvasTheme}
+        resizeTasks={resizeSettings.tasks}
+        resizeOthers={resizeSettings.others}
         onChange={updateTheme}
         onCustomColorsChange={updateCustomColors}
         onCanvasChange={updateCanvasTheme}
+        onResizeChange={updateResizeSettings}
+        onSavePortalDefaults={() => {
+          savePortalDefaults({
+            theme: themeId,
+            canvas: canvasTheme,
+            resizeTasks: resizeSettings.tasks,
+            resizeOthers: resizeSettings.others,
+          });
+          notify('success', 'Значения сохранены для новых схем');
+        }}
         onClose={() => setThemeOpen(false)}
       />
       <ShortcutSettings
