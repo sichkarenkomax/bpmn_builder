@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import demoXml from '../assets/demo-process.bpmn?raw';
 import { useDiagramList } from '../hooks/useDiagram';
 import { createDiagram } from '../lib/api';
+import { TemplatePicker } from '../components/TemplatePicker';
 
 export function DiagramListPage() {
   const loadable = useDiagramList();
@@ -31,9 +32,12 @@ export function DiagramListPage() {
           <h1 className="page__title">Диаграммы</h1>
           <p className="page__subtitle">сохраняются в API с историей версий</p>
         </div>
-        <button type="button" className="ghost-button" onClick={createDemo} disabled={creating}>
-          {creating ? 'Создаю…' : 'Создать демо-процесс'}
-        </button>
+        <div className="page__toolbar-actions">
+          <TemplatePicker compact />
+          <button type="button" className="ghost-button" onClick={createDemo} disabled={creating}>
+            {creating ? 'Создаю…' : 'Демо-процесс'}
+          </button>
+        </div>
       </div>
 
       {error ? <p className="canvas__overlay--error">{error}</p> : null}

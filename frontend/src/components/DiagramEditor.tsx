@@ -22,17 +22,24 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 
+import 'bpmn-js/dist/assets/diagram-js.css';
+import 'bpmn-js/dist/assets/bpmn-js.css';
+import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
 import 'diagram-js-minimap/assets/diagram-js-minimap.css';
 
 import {
   ApiError,
   createComment,
   deleteComment,
+  exportServerDocument,
   fetchComments,
   saveDiagramXml,
   updateComment,
   type DiagramComment,
+  type ServerExportFormat,
 } from '../lib/api';
+import { blobToBase64, downloadBlob, downloadText, modelerSvg, svgToPng } from '../lib/export';
+import { ExportDialog, type ExportKind } from './ExportDialog';
 import {
   COMMENT_OVERLAY_TYPE,
   commentsForElement,
@@ -78,6 +85,12 @@ import {
 import bsModdle from '../lib/bs-moddle.json';
 import { attributeTypeForXml, parseAttributeType } from '../lib/attributes';
 import { isElementLocked } from '../lib/lock';
+import {
+  clearLocalDraft,
+  readLocalDraft,
+  writeLocalDraft,
+  type LocalDraft,
+} from '../lib/draft-store';
 import { anchorPoint, closestSide, type AnchorSide } from '../lib/connection-anchors';
 import { hasDiagonalSegment, orthogonalAssociationWaypoints } from '../lib/association-route';
 import { proportionalAnchor, type Bounds, type Point } from '../lib/resize-anchors';
@@ -820,54 +833,11 @@ interface OverlaysLike {
   remove: (options?: { type?: string }) => void;
 }
 
-interface LocalDraft {
-  xml: string;
-  savedAt: number;
-  etag: string | null;
-}
-
 type SaveState =
   { kind: 'saved' } | { kind: 'dirty' } | { kind: 'saving' } | { kind: 'error'; message: string };
 
 const AUTOSAVE_DEBOUNCE_MS = 1500;
 const LOCAL_DRAFT_DEBOUNCE_MS = 400;
-const DRAFT_PREFIX = 'bpmn-studio.draft.';
-
-function draftKey(diagramId: string): string {
-  return `${DRAFT_PREFIX}${diagramId}`;
-}
-
-function readDraft(diagramId: string): LocalDraft | null {
-  try {
-    const raw = window.localStorage.getItem(draftKey(diagramId));
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as Partial<LocalDraft>;
-    if (typeof parsed.xml !== 'string' || typeof parsed.savedAt !== 'number') {
-      return null;
-    }
-    return { xml: parsed.xml, savedAt: parsed.savedAt, etag: parsed.etag ?? null };
-  } catch {
-    return null;
-  }
-}
-
-function writeDraft(diagramId: string, draft: LocalDraft): void {
-  try {
-    window.localStorage.setItem(draftKey(diagramId), JSON.stringify(draft));
-  } catch {
-    // Черновик — страховка, а не источник истины: переполнение хранилища не должно ломать редактор.
-  }
-}
-
-function clearDraft(diagramId: string): void {
-  try {
-    window.localStorage.removeItem(draftKey(diagramId));
-  } catch {
-    // см. writeDraft
-  }
-}
 
 function toInspector(element: DiagramElement): InspectorElement {
   const bo = element.businessObject;
@@ -1096,17 +1066,34 @@ export function DiagramEditor({
     }, 0);
   };
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
   const [minimapOpen, setMinimapOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [draft, setDraft] = useState<LocalDraft | null>(() => {
-    const stored = readDraft(diagramId);
-    return stored && stored.xml !== initialXml ? stored : null;
-  });
+  const [draft, setDraft] = useState<LocalDraft | null>(null);
+  const [draftWarning, setDraftWarning] = useState<string | null>(null);
+  const saveInFlightRef = useRef(false);
+  const pendingSaveRef = useRef(false);
+  const persistRef = useRef<() => Promise<void>>(async () => {});
+  const saveAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readLocalDraft(diagramId).then((stored) => {
+      if (!cancelled && stored && stored.xml !== initialXml) {
+        setDraft(stored);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [diagramId, initialXml]);
 
   shortcutsRef.current = shortcuts;
-  overlayOpenRef.current = shortcutsOpen || themeOpen || stagesOpen || menu !== null;
+  overlayOpenRef.current = shortcutsOpen || exportOpen || themeOpen || stagesOpen || menu !== null;
 
   const updateShortcuts = useCallback((next: ShortcutMap) => {
     setShortcuts(next);
@@ -1119,34 +1106,110 @@ export function DiagramEditor({
     if (!modeler) {
       return;
     }
+    if (saveInFlightRef.current) {
+      // Правка во время PUT не должна запускать второй запрос с тем же ETag.
+      pendingSaveRef.current = true;
+      return;
+    }
     if (serverTimerRef.current !== null) {
       window.clearTimeout(serverTimerRef.current);
       serverTimerRef.current = null;
     }
+    saveInFlightRef.current = true;
     setSave({ kind: 'saving' });
+    const controller = new AbortController();
+    saveAbortRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 20_000);
     try {
       const result = (await modeler.saveXML({ format: true })) as { xml?: string };
       if (!result.xml) {
         throw new Error('bpmn-js вернул пустой XML');
       }
-      const saved = await saveDiagramXml(diagramId, result.xml, etagRef.current);
+      const saved = await saveDiagramXml(diagramId, result.xml, etagRef.current, controller.signal);
       etagRef.current = saved.etag;
       lastServerSaveRef.current = Date.now();
-      clearDraft(diagramId);
+      await clearLocalDraft(diagramId);
       setDraft(null);
+      setDraftWarning(null);
       setSave({ kind: 'saved' });
     } catch (error) {
       const message =
-        error instanceof ApiError && error.status === 409
-          ? 'диаграмму изменил кто-то другой: обновите страницу'
-          : error instanceof ApiError && error.status === 428
-            ? 'сервер требует подтвердить версию диаграммы: обновите страницу'
-            : error instanceof Error
-              ? error.message
-              : 'не удалось сохранить';
+        error instanceof DOMException && error.name === 'AbortError'
+          ? 'сохранение не уложилось в 20 секунд: проверьте сеть'
+          : error instanceof ApiError && error.status === 409
+            ? 'диаграмму изменил кто-то другой: обновите страницу'
+            : error instanceof ApiError && error.status === 428
+              ? 'сервер требует подтвердить версию диаграммы: обновите страницу'
+              : error instanceof Error
+                ? error.message
+                : 'не удалось сохранить';
       setSave({ kind: 'error', message });
+    } finally {
+      window.clearTimeout(timeout);
+      if (saveAbortRef.current === controller) {
+        saveAbortRef.current = null;
+      }
+      saveInFlightRef.current = false;
+      if (pendingSaveRef.current) {
+        pendingSaveRef.current = false;
+        window.setTimeout(() => void persistRef.current(), 0);
+      }
     }
   }, [diagramId]);
+  persistRef.current = persist;
+
+  const runExport = async (
+    kind: ExportKind,
+    options: { page: 'A4' | 'A3'; orientation: 'portrait' | 'landscape' },
+  ) => {
+    const modeler = modelerRef.current;
+    if (!modeler || exportBusy) {
+      return;
+    }
+    setExportBusy(true);
+    setExportError(null);
+    const stem = `bpmn-${diagramId.slice(0, 8)}`;
+    try {
+      const xmlResult = (await modeler.saveXML({ format: true })) as { xml?: string };
+      if (!xmlResult.xml) {
+        throw new Error('bpmn-js вернул пустой XML');
+      }
+      const xml = xmlResult.xml;
+
+      if (kind === 'bpmn') {
+        downloadText(xml, `${stem}.bpmn`, 'application/xml');
+        return;
+      }
+      if (kind === 'svg') {
+        downloadText(await modelerSvg(modeler), `${stem}.svg`, 'image/svg+xml');
+        return;
+      }
+      if (kind === 'png1x' || kind === 'png2x' || kind === 'png4x') {
+        const scale = kind === 'png1x' ? 1 : kind === 'png2x' ? 2 : 4;
+        downloadBlob(await svgToPng(await modelerSvg(modeler), scale), `${stem}.png`);
+        return;
+      }
+
+      if (kind === 'pdf') {
+        const png = await svgToPng(await modelerSvg(modeler), 2);
+        const blob = await exportServerDocument(diagramId, 'pdf', xml, {
+          pngBase64: await blobToBase64(png),
+          page: options.page,
+          orientation: options.orientation,
+        });
+        downloadBlob(blob, `${stem}.pdf`);
+        return;
+      }
+
+      const format: ServerExportFormat = kind;
+      const blob = await exportServerDocument(diagramId, format, xml);
+      downloadBlob(blob, `${stem}.${format}`);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'не удалось экспортировать');
+    } finally {
+      setExportBusy(false);
+    }
+  };
 
   const scheduleServerSave = useCallback(() => {
     if (serverTimerRef.current !== null) {
@@ -1176,7 +1239,17 @@ export function DiagramEditor({
         // За время снимка могло пройти ручное сохранение: его черновик не нужен,
         // иначе после перезагрузки появится баннер «найден локальный черновик».
         if (result.xml && lastServerSaveRef.current <= scheduledAt) {
-          writeDraft(diagramId, { xml: result.xml, savedAt: Date.now(), etag: etagRef.current });
+          void writeLocalDraft(diagramId, {
+            xml: result.xml,
+            savedAt: Date.now(),
+            etag: etagRef.current,
+          }).then((outcome) => {
+            if (outcome === 'failed') {
+              setDraftWarning('не удалось сохранить локальный черновик — проверьте квоту браузера');
+            } else {
+              setDraftWarning(null);
+            }
+          });
         }
       });
     }, LOCAL_DRAFT_DEBOUNCE_MS);
@@ -1265,6 +1338,19 @@ export function DiagramEditor({
     void loadComments();
   }, [loadComments]);
 
+  useEffect(
+    () => () => {
+      saveAbortRef.current?.abort();
+    },
+    [],
+  );
+
+  const commentSignal = () => {
+    const controller = new AbortController();
+    window.setTimeout(() => controller.abort(), 15_000);
+    return controller.signal;
+  };
+
   const addComment = async (body: string) => {
     const element = selectedRef.current;
     if (!element) {
@@ -1272,7 +1358,7 @@ export function DiagramEditor({
     }
     setCommentsBusy(true);
     try {
-      const created = await createComment(diagramId, element.id, body);
+      const created = await createComment(diagramId, element.id, body, commentSignal());
       setComments((current) => [...current, created]);
       setCommentsError(null);
     } catch {
@@ -1285,9 +1371,14 @@ export function DiagramEditor({
   const toggleCommentResolved = async (comment: DiagramComment) => {
     setCommentsBusy(true);
     try {
-      const updated = await updateComment(diagramId, comment.id, {
-        resolved: !comment.resolved_at,
-      });
+      const updated = await updateComment(
+        diagramId,
+        comment.id,
+        {
+          resolved: !comment.resolved_at,
+        },
+        commentSignal(),
+      );
       setComments((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       setCommentsError(null);
     } catch {
@@ -1300,7 +1391,7 @@ export function DiagramEditor({
   const removeComment = async (comment: DiagramComment) => {
     setCommentsBusy(true);
     try {
-      await deleteComment(diagramId, comment.id);
+      await deleteComment(diagramId, comment.id, commentSignal());
       setComments((current) => current.filter((item) => item.id !== comment.id));
       setCommentsError(null);
     } catch {
@@ -2292,7 +2383,7 @@ export function DiagramEditor({
   };
 
   const discardDraft = () => {
-    clearDraft(diagramId);
+    void clearLocalDraft(diagramId);
     setDraft(null);
   };
 
@@ -2483,6 +2574,18 @@ export function DiagramEditor({
             <button
               type="button"
               className="ghost-button ghost-button--small"
+              title="Экспорт диаграммы"
+              aria-label="Экспорт"
+              onClick={() => {
+                setExportError(null);
+                setExportOpen(true);
+              }}
+            >
+              <span aria-hidden="true">⤓</span>
+            </button>
+            <button
+              type="button"
+              className="ghost-button ghost-button--small"
               title={`Сохранить (${formatCombo(shortcuts.save)})`}
               aria-label="Сохранить"
               disabled={save.kind === 'saved' || save.kind === 'saving'}
@@ -2669,6 +2772,11 @@ export function DiagramEditor({
           </div>
         </div>
 
+        {draftWarning ? (
+          <p className="canvas__overlay--error" role="status">
+            {draftWarning}
+          </p>
+        ) : null}
         {draft ? (
           <div className="draft-banner" role="status">
             <span>
@@ -2811,6 +2919,13 @@ export function DiagramEditor({
       />
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />
       <ReplaceMenu menu={replaceMenu} onClose={() => setReplaceMenu(null)} />
+      <ExportDialog
+        open={exportOpen}
+        busy={exportBusy}
+        error={exportError}
+        onClose={() => setExportOpen(false)}
+        onExport={(kind, options) => void runExport(kind, options)}
+      />
       <ThemeSettings
         open={themeOpen}
         value={themeId}

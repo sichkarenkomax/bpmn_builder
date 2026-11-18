@@ -85,6 +85,7 @@ export async function saveDiagramXml(
   id: string,
   xml: string,
   etag: string | null,
+  signal?: AbortSignal,
 ): Promise<{ etag: string; version_id: string }> {
   const response = await fetch(`${API_BASE}/diagrams/${id}/bpmn`, {
     method: 'PUT',
@@ -93,6 +94,7 @@ export async function saveDiagramXml(
       ...(etag ? { 'If-Match': `"${etag}"` } : {}),
     },
     body: xml,
+    signal,
   });
 
   if (!response.ok) {
@@ -105,6 +107,40 @@ export async function saveDiagramXml(
     throw new ApiError(response.status, `Сохранение вернуло ${response.status}`, detail);
   }
   return (await response.json()) as { etag: string; version_id: string };
+}
+
+export type ServerExportFormat = 'json' | 'csv' | 'xlsx' | 'docx' | 'pdf';
+
+export async function exportServerDocument(
+  id: string,
+  format: ServerExportFormat,
+  xml: string,
+  options: {
+    pngBase64?: string;
+    page?: 'A4' | 'A3';
+    orientation?: 'portrait' | 'landscape';
+  } = {},
+): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/diagrams/${id}/exports/${format}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      xml,
+      png_base64: options.pngBase64 ?? null,
+      page: options.page ?? 'A4',
+      orientation: options.orientation ?? 'portrait',
+    }),
+  });
+  if (!response.ok) {
+    let detail: unknown;
+    try {
+      detail = await response.json();
+    } catch {
+      detail = await response.text();
+    }
+    throw new ApiError(response.status, `Экспорт вернул ${response.status}`, detail);
+  }
+  return response.blob();
 }
 
 export interface DiagramComment {
@@ -125,11 +161,13 @@ export function createComment(
   diagramId: string,
   elementId: string | null,
   body: string,
+  signal?: AbortSignal,
 ): Promise<DiagramComment> {
   return request<DiagramComment>(`/diagrams/${diagramId}/comments`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ element_id: elementId, body }),
+    signal,
   });
 }
 
@@ -137,17 +175,24 @@ export function updateComment(
   diagramId: string,
   commentId: string,
   patch: { body?: string; resolved?: boolean },
+  signal?: AbortSignal,
 ): Promise<DiagramComment> {
   return request<DiagramComment>(`/diagrams/${diagramId}/comments/${commentId}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(patch),
+    signal,
   });
 }
 
-export async function deleteComment(diagramId: string, commentId: string): Promise<void> {
+export async function deleteComment(
+  diagramId: string,
+  commentId: string,
+  signal?: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${API_BASE}/diagrams/${diagramId}/comments/${commentId}`, {
     method: 'DELETE',
+    signal,
   });
   if (!response.ok) {
     throw new ApiError(response.status, `Удаление комментария вернуло ${response.status}`);

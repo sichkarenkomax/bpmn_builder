@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 
 import { applyFormat, type FormatKind, type TextSelection } from '../lib/markdown-toolbar';
 import { MarkdownView } from './MarkdownView';
@@ -17,6 +17,7 @@ export function DocumentationEditor({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [preview, setPreview] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const previewText = useDeferredValue(value);
   // Выделение, которое нужно восстановить после обновления value из родителя.
   const [pendingSelection, setPendingSelection] = useState<
     (TextSelection & { nonce: number }) | null
@@ -82,7 +83,7 @@ export function DocumentationEditor({
       </div>
       {preview ? (
         <div className="docs-editor__preview-pane">
-          <MarkdownView text={value} />
+          <MarkdownView text={previewText} />
         </div>
       ) : (
         <textarea

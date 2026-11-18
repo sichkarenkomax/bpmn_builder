@@ -104,14 +104,18 @@ class _DiDocument:
         return self._merged
 
 
-def parse_bpmn(payload: str | bytes) -> BpmnDocument:
-    """Разбирает XML в модель. Исходный XML остаётся доступен через `source_xml`."""
+def parse_bpmn(payload: str | bytes, *, root: etree._Element | None = None) -> BpmnDocument:
+    """Разбирает XML в модель. Исходный XML остаётся доступен через `source_xml`.
+
+    `root` позволяет переиспользовать дерево, уже разобранное для XSD-валидации.
+    """
     raw = payload.encode("utf-8") if isinstance(payload, str) else payload
-    parser = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=False)
-    try:
-        root = etree.fromstring(raw, parser=parser)
-    except etree.XMLSyntaxError as exc:
-        raise BpmnSyntaxError(str(exc), line=exc.lineno, column=exc.offset) from exc
+    if root is None:
+        parser = etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=False)
+        try:
+            root = etree.fromstring(raw, parser=parser)
+        except etree.XMLSyntaxError as exc:
+            raise BpmnSyntaxError(str(exc), line=exc.lineno, column=exc.offset) from exc
 
     # DTD и внешние сущности не поддерживаем: это и XXE, и лишний источник 500.
     # Стабы lxml не аннотируют docinfo.doctype — проверяем тип сами.

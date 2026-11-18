@@ -19,8 +19,12 @@ def _schema() -> etree.XMLSchema:
     return etree.XMLSchema(document)
 
 
-def validate_bpmn_xsd(xml: str | bytes) -> None:
-    """Бросает `BpmnSchemaError` с координатами первой ошибки."""
+def parse_xml(xml: str | bytes) -> etree._Element:
+    """Разбирает XML один раз и сразу отсекает DTD/внешние сущности.
+
+    Возвращённое дерево можно передать и в XSD-валидацию, и в `parse_bpmn`:
+    на сохранение не нужно разбирать один и тот же пятимегабайтный документ дважды.
+    """
     raw = xml.encode("utf-8") if isinstance(xml, str) else xml
     parser = etree.XMLParser(resolve_entities=False, no_network=True)
     try:
@@ -36,7 +40,11 @@ def validate_bpmn_xsd(xml: str | bytes) -> None:
             line=_line(root),
             column=None,
         )
+    return root
 
+
+def validate_root(root: etree._Element) -> None:
+    """Проверяет уже разобранное дерево по официальной XSD."""
     schema = _schema()
     try:
         valid = schema.validate(root)
@@ -49,6 +57,11 @@ def validate_bpmn_xsd(xml: str | bytes) -> None:
     raise BpmnSchemaError(
         f"XML не соответствует схеме BPMN 2.0: {message}", line=line, column=column
     )
+
+
+def validate_bpmn_xsd(xml: str | bytes) -> None:
+    """Бросает `BpmnSchemaError` с координатами первой ошибки."""
+    validate_root(parse_xml(xml))
 
 
 _ERROR_LINE = re.compile(r"^[^:]*:(?P<line>\d+):(?P<column>\d+):ERROR:[^:]*:(?P<message>.+)$")

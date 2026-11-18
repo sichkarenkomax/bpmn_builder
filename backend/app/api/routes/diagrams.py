@@ -8,9 +8,8 @@ from app.api.deps import get_session
 from app.bpmn import (
     BpmnError,
     create_empty_document,
-    parse_bpmn,
+    parse_and_validate_bpmn,
     serialize_bpmn,
-    validate_bpmn_xsd,
 )
 from app.db.models import Diagram, DiagramVersion
 from app.schemas.diagram import (
@@ -35,10 +34,12 @@ def _etag(xml: str) -> str:
 
 
 def _validated(xml: str) -> None:
-    """XML должен быть валиден по XSD и разбираться в модель."""
+    """XML должен быть валиден по XSD и разбираться в модель.
+
+    Оба шага используют одно дерево `lxml`: большой документ не разбирается дважды.
+    """
     try:
-        validate_bpmn_xsd(xml)
-        parse_bpmn(xml)
+        parse_and_validate_bpmn(xml)
     except BpmnError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -138,11 +139,12 @@ async def create_diagram(
         _check_size(xml)
         _validated(xml)
 
+    etag = _etag(xml)
     diagram = Diagram(
         title=payload.title,
         description=payload.description,
         status=payload.status,
-        etag=_etag(xml),
+        etag=etag,
     )
     session.add(diagram)
     await session.flush()
@@ -234,8 +236,9 @@ async def put_bpmn(
         }
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
     _validated(xml)
+    etag = _etag(xml)
 
-    if diagram.etag and _etag(xml) == diagram.etag:
+    if diagram.etag and etag == diagram.etag:
         return BpmnSaved(etag=diagram.etag, version_id=diagram.current_version_id or "")
 
     version = DiagramVersion(diagram_id=diagram.id, xml=xml, message=None)
@@ -243,7 +246,7 @@ async def put_bpmn(
     await session.flush()
 
     diagram.current_version_id = version.id
-    diagram.etag = _etag(xml)
+    diagram.etag = etag
     await session.commit()
     return BpmnSaved(etag=diagram.etag, version_id=version.id)
 

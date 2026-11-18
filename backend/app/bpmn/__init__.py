@@ -18,6 +18,7 @@ from app.bpmn.model import (
 )
 from app.bpmn.parse import parse_bpmn
 from app.bpmn.serialize import create_empty_document, serialize_bpmn
+from app.bpmn.validation import parse_and_validate_bpmn
 from app.bpmn.xsd import validate_bpmn_xsd
 
 __all__ = [
@@ -39,6 +40,7 @@ __all__ = [
     "Process",
     "Waypoint",
     "create_empty_document",
+    "parse_and_validate_bpmn",
     "parse_bpmn",
     "serialize_bpmn",
     "validate_bpmn_xsd",

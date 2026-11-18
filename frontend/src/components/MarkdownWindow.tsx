@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 
 import { applyFormat, type FormatKind, type TextSelection } from '../lib/markdown-toolbar';
 import { MarkdownView } from './MarkdownView';
@@ -37,6 +37,9 @@ export function MarkdownWindow({
   const dirtyRef = useRef(false);
   const [draft, setDraft] = useState(value);
   const [showPreview, setShowPreview] = useState(true);
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const previewText = useDeferredValue(draft);
   const [pendingSelection, setPendingSelection] = useState<
     (TextSelection & { nonce: number }) | null
   >(null);
@@ -80,6 +83,17 @@ export function MarkdownWindow({
     return null;
   }
 
+  const resizeBy = (deltaX: number, deltaY: number) => {
+    const rect = dialogRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+    setSize({
+      width: Math.max(520, Math.min(window.innerWidth - 40, rect.width + deltaX)),
+      height: Math.max(380, Math.min(window.innerHeight - 40, rect.height + deltaY)),
+    });
+  };
+
   const format = (kind: FormatKind) => {
     const textarea = textareaRef.current;
     if (!textarea) {
@@ -94,10 +108,12 @@ export function MarkdownWindow({
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
       <section
+        ref={dialogRef}
         className="dialog dialog--markdown"
         role="dialog"
         aria-modal="true"
         aria-label="Документация элемента"
+        style={size ?? undefined}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog__header">
@@ -155,7 +171,7 @@ export function MarkdownWindow({
             <div className="docs-window__pane">
               <span className="docs-window__caption">Предпросмотр</span>
               <div className="docs-window__preview">
-                <MarkdownView text={draft} />
+                <MarkdownView text={previewText} />
               </div>
             </div>
           ) : null}
@@ -182,6 +198,29 @@ export function MarkdownWindow({
             Применить
           </button>
         </footer>
+        <button
+          type="button"
+          className="dialog-resize-handle"
+          aria-label="Изменить размер окна стрелками, Shift — крупнее"
+          title="Размер: стрелки, Shift — крупнее"
+          onKeyDown={(event) => {
+            const step = event.shiftKey ? 60 : 20;
+            const moves: Record<string, [number, number]> = {
+              ArrowLeft: [-step, 0],
+              ArrowRight: [step, 0],
+              ArrowUp: [0, -step],
+              ArrowDown: [0, step],
+            };
+            const move = moves[event.key];
+            if (!move) {
+              return;
+            }
+            event.preventDefault();
+            resizeBy(move[0], move[1]);
+          }}
+        >
+          ↘
+        </button>
       </section>
     </div>
   );

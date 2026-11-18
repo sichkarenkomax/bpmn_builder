@@ -1,9 +1,12 @@
+import { useMemo } from 'react';
+
 import { highlightCode } from '../lib/code-highlight';
 import { isSafeUrl, parseMarkdown, type MdBlock, type MdInline } from '../lib/markdown';
+import { isAllowedImageUrl } from '../lib/url';
 
 /** Отрисовка Markdown-токенов как React-элементов — без innerHTML, поэтому HTML остаётся текстом. */
 export function MarkdownView({ text }: { text: string }) {
-  const blocks = parseMarkdown(text);
+  const blocks = useMemo(() => parseMarkdown(text), [text]);
   if (blocks.length === 0) {
     return <p className="md-doc md-doc--empty">Пока пусто.</p>;
   }
@@ -119,7 +122,7 @@ function renderInline(token: MdInline, key: number) {
       );
     }
     case 'image': {
-      if (!isSafeUrl(token.url)) {
+      if (!isAllowedImageUrl(token.url)) {
         return <span key={key}>{token.value}</span>;
       }
       return (

@@ -17,10 +17,18 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "bpmn-studio"
-    app_version: str = "0.0.1"
+    app_version: str = "0.1.0"
     environment: Literal["local", "test", "staging", "production"] = "local"
     debug: bool = False
     api_prefix: str = "/api/v1"
+    docs_enabled: bool = True
+    trust_proxy_headers: bool = False
+
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 600
+    rate_limit_write_per_minute: int = 120
+    request_timeout_seconds: float = 20.0
+    max_request_body_bytes: int = 12 * 1024 * 1024
 
     database_url: str = "postgresql+asyncpg://bpmn:bpmn@localhost:5432/bpmn"
     database_pool_size: int = 5

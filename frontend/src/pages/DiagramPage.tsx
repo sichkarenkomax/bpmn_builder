@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import demoXml from '../assets/demo-process.bpmn?raw';
 import { DiagramEditor } from '../components/DiagramEditor';
+import { TemplatePicker } from '../components/TemplatePicker';
 import { useDiagram } from '../hooks/useDiagram';
 import { createDiagram, updateDiagram, type DiagramSummary } from '../lib/api';
 
@@ -195,7 +196,8 @@ export function DiagramPage() {
     return (
       <section className="page page--centered">
         <h1 className="page__title">Новая диаграмма</h1>
-        <p className="page__subtitle">Создайте процесс и редактируйте его на холсте.</p>
+        <p className="page__subtitle">Выберите шаблон или начните с демонстрационного процесса.</p>
+        <TemplatePicker />
         <button type="button" className="ghost-button" onClick={createDemo} disabled={creating}>
           {creating ? 'Создаю…' : 'Создать демо-процесс'}
         </button>

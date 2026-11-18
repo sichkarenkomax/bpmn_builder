@@ -30,7 +30,7 @@ test('большое окно Markdown: предпросмотр, примене
     await textarea.fill(
       '## Регламент\n\n**Срок** — 2 дня, [инструкция](https://example.com)\n\n' +
         '| Этап | Срок |\n| --- | ---: |\n| Проверка | 2 дня |\n\n' +
-        '```ts\nconst days = 2;\n```\n\n> Важно\n\n- [x] готово\n\n![Схема](https://example.com/pic.png)',
+        '```ts\nconst days = 2;\n```\n\n> Важно\n\n- [x] готово\n\n![Схема](/pic.png)',
     );
     const preview = dialog.locator('.docs-window__preview');
     await expect(preview).toContainText('Регламент');
@@ -40,10 +40,8 @@ test('большое окно Markdown: предпросмотр, примене
     await expect(preview.locator('.md-code__keyword')).toHaveText('const');
     await expect(preview.locator('blockquote')).toContainText('Важно');
     await expect(preview.locator('input[type="checkbox"]')).toBeChecked();
-    await expect(preview.locator('img.md-image')).toHaveAttribute(
-      'src',
-      'https://example.com/pic.png',
-    );
+    // Внешние картинки закрыты allowlist/CSP; относительный путь остаётся разрешён.
+    await expect(preview.locator('img.md-image')).toHaveAttribute('src', '/pic.png');
 
     const previewToggle = dialog.getByRole('button', { name: 'Предпросмотр' });
     await expect(previewToggle).toHaveAttribute('aria-pressed', 'true');
@@ -75,6 +73,13 @@ test('большое окно Markdown: предпросмотр, примене
       const resizedBox = await dialog.boundingBox();
       expect(resizedBox?.width).toBeGreaterThan(initialBox.width);
       expect(resizedBox?.height).toBeGreaterThan(initialBox.height);
+
+      const beforeKeyboard = await dialog.boundingBox();
+      const handle = dialog.getByRole('button', { name: /Изменить размер окна/ });
+      await handle.focus();
+      await page.keyboard.press('ArrowRight');
+      const afterKeyboard = await dialog.boundingBox();
+      expect(afterKeyboard?.width).toBeGreaterThan(beforeKeyboard?.width ?? 0);
     }
 
     await expect(textarea).toHaveValue(/Регламент/);
@@ -93,7 +98,7 @@ test('большое окно Markdown: предпросмотр, примене
     ]);
     const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
     expect(xml).toContain('Регламент');
-    expect(xml).toContain('https://example.com/pic.png');
+    expect(xml).toContain('/pic.png');
     expect(xml).toContain('const days = 2');
 
     await page.reload();
