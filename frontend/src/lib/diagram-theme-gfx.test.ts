@@ -28,6 +28,10 @@ describe('applyThemeToGfx', () => {
     const gfx = makeGfx(['path']);
     applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeById('classic'), { strokeWidth: '2' });
     expect(gfx.querySelector('path')?.style.strokeWidth).toBe('2');
+
+    const association = makeGfx(['path']);
+    applyThemeToGfx(association, 'bpmn:Association', themeById('classic'), { strokeWidth: '2' });
+    expect(association.querySelector('path')?.style.strokeWidth).toBe('2');
   });
 
   it('красит маркер стрелки в чёрный', () => {
@@ -44,8 +48,9 @@ describe('applyThemeToGfx', () => {
 
     expect(path.style.stroke).toBe('#000000');
     expect(path.style.fill).toBe('#000000');
-    expect(marker.getAttribute('markerWidth')).toBe('10');
-    expect(marker.getAttribute('markerHeight')).toBe('10');
+    expect(marker.getAttribute('markerUnits')).toBe('userSpaceOnUse');
+    expect(marker.getAttribute('markerWidth')).toBe('12');
+    expect(marker.getAttribute('markerHeight')).toBe('12');
   });
 
   it('даёт аннотации мягкий фон и красит только скобку', () => {
@@ -58,12 +63,13 @@ describe('applyThemeToGfx', () => {
     expect(bracket?.style.stroke).toBe('#4b5563');
   });
 
-  it('рисует ассоциацию точками', () => {
+  it('рисует ассоциацию точками толщиной 1', () => {
     const gfx = makeGfx(['path']);
     applyThemeToGfx(gfx, 'bpmn:Association', themeById('classic'));
     const path = gfx.querySelector('path');
     expect(path?.style.strokeDasharray).toBe('0 6');
     expect(path?.style.strokeLinecap).toBe('round');
+    expect(path?.style.strokeWidth).toBe('1');
   });
 
   it('даёт завершающему событию толстую границу', () => {

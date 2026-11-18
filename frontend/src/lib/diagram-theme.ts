@@ -316,8 +316,9 @@ export function applyThemeToGfx(
   // остаётся чёрной независимо от цветовой темы.
   if (type.endsWith('Flow') || type.endsWith('Association')) {
     const isAssociation = type.endsWith('Association');
-    // Тонкая линия по умолчанию; ручная толщина из панели «Стиль» важнее.
-    const strokeWidth = options?.strokeWidth?.trim() || '0.7';
+    // Тонкие потоки и чуть плотнее пунктирные ассоциации; ручная толщина
+    // из панели «Стиль» важнее.
+    const strokeWidth = options?.strokeWidth?.trim() || (isAssociation ? '1' : '0.7');
     for (const child of gfx.querySelectorAll<SVGElement>('.djs-visual > *')) {
       if (child instanceof SVGElement && child.tagName !== 'text') {
         child.style.stroke = '#000000';
@@ -334,10 +335,13 @@ export function applyThemeToGfx(
       marker.style.stroke = '#000000';
       marker.style.fill = '#000000';
     }
-    // Стандартный размер наконечника, чтобы он не перевешивал тонкую линию.
+    // Наконечник задан в единицах холста, а не в толщинах линии
+    // (по умолчанию markerUnits="strokeWidth"): иначе у тонкого потока
+    // стрелка меньше, чем у пунктирной ассоциации толщиной 1.
     for (const marker of gfx.querySelectorAll<SVGElement>('.djs-visual defs marker')) {
-      marker.setAttribute('markerWidth', '10');
-      marker.setAttribute('markerHeight', '10');
+      marker.setAttribute('markerUnits', 'userSpaceOnUse');
+      marker.setAttribute('markerWidth', '12');
+      marker.setAttribute('markerHeight', '12');
     }
     return;
   }

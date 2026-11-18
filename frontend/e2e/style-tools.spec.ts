@@ -313,14 +313,16 @@ test('направление текста сохраняется в DI', async (
     await expect(
       page.getByRole('button', { name: 'Направление текста: вертикально' }),
     ).toHaveAttribute('aria-pressed', 'true');
+    // Многострочность сохраняется: вертикаль — это поворот текста на +90°,
+    // а не writing-mode, который склеивал строки в один столбец.
     await expect
       .poll(() =>
         task
           .locator('.djs-label')
           .first()
-          .evaluate((node) => getComputedStyle(node).writingMode),
+          .evaluate((node) => (node as SVGElement).style.transform),
       )
-      .toBe('vertical-rl');
+      .toBe('rotate(90deg)');
 
     // Ресайз задачи — тянем правый нижний угол (элемент уже выбран).
     const taskHandle = page.locator('.djs-resizer-Task_Review.djs-resizer-se .djs-resizer-hit');
@@ -348,6 +350,52 @@ test('направление текста сохраняется в DI', async (
     expect(
       Math.abs(flow[0]!.y - (resizedTask.y + resizedTask.height / 2)),
     ).toBeLessThanOrEqual(1);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('ручки ресайза стоят на углах повёрнутого фрейма', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E rotated resizers ${Date.now()}`, bpmn_xml: annotationXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const annotation = page.locator('[data-element-id="Annotation_1"]').first();
+    await expect(annotation).toBeVisible();
+    await annotation.click();
+
+    await page.getByRole('button', { name: 'Направление текста: вертикально' }).click();
+    const handle = page.locator('.djs-resizer-Annotation_1.djs-resizer-se');
+    await expect.poll(() => handle.getAttribute('transform')).toContain('rotate(90 ');
+    // Сами квадратики остаются прямыми: группа повёрнута, ручка — обратно.
+    await expect
+      .poll(() => handle.locator('.djs-resizer-visual').getAttribute('transform'))
+      .toContain('rotate(-90 ');
+
+    await page.getByRole('button', { name: 'Направление текста: поворот' }).click();
+    await expect.poll(() => handle.getAttribute('transform')).toContain('rotate(-90 ');
+
+    // Тянем повёрнутую ручку наружу: в осях рамки это рост обеих сторон.
+    await page.getByRole('button', { name: 'Направление текста: вертикально' }).click();
+    const handleBox = (await handle.boundingBox())!;
+    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      handleBox.x + handleBox.width / 2 - 20,
+      handleBox.y + handleBox.height / 2 + 20,
+      { steps: 5 },
+    );
+    await page.mouse.up();
+
+    await saveDiagram(page, diagram.id);
+    const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+    const resized = shapeBounds(xml, 'Annotation_1');
+    expect(resized.width).toBeGreaterThan(100);
+    expect(resized.height).toBeGreaterThan(30);
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }

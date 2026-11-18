@@ -164,13 +164,17 @@ export function applyTextDirection(
   direction: string,
   rotateText = true,
 ): void {
-  label.style.writingMode = direction === 'vertical' ? 'vertical-rl' : '';
-  // mixed поворачивает кириллицу вслед за строкой, upright ставит буквы
-  // столбиком и выводит их за пределы фигуры.
-  label.style.textOrientation = direction === 'vertical' ? 'mixed' : '';
-  label.style.transform = direction === 'rotate' && rotateText ? 'rotate(-90deg)' : '';
-  label.style.transformBox = direction === 'rotate' && rotateText ? 'fill-box' : '';
-  label.style.transformOrigin = direction === 'rotate' && rotateText ? 'center' : '';
+  // Вертикаль — это поворот всего текстового блока на +90° (начало сверху),
+  // а «поворот» — на −90°. Writing-mode на одном <text> с несколькими <tspan>
+  // склеивал строки в один столбец, поэтому оба режима задаются трансформом:
+  // так многострочный текст сохраняет строки.
+  const angle = direction === 'vertical' ? 90 : direction === 'rotate' ? -90 : 0;
+  const rotated = rotateText && angle !== 0;
+  label.style.writingMode = '';
+  label.style.textOrientation = '';
+  label.style.transform = rotated ? `rotate(${angle}deg)` : '';
+  label.style.transformBox = rotated ? 'fill-box' : '';
+  label.style.transformOrigin = rotated ? 'center' : '';
 }
 
 function sanitizeColor(value: string): string {
@@ -275,7 +279,8 @@ export function applyExternalLabelLayout(
     return;
   }
 
-  const rotatesFrame = direction === 'rotate';
+  const rotatesFrame = direction === 'rotate' || direction === 'vertical';
+  const frameAngle = direction === 'vertical' ? 90 : -90;
   const label = gfx.querySelector<SVGTextElement>('.djs-label');
   if (!label) {
     return;
@@ -305,13 +310,13 @@ export function applyExternalLabelLayout(
     if (visual) {
       visual.style.transformBox = 'fill-box';
       visual.style.transformOrigin = 'center';
-      visual.style.transform = `translateY(${shift}px) rotate(-90deg)`;
+      visual.style.transform = `translateY(${shift}px) rotate(${frameAngle}deg)`;
     }
     const outline = gfx.querySelector<SVGGElement>('.djs-outline');
     if (outline) {
       outline.style.transformBox = 'fill-box';
       outline.style.transformOrigin = 'center';
-      outline.style.transform = 'rotate(-90deg)';
+      outline.style.transform = `rotate(${frameAngle}deg)`;
     }
   } else {
     const visual = gfx.querySelector<SVGGElement>('.djs-visual');
@@ -439,7 +444,10 @@ export function applyStyleToGfx(
   const style = readExtendedStyle(carrier);
   // У аннотации поворот применяется ко всему фрейму: иначе текст
   // переворачивается внутри неподвижного прямоугольника.
-  const rotatesFrame = style.textDirection === 'rotate' && type === 'bpmn:TextAnnotation';
+  const rotatesFrame =
+    (style.textDirection === 'rotate' || style.textDirection === 'vertical') &&
+    type === 'bpmn:TextAnnotation';
+  const frameAngle = style.textDirection === 'vertical' ? 90 : -90;
   const size = Number.parseFloat(style.fontSize);
   const width = Number.parseFloat(style.strokeWidth);
 
@@ -467,7 +475,7 @@ export function applyStyleToGfx(
       if (frame) {
         frame.style.transformBox = 'fill-box';
         frame.style.transformOrigin = 'center';
-        frame.style.transform = 'rotate(-90deg)';
+        frame.style.transform = `rotate(${frameAngle}deg)`;
       }
     }
   } else {

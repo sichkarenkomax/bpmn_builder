@@ -211,6 +211,7 @@ interface DiagramElement {
 
 interface CanvasLike {
   zoom: (value?: number | 'fit-viewport') => number;
+  getLayer: (name: string) => SVGGElement | undefined;
   getRootElement: () => DiagramElement;
   setRootElement: (element: DiagramElement) => void;
   findRoot: (id: string) => DiagramElement | undefined;
@@ -256,8 +257,11 @@ interface SelectionLike {
 
 interface EditorEvent {
   newSelection?: DiagramElement[];
+  element?: DiagramElement;
   context?: { shape?: DiagramElement; connection?: DiagramElement };
   viewbox?: { x: number; y: number; width: number; height: number; scale: number };
+  dx?: number;
+  dy?: number;
 }
 
 interface EventBusLike {
@@ -419,46 +423,91 @@ function AlignIcon({ align }: { align: 'left' | 'center' | 'right' }) {
   );
 }
 
-/** Значки направления текста: горизонтально, вертикально, поворот. */
+/** Угол поворота фрейма подписи/аннотации; 0 — фрейм не повёрнут. */
+function rotatedFrameAngle(element: DiagramElement | null | undefined): number {
+  if (!element) {
+    return 0;
+  }
+  const rotatesFrame =
+    element.businessObject.$type === 'bpmn:TextAnnotation' || element.type === 'label';
+  if (!rotatesFrame) {
+    return 0;
+  }
+  const carrier = element.type === 'label' ? element.labelTarget?.di : element.di;
+  const direction = readExtendedStyle(carrier).textDirection;
+  return direction === 'vertical' ? 90 : direction === 'rotate' ? -90 : 0;
+}
+
+/**
+ * Ручки bpmn-js расставляет по неразвёрнутой рамке элемента, а повёрнутый
+ * фрейм живёт только в SVG. Разворачиваем группы ручек вокруг центра, чтобы
+ * они стояли на углах видимой рамки, а сами квадратики держим прямыми.
+ */
+function syncRotatedResizers(
+  element: DiagramElement | null | undefined,
+  layer: SVGGElement | null | undefined,
+): void {
+  if (!layer) {
+    return;
+  }
+  const angle = rotatedFrameAngle(element);
+  const centerX =
+    typeof element?.x === 'number' && typeof element.width === 'number'
+      ? element.x + element.width / 2
+      : null;
+  const centerY =
+    typeof element?.y === 'number' && typeof element.height === 'number'
+      ? element.y + element.height / 2
+      : null;
+  for (const group of layer.querySelectorAll<SVGGElement>('.djs-resizer')) {
+    const stored = group.dataset['baseTransform'];
+    const base = stored ?? group.getAttribute('transform') ?? '';
+    if (stored === undefined) {
+      group.dataset['baseTransform'] = base;
+    }
+    const children = group.querySelectorAll<SVGGraphicsElement>(
+      '.djs-resizer-visual, .djs-resizer-hit',
+    );
+    if (angle === 0 || centerX === null || centerY === null) {
+      group.setAttribute('transform', base);
+      for (const child of children) {
+        child.removeAttribute('transform');
+      }
+      continue;
+    }
+    group.setAttribute('transform', `rotate(${angle} ${centerX} ${centerY}) ${base}`);
+    for (const child of children) {
+      try {
+        const box = child.getBBox();
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+        child.setAttribute('transform', `rotate(${-angle} ${x} ${y})`);
+      } catch {
+        child.removeAttribute('transform');
+      }
+    }
+  }
+}
+
+/** Значки направления текста: «А» со стрелкой, повёрнутой вместе с текстом. */
 function DirectionIcon({ value }: { value: '' | 'vertical' | 'rotate' }) {
-  if (value === 'vertical') {
-    return (
-      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-        <path
-          d="M8 13V2M5 5l3-3 3 3"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
-  if (value === 'rotate') {
-    return (
-      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-        <path
-          d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5V5h-2.5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
+  // vertical — начало сверху (+90°), rotate — начало снизу (−90°).
+  const angle = value === 'vertical' ? 90 : value === 'rotate' ? -90 : 0;
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d="M3 8h10M10 5l3 3-3 3"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <g transform={angle ? `rotate(${angle} 8 8)` : undefined}>
+        <text x="1" y="11.2" fontSize="9.5" fontWeight="700" fill="currentColor">
+          А
+        </text>
+        <path
+          d="M9.5 8h5M12 5.5 14.5 8 12 10.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
     </svg>
   );
 }
@@ -1080,6 +1129,10 @@ export function DiagramEditor({
         });
       }
     }
+    syncRotatedResizers(
+      modeler.get<SelectionLike>('selection').get()[0],
+      modeler.get<CanvasLike>('canvas').getLayer('resizers'),
+    );
   };
 
   const applyDefaultStyle = (element: DiagramElement | undefined, modeler: Modeler) => {
@@ -1882,6 +1935,32 @@ export function DiagramEditor({
       selectedRef.current = element;
       setSelected(element);
       setRevision((value) => value + 1);
+      // Ручки ресайза пересоздаются на это же событие: разворачиваем их
+      // под повёрнутый фрейм уже после bpmn-js.
+      syncRotatedResizers(element, modeler.get<CanvasLike>('canvas').getLayer('resizers'));
+    });
+
+    eventBus.on('shape.changed', (event) => {
+      syncRotatedResizers(
+        event.element ?? selectedRef.current,
+        modeler.get<CanvasLike>('canvas').getLayer('resizers'),
+      );
+    });
+
+    // Ручки стоят на повёрнутой рамке, поэтому движение мыши переводим
+    // в оси самой рамки: иначе перетаскивание угла меняет не ту сторону.
+    eventBus.on('resize.move', 1500, (event) => {
+      const angle = rotatedFrameAngle(event.context?.shape ?? selectedRef.current);
+      if (!angle || typeof event.dx !== 'number' || typeof event.dy !== 'number') {
+        return;
+      }
+      const radians = (angle * Math.PI) / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      const dx = event.dx * cos + event.dy * sin;
+      const dy = -event.dx * sin + event.dy * cos;
+      event.dx = dx;
+      event.dy = dy;
     });
 
     eventBus.on('commandStack.shape.create.postExecuted', (event) => {

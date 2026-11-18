@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyExternalLabelLayout } from './style-extra';
+import { applyExternalLabelLayout, applyTextDirection } from './style-extra';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -28,6 +28,31 @@ function labelElement(labelTarget: Host | undefined, x = 100, y = 180, width = 1
 }
 
 const HOST: Host = { x: 80, y: 100, width: 100, height: 80 };
+
+describe('applyTextDirection', () => {
+  it('поворачивает многострочный текст, не склеивая строки', () => {
+    const { label, cleanup } = makeGfx();
+    const second = document.createElementNS(SVG_NS, 'tspan');
+    second.textContent = 'вторая строка';
+    label.append(second);
+
+    applyTextDirection(label, 'vertical');
+    expect(label.style.transform).toBe('rotate(90deg)');
+    expect(label.style.writingMode).toBe('');
+    expect(label.querySelectorAll('tspan')).toHaveLength(2);
+
+    applyTextDirection(label, 'rotate');
+    expect(label.style.transform).toBe('rotate(-90deg)');
+    cleanup();
+  });
+
+  it('не поворачивает текст, если поворачивается весь фрейм', () => {
+    const { label, cleanup } = makeGfx();
+    applyTextDirection(label, 'vertical', false);
+    expect(label.style.transform).toBe('');
+    cleanup();
+  });
+});
 
 describe('applyExternalLabelLayout', () => {
   it('добавляет зазор подписью, прижатой к нижней границе фигуры', () => {
@@ -61,6 +86,15 @@ describe('applyExternalLabelLayout', () => {
     applyExternalLabelLayout(shape.gfx, { ...labelElement(HOST), type: 'shape' }, 'left');
     expect(shape.line.getAttribute('x')).toBeNull();
     shape.cleanup();
+  });
+
+  it('поворачивает фрейм подписи целиком для вертикального текста', () => {
+    const { gfx, label, visual, cleanup } = makeGfx();
+    applyExternalLabelLayout(gfx, labelElement(HOST), '', 'vertical');
+
+    expect(visual.style.transform).toBe('translateY(4px) rotate(90deg)');
+    expect(label.style.transform).toBe('');
+    cleanup();
   });
 
   it('выравнивает текст внутри фрейма, не сдвигая сам фрейм', () => {
