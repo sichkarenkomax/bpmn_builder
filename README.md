@@ -7,6 +7,8 @@
 экспортом SVG/PNG/PDF/BPMN/JSON/CSV/XLSX/DOCX и production-профилем Docker.
 Следующий этап — валидация (`v0.2`).
 
+![Демо BPMN Studio: редактор, этапы внутри пула и экспорт](docs/assets/demo.gif)
+
 ## Быстрый старт
 
 ```bash
@@ -80,6 +82,9 @@ scripts/tasks.py    сводка прогресса по дорожной кар
 | `PUT` | `/api/v1/diagrams/{id}/bpmn` | сохранить XML: XSD-валидация, обязательный `If-Match` (нет — 428, устарел — 409), тело до 5 МиБ читается потоково |
 | `GET` | `/api/v1/diagrams/{id}/versions` | история версий |
 | `POST` | `/api/v1/diagrams/{id}/exports/{fmt}` | `json`, `csv`, `xlsx`, `docx`, `pdf` из текущего XML |
+| `POST` | `/api/v1/diagrams/{id}/exports/{fmt}/jobs` | поставить выгрузку в очередь (202) |
+| `GET` | `/api/v1/diagrams/{id}/exports/jobs` | история выгрузок с прогрессом |
+| `GET` | `/api/v1/diagrams/{id}/exports/jobs/{job_id}/download` | скачать готовый файл |
 
 Правила простые: XML проверяется по официальной XSD BPMN 2.0 одним разбором,
 ошибка возвращается с номером строки и колонки; каждая правка — новая версия;
@@ -103,6 +108,7 @@ scripts/tasks.py    сводка прогресса по дорожной кар
 | `make typecheck` | mypy strict + tsc |
 | `make tasks` | сколько задач сделано, в работе и не начато |
 | `make seed` | создать демонстрационные диаграммы на запущенном стенде |
+| `make gif` | пересобрать `docs/assets/demo.gif` на запущенном стеке |
 | `make migrate` | применить миграции БД |
 | `cd frontend && npm run test:e2e` | Playwright-сценарий редактора; нужен живой стек (`E2E_BASE_URL`, по умолчанию `http://127.0.0.1`) |
 

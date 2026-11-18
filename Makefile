@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help up up-full down ps logs build restart test test-backend test-frontend lint typecheck fmt fmt-check tasks migrate seed check audit coverage clean
+.PHONY: help up up-full down ps logs build restart test test-backend test-frontend lint typecheck fmt fmt-check tasks migrate seed gif check audit coverage clean
 
 help: ## Показать команды
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -61,6 +61,9 @@ migrate: ## Применить миграции БД
 
 seed: ## Создать демонстрационные диаграммы на запущенном стенде
 	cd backend && uv run python ../scripts/seed_demo.py
+
+gif: ## Пересобрать docs/assets/demo.gif на запущенном стеке
+	cd frontend && node scripts/demo-gif.mjs
 
 check: lint typecheck test fmt-check ## Всё, что должен проходить PR
 

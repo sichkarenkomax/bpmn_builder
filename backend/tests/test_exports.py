@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import re
@@ -185,3 +186,66 @@ async def test_export_rejects_invalid_xml(db_client: AsyncClient) -> None:
 async def test_export_unknown_diagram_returns_404(db_client: AsyncClient, sample_xml: str) -> None:
     response = await db_client.post(f"{API}/diagrams/nope/exports/json", json={"xml": sample_xml})
     assert response.status_code == 404
+
+
+async def _wait_job(client: AsyncClient, diagram_id: str, job_id: str) -> dict[str, Any]:
+    for _ in range(100):
+        response = await client.get(f"{API}/diagrams/{diagram_id}/exports/jobs/{job_id}")
+        assert response.status_code == 200, response.text
+        job: dict[str, Any] = response.json()
+        if job["status"] in {"done", "failed"}:
+            return job
+        await asyncio.sleep(0.02)
+    raise AssertionError("задание экспорта не завершилось")
+
+
+async def test_async_export_job_reports_progress_and_download(
+    db_client: AsyncClient, sample_xml: str
+) -> None:
+    diagram = await _diagram(db_client, sample_xml)
+
+    created = await db_client.post(
+        f"{API}/diagrams/{diagram['id']}/exports/json/jobs", json={"xml": sample_xml}
+    )
+
+    assert created.status_code == 202, created.text
+    job = created.json()
+    assert job["format"] == "json"
+    assert job["progress"] >= 0
+
+    finished = await _wait_job(db_client, diagram["id"], job["id"])
+    assert finished["status"] == "done"
+    assert finished["progress"] == 100
+    assert finished["size"] > 0
+
+    history = await db_client.get(f"{API}/diagrams/{diagram['id']}/exports/jobs")
+    assert history.status_code == 200
+    assert any(item["id"] == job["id"] for item in history.json())
+
+    download = await db_client.get(
+        f"{API}/diagrams/{diagram['id']}/exports/jobs/{job['id']}/download"
+    )
+    assert download.status_code == 200
+    assert download.headers["content-type"] == "application/json"
+    assert download.json()["processes"]
+
+
+async def test_async_export_job_keeps_failure_in_history(
+    db_client: AsyncClient, sample_xml: str
+) -> None:
+    diagram = await _diagram(db_client, sample_xml)
+
+    created = await db_client.post(
+        f"{API}/diagrams/{diagram['id']}/exports/json/jobs",
+        json={"xml": "<bpmn:definitions/>"},
+    )
+    assert created.status_code == 202, created.text
+
+    finished = await _wait_job(db_client, diagram["id"], created.json()["id"])
+    assert finished["status"] == "failed"
+    assert finished["error"]
+
+    download = await db_client.get(
+        f"{API}/diagrams/{diagram['id']}/exports/jobs/{created.json()['id']}/download"
+    )
+    assert download.status_code == 409

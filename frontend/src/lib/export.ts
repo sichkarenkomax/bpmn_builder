@@ -2,6 +2,11 @@ export type RasterScale = 1 | 2 | 4;
 
 interface SvgModeler {
   saveSVG: () => Promise<{ svg?: string }>;
+  get?: (name: string) => unknown;
+}
+
+interface CanvasContainer {
+  getContainer?: () => Element;
 }
 
 interface SvgSize {
@@ -24,11 +29,52 @@ export function svgSize(svg: string): SvgSize {
 }
 
 export async function modelerSvg(modeler: SvgModeler): Promise<string> {
-  const result = await modeler.saveSVG();
-  if (!result.svg) {
-    throw new Error('bpmn-js вернул пустой SVG');
+  // saveSVG сериализует только inline-стили, а толщина связей и кегль подписей
+  // заданы CSS. Без переноса computed styles SVG/PDF выглядят тоньше холста.
+  const canvas = modeler.get?.('canvas') as CanvasContainer | undefined;
+  const container = canvas?.getContainer?.();
+  const saved: { element: Element; name: string; value: string | null }[] = [];
+  const set = (element: Element, name: string, value: string) => {
+    saved.push({ element, name, value: element.getAttribute(name) });
+    element.setAttribute(name, value);
+  };
+
+  if (container) {
+    for (const visual of container.querySelectorAll('.djs-connection .djs-visual')) {
+      const style = window.getComputedStyle(visual);
+      if (style.strokeWidth) {
+        set(visual, 'stroke-width', style.strokeWidth);
+      }
+      if (style.fill) {
+        set(visual, 'fill', style.fill);
+      }
+    }
+    for (const label of container.querySelectorAll('.djs-label')) {
+      const style = window.getComputedStyle(label);
+      if (style.fontSize) {
+        set(label, 'font-size', style.fontSize);
+      }
+      if (style.fontFamily) {
+        set(label, 'font-family', style.fontFamily);
+      }
+    }
   }
-  return result.svg;
+
+  try {
+    const result = await modeler.saveSVG();
+    if (!result.svg) {
+      throw new Error('bpmn-js вернул пустой SVG');
+    }
+    return result.svg;
+  } finally {
+    for (const { element, name, value } of saved) {
+      if (value === null) {
+        element.removeAttribute(name);
+      } else {
+        element.setAttribute(name, value);
+      }
+    }
+  }
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

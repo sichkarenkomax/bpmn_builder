@@ -54,12 +54,30 @@ describe('настройки в документе', () => {
 
   it('хранит и читает этапы в bs:stages', () => {
     const properties = diagramSettingsProperties({
-      stages: [{ id: 's1', name: 'Этап', y: 10, height: 120, collapsed: true, milestones: [] }],
+      stages: [
+        {
+          id: 's1',
+          name: 'Этап',
+          poolId: 'Pool_1',
+          x: 10,
+          width: 120,
+          collapsed: true,
+          milestones: [],
+        },
+      ],
     });
     const settings = readDiagramSettings({ $attrs: { 'bs:stages': properties['stages']! } });
 
     expect(settings.stages).toEqual([
-      { id: 's1', name: 'Этап', y: 10, height: 120, collapsed: true, milestones: [] },
+      {
+        id: 's1',
+        name: 'Этап',
+        poolId: 'Pool_1',
+        x: 10,
+        width: 120,
+        collapsed: true,
+        milestones: [],
+      },
     ]);
     expect(diagramSettingsProperties({ stages: [] })['stages']).toBeUndefined();
   });

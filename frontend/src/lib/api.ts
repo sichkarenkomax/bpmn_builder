@@ -111,6 +111,58 @@ export async function saveDiagramXml(
 
 export type ServerExportFormat = 'json' | 'csv' | 'xlsx' | 'docx' | 'pdf';
 
+export interface ExportJobSummary {
+  id: string;
+  diagram_id: string;
+  format: ServerExportFormat;
+  status: 'queued' | 'running' | 'done' | 'failed';
+  progress: number;
+  error: string | null;
+  size: number;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export function createExportJob(
+  id: string,
+  format: ServerExportFormat,
+  xml: string,
+  options: {
+    pngBase64?: string;
+    svg?: string;
+    page?: 'A4' | 'A3';
+    orientation?: 'portrait' | 'landscape';
+  } = {},
+): Promise<ExportJobSummary> {
+  return request<ExportJobSummary>(`/diagrams/${id}/exports/${format}/jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      xml,
+      png_base64: options.pngBase64 ?? null,
+      svg: options.svg ?? null,
+      page: options.page ?? 'A4',
+      orientation: options.orientation ?? 'portrait',
+    }),
+  });
+}
+
+export function fetchExportJobs(id: string): Promise<ExportJobSummary[]> {
+  return request<ExportJobSummary[]>(`/diagrams/${id}/exports/jobs`);
+}
+
+export function fetchExportJob(id: string, jobId: string): Promise<ExportJobSummary> {
+  return request<ExportJobSummary>(`/diagrams/${id}/exports/jobs/${jobId}`);
+}
+
+export async function downloadExportJob(id: string, jobId: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/diagrams/${id}/exports/jobs/${jobId}/download`);
+  if (!response.ok) {
+    throw new ApiError(response.status, `Скачивание вернуло ${response.status}`);
+  }
+  return response.blob();
+}
+
 export async function exportServerDocument(
   id: string,
   format: ServerExportFormat,

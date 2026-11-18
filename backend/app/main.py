@@ -15,11 +15,13 @@ from app.core.middleware import (
     RequestTimeoutMiddleware,
     SecurityHeadersMiddleware,
 )
+from app.export.jobs import export_jobs
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
+    await export_jobs.stop()
     await dispose_engine()
 
 

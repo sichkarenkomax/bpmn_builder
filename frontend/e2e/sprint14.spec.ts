@@ -84,6 +84,14 @@ test('экспорт SVG и JSON из текущего холста, фокус 
       expect(payload.processes[0]?.nodes.length).toBeGreaterThan(0);
     }
 
+    // Серверный экспорт попадает в историю; оттуда файл можно скачать повторно.
+    const historyItem = dialog.locator('.export-history__item').filter({ hasText: 'JSON' });
+    await expect(historyItem).toBeVisible();
+    await expect(historyItem.locator('.export-history__status')).toHaveText('готово');
+    const historyDownload = page.waitForEvent('download');
+    await historyItem.getByRole('button', { name: 'Скачать' }).click();
+    expect((await historyDownload).suggestedFilename()).toMatch(/\.json$/);
+
     const pdfDownload = page.waitForEvent('download');
     await dialog.getByRole('button', { name: /PDF/ }).click();
     const pdf = await pdfDownload;

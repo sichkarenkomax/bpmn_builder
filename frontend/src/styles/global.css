@@ -223,45 +223,45 @@ code {
 
 .stage-band {
   position: absolute;
-  inset-inline: 0;
-  border-top: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent);
-  border-bottom: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent);
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-sizing: border-box;
+  border-left: 1px dashed color-mix(in srgb, var(--text-muted) 70%, transparent);
+  pointer-events: none;
 }
 
-.stage-band--collapsed {
-  border-bottom-style: solid;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+.stage-band--first {
+  border-left: 0;
 }
 
 .stage-band__header {
   position: absolute;
-  top: 6px;
-  /* Справа: слева палитра bpmn-js, а её z-index выше полос. */
-  right: 12px;
+  top: 5px;
+  right: 6px;
+  left: 6px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: min(360px, 70%);
-  padding: 3px 7px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgb(16 24 40 / 12%);
-  pointer-events: auto;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  pointer-events: none;
 }
 
 .stage-band__name {
   overflow: hidden;
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
   text-overflow: ellipsis;
+  text-shadow:
+    0 0 3px var(--surface),
+    0 0 3px var(--surface);
   white-space: nowrap;
 }
 
 .stage-band__collapsed-note {
   flex: none;
   font-size: 10.5px;
+  font-weight: 400;
   color: var(--text-muted);
 }
 
@@ -272,8 +272,15 @@ code {
   background: transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
+  opacity: 0.35;
+  pointer-events: auto;
+}
+
+.stage-band__toggle:hover,
+.stage-band__toggle:focus-visible {
+  opacity: 1;
 }
 
 .stage-band__toggle:hover {
@@ -282,17 +289,17 @@ code {
 
 .stage-milestone {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  border-left: 1px dashed color-mix(in srgb, var(--accent) 80%, transparent);
+  right: 0;
+  left: 0;
+  border-top: 1px dashed color-mix(in srgb, var(--accent) 80%, transparent);
   pointer-events: none;
 }
 
 .stage-milestone::before {
   content: '';
   position: absolute;
-  top: 7px;
-  left: -4px;
+  top: -4px;
+  left: 7px;
   width: 7px;
   height: 7px;
   background: var(--accent);
@@ -301,8 +308,8 @@ code {
 
 .stage-milestone__label {
   position: absolute;
-  top: 4px;
-  left: 6px;
+  top: 3px;
+  left: 13px;
   padding: 1px 5px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1172,7 +1179,7 @@ code {
 
 .stage-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) 80px 80px auto auto;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) 80px 80px auto auto;
   gap: 8px;
   align-items: end;
   padding: 8px;
@@ -1191,7 +1198,9 @@ code {
 }
 
 .stage-row input[type='text'],
-.stage-row input:not([type]) {
+.stage-row input:not([type]),
+.stage-row select,
+.stage-add select {
   width: 100%;
   padding: 4px 6px;
   border: 1px solid var(--border);
@@ -1200,6 +1209,22 @@ code {
   color: var(--text);
   font: inherit;
   font-size: 12px;
+}
+
+.stage-add {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.stage-add label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: min(260px, 100%);
+  font-size: 10.5px;
+  color: var(--text-muted);
 }
 
 .stage-row__flag {
@@ -1502,6 +1527,96 @@ code {
   font-size: 11px;
   line-height: 1.35;
   color: var(--text-muted);
+}
+
+.export-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.export-progress__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.export-progress progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--accent);
+}
+
+.export-history {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.export-history__title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.export-history ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.export-history__item {
+  display: grid;
+  grid-template-columns: 64px 92px 1fr 64px auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-muted);
+  font-size: 11.5px;
+}
+
+.export-history__format {
+  font-weight: 600;
+}
+
+.export-history__status--done {
+  color: var(--success, #15803d);
+}
+
+.export-history__status--failed {
+  color: var(--error);
+}
+
+.export-history__date,
+.export-history__size {
+  color: var(--text-muted);
+}
+
+@media (max-width: 560px) {
+  .export-history__item {
+    grid-template-columns: 54px 1fr auto;
+  }
+
+  .export-history__date,
+  .export-history__size {
+    display: none;
+  }
 }
 
 .dialog-form--inline {

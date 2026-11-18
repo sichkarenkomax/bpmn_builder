@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const sampleXml = readFileSync(resolve(here, 'fixtures/simple.bpmn'), 'utf8');
+const sampleXml = readFileSync(resolve(here, 'fixtures/pool.bpmn'), 'utf8');
 const API = '/api/v1';
 
-test('этапы: полоса на холсте, переименование, сворачивание и сохранение', async ({
+test('этапы: вертикальная фаза внутри пула, веха, сворачивание и сохранение', async ({
   page,
   request,
 }) => {
@@ -21,28 +21,44 @@ test('этапы: полоса на холсте, переименование, 
   try {
     await page.goto(`/d/${diagram.id}`);
     const task = page.locator('[data-element-id="Task_Review"]').first();
+    const pool = page.locator('[data-element-id="Pool_1"]').first();
     await expect(task).toBeVisible();
+    await expect(pool).toBeVisible();
 
     await page.getByRole('button', { name: 'Этапы' }).click();
     const dialog = page.getByRole('dialog', { name: 'Этапы схемы' });
     await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel('Пул для нового этапа')).toHaveValue('Pool_1');
     await dialog.getByRole('button', { name: 'Добавить этап' }).click();
     await dialog.getByLabel('Название этапа 1').fill('Согласование');
+    await expect(dialog.getByLabel('Пул этапа 1')).toHaveValue('Pool_1');
     await dialog.getByRole('button', { name: 'Добавить веху к этапу 1' }).click();
     await dialog.getByLabel('Название вехи 1 этапа 1').fill('Проверка');
     await dialog.getByRole('button', { name: 'Применить' }).click();
 
     const band = page.locator('.stage-band').first();
     await expect(band).toBeVisible();
+    await expect(band).toHaveAttribute('data-pool-id', 'Pool_1');
     await expect(band.locator('.stage-band__name')).toHaveText('Согласование');
     await expect(band.locator('.stage-milestone__label')).toHaveText('Проверка');
     await expect(task).toBeVisible();
 
-    // Свёрнутый этап прячет задачу, но XML остаётся прежним.
+    // Этап не выходит за границы пула и занимает его высоту.
+    const bandBox = await band.boundingBox();
+    const poolBox = await pool.boundingBox();
+    expect(bandBox).not.toBeNull();
+    expect(poolBox).not.toBeNull();
+    expect(bandBox!.x).toBeGreaterThanOrEqual(poolBox!.x - 1);
+    expect(bandBox!.x + bandBox!.width).toBeLessThanOrEqual(poolBox!.x + poolBox!.width + 1);
+    expect(bandBox!.y).toBeGreaterThanOrEqual(poolBox!.y - 1);
+    expect(bandBox!.height).toBeLessThanOrEqual(poolBox!.height + 1);
+
+    // Свёрнутый этап прячет задачи своей фазы, но XML остаётся прежним.
     await band.getByRole('button', { name: 'Свернуть этап «Согласование»' }).click();
     await expect(page.locator('.stage-band').first()).toHaveAttribute('data-collapsed', 'true');
     await expect(task).toBeHidden();
     await expect(band.locator('.stage-milestone')).toHaveCount(0);
+    await expect(pool).toBeVisible();
 
     await Promise.all([
       page.waitForResponse(
@@ -55,6 +71,7 @@ test('этапы: полоса на холсте, переименование, 
     ]);
     const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
     expect(xml).toContain('bs:stages');
+    expect(xml).toContain('Pool_1');
     expect(xml).toContain('Согласование');
     expect(xml).toContain('Проверка');
 

@@ -30,12 +30,15 @@ import 'diagram-js-minimap/assets/diagram-js-minimap.css';
 import {
   ApiError,
   createComment,
+  createExportJob,
   deleteComment,
-  exportServerDocument,
+  downloadExportJob,
   fetchComments,
+  fetchExportJob,
   saveDiagramXml,
   updateComment,
   type DiagramComment,
+  type ExportJobSummary,
   type ServerExportFormat,
 } from '../lib/api';
 import { blobToBase64, downloadBlob, downloadText, modelerSvg, svgToPng } from '../lib/export';
@@ -124,7 +127,12 @@ import { ContextMenu, type ContextMenuItem, type ContextMenuState } from './Cont
 import { ReplaceMenu, type ReplaceEntry, type ReplaceMenuState } from './ReplaceMenu';
 import { StageBands } from './StageBands';
 import { StagesDialog } from './StagesDialog';
-import { hiddenStageElementIds, type DiagramStage } from '../lib/stages';
+import {
+  collectStagePools,
+  hiddenStageElementIds,
+  type DiagramStage,
+  type StagePool,
+} from '../lib/stages';
 import { PropertiesPanel } from './PropertiesPanel';
 import { ShortcutSettings } from './ShortcutSettings';
 
@@ -198,7 +206,7 @@ interface CanvasLike {
   getRootElement: () => DiagramElement;
   setRootElement: (element: DiagramElement) => void;
   findRoot: (id: string) => DiagramElement | undefined;
-  viewbox: () => { x: number; y: number; scale: number };
+  viewbox: () => { x: number; y: number; width: number; height: number; scale: number };
 }
 
 interface ModelingLike {
@@ -236,7 +244,7 @@ interface SelectionLike {
 interface EditorEvent {
   newSelection?: DiagramElement[];
   context?: { shape?: DiagramElement; connection?: DiagramElement };
-  viewbox?: { x: number; y: number; scale: number };
+  viewbox?: { x: number; y: number; width: number; height: number; scale: number };
 }
 
 interface EventBusLike {
@@ -1004,8 +1012,9 @@ export function DiagramEditor({
     target: AnchorSide;
   } | null>(null);
   const [stages, setStages] = useState<DiagramStage[]>([]);
+  const [stagePools, setStagePools] = useState<StagePool[]>([]);
   const [stagesOpen, setStagesOpen] = useState(false);
-  const [viewbox, setViewbox] = useState({ x: 0, y: 0, scale: 1 });
+  const [viewbox, setViewbox] = useState({ x: 0, y: 0, width: 0, height: 0, scale: 1 });
 
   const applyAllStyles = (modeler: Modeler) => {
     const registry = modeler.get<ElementRegistryLike>('elementRegistry');
@@ -1070,6 +1079,8 @@ export function DiagramEditor({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportJob, setExportJob] = useState<ExportJobSummary | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -1170,6 +1181,8 @@ export function DiagramEditor({
       return;
     }
     setExportBusy(true);
+    setExportProgress(0);
+    setExportJob(null);
     setExportError(null);
     const stem = `bpmn-${diagramId.slice(0, 8)}`;
     const done = (label: string) => notify('success', `Экспорт ${label} готов`);
@@ -1197,22 +1210,35 @@ export function DiagramEditor({
         return;
       }
 
+      const format: ServerExportFormat = kind;
+      let created: ExportJobSummary;
       if (kind === 'pdf') {
         const svg = await modelerSvg(modeler);
         const png = await svgToPng(svg, 2);
-        const blob = await exportServerDocument(diagramId, 'pdf', xml, {
+        created = await createExportJob(diagramId, 'pdf', xml, {
           svg,
           pngBase64: await blobToBase64(png),
           page: options.page,
           orientation: options.orientation,
         });
-        downloadBlob(blob, `${stem}.pdf`);
-        done('PDF');
-        return;
+      } else {
+        created = await createExportJob(diagramId, format, xml);
       }
 
-      const format: ServerExportFormat = kind;
-      const blob = await exportServerDocument(diagramId, format, xml);
+      let current = created;
+      setExportJob(current);
+      setExportProgress(current.progress);
+      while (current.status === 'queued' || current.status === 'running') {
+        await new Promise((resolve) => window.setTimeout(resolve, 300));
+        current = await fetchExportJob(diagramId, current.id);
+        setExportJob(current);
+        setExportProgress(current.progress);
+      }
+      if (current.status === 'failed') {
+        throw new Error(current.error || 'задание экспорта завершилось ошибкой');
+      }
+
+      const blob = await downloadExportJob(diagramId, current.id);
       downloadBlob(blob, `${stem}.${format}`);
       done(format.toUpperCase());
     } catch (error) {
@@ -1221,6 +1247,18 @@ export function DiagramEditor({
       notify('error', `Экспорт не удался: ${message}`);
     } finally {
       setExportBusy(false);
+      setExportProgress(0);
+    }
+  };
+
+  const downloadHistoryJob = async (item: ExportJobSummary) => {
+    try {
+      const blob = await downloadExportJob(diagramId, item.id);
+      downloadBlob(blob, `bpmn-${diagramId.slice(0, 8)}.${item.format}`);
+      notify('success', `Экспорт ${item.format.toUpperCase()} скачан`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'не удалось скачать файл';
+      notify('error', `Скачивание не удалось: ${message}`);
     }
   };
 
@@ -1707,14 +1745,24 @@ export function DiagramEditor({
     return () => eventBus.off?.('canvas.viewbox.changed', onViewboxChanged);
   }, [ready]);
 
-  // Свёрнутый этап прячет фигуры внутри полосы; модель и XML не меняются.
+  // Этапы привязаны к пулам: пересчитываем их границы после перетаскивания,
+  // изменения размера пула и добавления/удаления участников.
+  useEffect(() => {
+    const modeler = modelerRef.current;
+    if (!ready || !modeler) {
+      return;
+    }
+    setStagePools(collectStagePools(modeler.get<ElementRegistryLike>('elementRegistry').getAll()));
+  }, [ready, revision]);
+
+  // Свёрнутый этап прячет фигуры внутри своей фазы; модель и XML не меняются.
   useEffect(() => {
     const modeler = modelerRef.current;
     if (!ready || !modeler) {
       return;
     }
     const registry = modeler.get<ElementRegistryLike>('elementRegistry');
-    const hidden = hiddenStageElementIds(stages, registry.getAll());
+    const hidden = hiddenStageElementIds(stages, registry.getAll(), stagePools);
     for (const element of registry.getAll()) {
       const gfx = registry.getGraphics(element);
       if (gfx) {
@@ -1729,7 +1777,7 @@ export function DiagramEditor({
         }
       }
     };
-  }, [stages, ready, revision]);
+  }, [stages, stagePools, ready, revision]);
 
   // Маркеры открытых обсуждений: цифра на элементе открывает панель.
   useEffect(() => {
@@ -2835,9 +2883,10 @@ export function DiagramEditor({
             data-testid="diagram-editor"
             data-canvas={canvasTheme}
             data-revision={revision}
+            data-viewbox={`${viewbox.x} ${viewbox.y} ${viewbox.width} ${viewbox.height} ${viewbox.scale}`}
             onContextMenu={openContextMenu}
           />
-          <StageBands stages={stages} viewbox={viewbox} onToggle={toggleStage} />
+          <StageBands stages={stages} pools={stagePools} viewbox={viewbox} onToggle={toggleStage} />
           {marquee ? (
             <div
               className="canvas-marquee"
@@ -2905,6 +2954,7 @@ export function DiagramEditor({
       <StagesDialog
         open={stagesOpen}
         stages={stages}
+        pools={stagePools}
         onChange={updateStages}
         onClose={() => setStagesOpen(false)}
       />
@@ -2953,10 +3003,14 @@ export function DiagramEditor({
       <ReplaceMenu menu={replaceMenu} onClose={() => setReplaceMenu(null)} />
       <ExportDialog
         open={exportOpen}
+        diagramId={diagramId}
         busy={exportBusy}
+        progress={exportProgress}
         error={exportError}
+        job={exportJob}
         onClose={() => setExportOpen(false)}
         onExport={(kind, options) => void runExport(kind, options)}
+        onDownloadJob={(item) => void downloadHistoryJob(item)}
       />
       <ThemeSettings
         open={themeOpen}

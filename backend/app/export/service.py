@@ -314,8 +314,18 @@ def _svg_pdf_bytes(
     if "<!ENTITY" in svg or re.search(r"<!DOCTYPE[^>]*\[", svg, re.IGNORECASE):
         raise ValueError("SVG с DTD-сущностями не поддерживается")
     if _VECTOR_FONTS_READY:
-        # bpmn-js не пишет font-family в SVG: без подстановки reportlab
-        # рисует кириллицу пустыми квадратами.
+        # bpmn-js может не писать font-family, а computed style даёт Arial.
+        # Оба варианта без DejaVu Sans превращают кириллицу в квадраты.
+        svg = re.sub(
+            r'font-family\s*=\s*"[^"]*"',
+            f'font-family="{_VECTOR_FONT_FAMILY}"',
+            svg,
+        )
+        svg = re.sub(
+            r"font-family\s*:\s*[^;\"']+",
+            f"font-family: {_VECTOR_FONT_FAMILY}",
+            svg,
+        )
         svg = re.sub(
             r"<text\b(?![^>]*\bfont-family=)",
             f'<text font-family="{_VECTOR_FONT_FAMILY}"',
