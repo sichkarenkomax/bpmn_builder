@@ -94,7 +94,7 @@ jobs:
     needs: [backend, frontend, migrations]
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: Проверить docker-compose
         run: docker compose config --quiet
       - name: Собрать образ бэкенда
