@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collectStagePools,
-  createMilestone,
   createStage,
   hiddenStageElementIds,
   parseStages,
+  POOL_LABEL_WIDTH,
+  resizeStageBoundary,
   serializeStages,
   stageBounds,
+  stageContentRight,
+  stageForPool,
+  stagesEnabled,
   STAGE_DEFAULT_WIDTH,
   type DiagramStage,
   type StagePool,
@@ -22,23 +26,23 @@ const pool: StagePool = {
   height: 240,
 };
 
-describe('этапы схемы (1.3.14)', () => {
+describe('этапы схемы', () => {
   it('переживают запись и чтение JSON-атрибута', () => {
     const stages: DiagramStage[] = [
       {
         id: 's1',
         name: 'Согласование',
         poolId: 'Pool_1',
-        x: 20,
-        width: 260,
+        x: POOL_LABEL_WIDTH,
         collapsed: false,
-        milestones: [],
       },
     ];
     const raw = serializeStages(stages);
 
     expect(raw).toContain('Согласование');
     expect(raw).toContain('Pool_1');
+    expect(raw).not.toContain('milestones');
+    expect(raw).not.toContain('width');
     expect(parseStages(raw)).toEqual(stages);
     expect(serializeStages([])).toBeUndefined();
   });
@@ -59,7 +63,6 @@ describe('этапы схемы (1.3.14)', () => {
             milestones: [{ id: 'm1', name: 'Согласовано', y: 80 }],
           },
           { id: 'bad', name: 'Без координат', width: 100 },
-          { id: 'bad-width', name: 'Узкий', poolId: 'Pool_1', x: 0, width: 10 },
         ]),
       ),
     ).toEqual([
@@ -68,24 +71,12 @@ describe('этапы схемы (1.3.14)', () => {
         name: 'Этап',
         poolId: 'Pool_1',
         x: 10,
-        width: 200,
         collapsed: true,
-        milestones: [{ id: 'm1', name: 'Согласовано', y: 80 }],
-      },
-      // Слишком маленькая ширина поднимается до минимума, запись без координат — отбрасывается.
-      {
-        id: 'bad-width',
-        name: 'Узкий',
-        poolId: 'Pool_1',
-        x: 0,
-        width: 100,
-        collapsed: false,
-        milestones: [],
       },
     ]);
   });
 
-  it('старый горизонтальный формат переносится в процесс без потери названий', () => {
+  it('старый горизонтальный формат переносится в начало основной части пула', () => {
     expect(
       parseStages(
         JSON.stringify([
@@ -95,7 +86,6 @@ describe('этапы схемы (1.3.14)', () => {
             y: 300,
             height: 180,
             collapsed: false,
-            milestones: [{ id: 'm1', name: 'Веха', x: 120 }],
           },
         ]),
       ),
@@ -104,72 +94,122 @@ describe('этапы схемы (1.3.14)', () => {
         id: 'old',
         name: 'Старый этап',
         poolId: '__process__',
-        x: 0,
-        width: STAGE_DEFAULT_WIDTH,
+        x: POOL_LABEL_WIDTH,
         collapsed: false,
-        milestones: [{ id: 'm1', name: 'Веха', y: 120 }],
       },
     ]);
   });
 
-  it('новый этап встаёт справа внутри выбранного пула', () => {
-    const stage = createStage(
-      [
-        {
-          id: 's1',
-          name: 'Первый',
-          poolId: 'Pool_1',
-          x: 12,
-          width: 200,
-          collapsed: false,
-          milestones: [],
-        },
-      ],
-      pool,
-    );
+  it('первый этап занимает основную часть пула, следующий добавляется справа', () => {
+    const first = createStage([], pool);
+    expect(first.poolId).toBe('Pool_1');
+    expect(first.x).toBe(POOL_LABEL_WIDTH);
+    expect(first.name).toBe('Этап 1');
 
-    expect(stage.poolId).toBe('Pool_1');
-    expect(stage.x).toBe(212);
-    expect(stage.width).toBe(STAGE_DEFAULT_WIDTH);
-    expect(stage.name).toBe('Этап 2');
-    expect(stage.milestones).toEqual([]);
+    const second = createStage([first], pool);
+    expect(second.x).toBe(pool.width);
+    expect(second.name).toBe('Этап 2');
+    expect(STAGE_DEFAULT_WIDTH).toBe(260);
   });
 
-  it('вехи переживают запись и чтение', () => {
-    const stages: DiagramStage[] = [
-      {
-        id: 's1',
-        name: 'Этап',
-        poolId: 'Pool_1',
-        x: 0,
-        width: 200,
-        collapsed: false,
-        milestones: [{ id: 'm1', name: 'Согласовано', y: 80 }],
-      },
-    ];
-
-    expect(parseStages(serializeStages(stages))).toEqual(stages);
-    expect(createMilestone(stages[0]!, 1)).toMatchObject({ name: 'Веха 2', y: 170 });
-  });
-
-  it('этап ограничивается границами своего пула', () => {
-    const stage: DiagramStage = {
+  it('границы этапов идут до следующего этапа или до края пула', () => {
+    const first: DiagramStage = {
       id: 's1',
-      name: 'Этап',
+      name: 'Первый',
+      poolId: 'Pool_1',
+      x: POOL_LABEL_WIDTH,
+      collapsed: false,
+    };
+    const second: DiagramStage = {
+      id: 's2',
+      name: 'Второй',
       poolId: 'Pool_1',
       x: 500,
-      width: 260,
       collapsed: false,
-      milestones: [],
     };
 
-    expect(stageBounds(stage, [pool])).toEqual({
+    expect(stageBounds(first, [pool], [first, second])).toEqual({
+      x: 190,
+      y: 60,
+      width: 470,
+      height: 240,
+    });
+    expect(stageBounds(second, [pool], [first, second])).toEqual({
       x: 660,
       y: 60,
       width: 100,
       height: 240,
     });
-    expect(stageBounds({ ...stage, poolId: 'missing' }, [pool])).toBeUndefined();
+    expect(stageBounds(first, [pool], [first])).toEqual({
+      x: 190,
+      y: 60,
+      width: 570,
+      height: 240,
+    });
+    expect(stageBounds({ ...first, poolId: 'missing' }, [pool], [first])).toBeUndefined();
+  });
+
+  it('перетаскивание границы сдвигает следующие этапы и край пула', () => {
+    const stages: DiagramStage[] = [
+      { id: 's1', name: 'Первый', poolId: 'Pool_1', x: POOL_LABEL_WIDTH, collapsed: false },
+      { id: 's2', name: 'Второй', poolId: 'Pool_1', x: 300, collapsed: false },
+      { id: 's3', name: 'Третий', poolId: 'Pool_1', x: 500, collapsed: false },
+    ];
+
+    const widened = resizeStageBoundary(stages, pool, 's1', 100);
+    expect(widened.delta).toBe(100);
+    expect(widened.poolWidth).toBe(700);
+    expect(widened.stages.map((stage) => stage.x)).toEqual([30, 400, 600]);
+
+    const narrowed = resizeStageBoundary(stages, { ...pool, width: 700 }, 's3', -100);
+    expect(narrowed.delta).toBe(-100);
+    expect(narrowed.poolWidth).toBe(600);
+    expect(narrowed.stages.map((stage) => stage.x)).toEqual([30, 300, 500]);
+  });
+
+  it('граница не сжимает этап меньше минимальной ширины', () => {
+    const stages: DiagramStage[] = [
+      { id: 's1', name: 'Первый', poolId: 'Pool_1', x: 30, collapsed: false },
+      { id: 's2', name: 'Второй', poolId: 'Pool_1', x: 200, collapsed: false },
+    ];
+
+    const result = resizeStageBoundary(stages, { ...pool, width: 300 }, 's1', -200);
+    expect(result.delta).toBe(-70);
+    expect(result.poolWidth).toBe(230);
+    expect(result.stages[1]!.x).toBe(130);
+
+    const alreadyNarrow: DiagramStage[] = [
+      { ...stages[0]!, x: 30 },
+      { ...stages[1]!, x: 100 },
+    ];
+    expect(resizeStageBoundary(alreadyNarrow, pool, 's1', -50).delta).toBe(0);
+  });
+
+  it('находит правую границу содержимого этапа', () => {
+    const stages: DiagramStage[] = [
+      { id: 's1', name: 'Первый', poolId: 'Pool_1', x: 30, collapsed: false },
+      { id: 's2', name: 'Второй', poolId: 'Pool_1', x: 400, collapsed: false },
+    ];
+    const elements = [
+      { id: 'Pool_1', type: 'bpmn:Participant', x: 160, y: 60, width: 600, height: 240 },
+      { id: 'Task', type: 'bpmn:Task', x: 300, y: 100, width: 100, height: 80 },
+      { id: 'Outside', type: 'bpmn:Task', x: 800, y: 100, width: 100, height: 80 },
+      { id: 'Label', type: 'label', x: 300, y: 100, width: 50, height: 20 },
+    ];
+
+    expect(stageContentRight(stages[0]!, elements, [pool], stages)).toBe(400);
+    expect(stageContentRight(stages[1]!, elements, [pool], stages)).toBeUndefined();
+  });
+
+  it('этапы одного пула сортируются по границе', () => {
+    const stages: DiagramStage[] = [
+      { id: 's2', name: 'Второй', poolId: 'Pool_1', x: 400, collapsed: false },
+      { id: 's1', name: 'Первый', poolId: 'Pool_1', x: 30, collapsed: false },
+    ];
+
+    expect(stageForPool(stages, 'Pool_1').map((stage) => stage.id)).toEqual(['s1', 's2']);
+    expect(stagesEnabled(stages, 'Pool_1')).toBe(true);
+    expect(stagesEnabled(stages, 'Pool_2')).toBe(false);
   });
 
   it('свёрнутый этап скрывает фигуры внутри своей вертикальной фазы', () => {
@@ -179,9 +219,14 @@ describe('этапы схемы (1.3.14)', () => {
         name: 'Этап',
         poolId: 'Pool_1',
         x: 100,
-        width: 200,
         collapsed: true,
-        milestones: [],
+      },
+      {
+        id: 's2',
+        name: 'Следующий',
+        poolId: 'Pool_1',
+        x: 300,
+        collapsed: false,
       },
     ];
     const elements = [
@@ -196,9 +241,9 @@ describe('этапы схемы (1.3.14)', () => {
       },
       // Левее этапа, но внутри пула.
       { id: 'Outside', type: 'bpmn:Task', x: 180, y: 100, width: 60, height: 80 },
-      // В другой колонке того же пула.
+      // Правее следующей границы.
       { id: 'Right', type: 'bpmn:Task', x: 600, y: 100, width: 100, height: 80 },
-      { id: 'Lane', type: 'bpmn:Lane', x: 160, y: 60, width: 600, height: 120 },
+      { id: 'Lane', type: 'bpmn:Lane', x: 190, y: 60, width: 570, height: 120 },
       {
         id: 'Label',
         type: 'label',
@@ -226,15 +271,13 @@ describe('этапы схемы (1.3.14)', () => {
             id: 's1',
             name: 'Этап',
             poolId: 'Pool_1',
-            x: 0,
-            width: 200,
+            x: POOL_LABEL_WIDTH,
             collapsed: false,
-            milestones: [],
           },
         ],
         [
           { id: 'Pool_1', type: 'bpmn:Participant', x: 0, y: 0, width: 600, height: 240 },
-          { id: 'Task', type: 'bpmn:Task', x: 10, y: 10, width: 100, height: 80 },
+          { id: 'Task', type: 'bpmn:Task', x: 60, y: 10, width: 100, height: 80 },
         ],
       ).size,
     ).toBe(0);

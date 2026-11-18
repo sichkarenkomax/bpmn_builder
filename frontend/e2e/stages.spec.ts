@@ -8,7 +8,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const sampleXml = readFileSync(resolve(here, 'fixtures/pool.bpmn'), 'utf8');
 const API = '/api/v1';
 
-test('этапы: вертикальная фаза внутри пула, веха, сворачивание и сохранение', async ({
+test('этапы: параметр пула, добавление через «+» и ПКМ, граница и сохранение', async ({
   page,
   request,
 }) => {
@@ -25,39 +25,95 @@ test('этапы: вертикальная фаза внутри пула, ве�
     await expect(task).toBeVisible();
     await expect(pool).toBeVisible();
 
-    await page.getByRole('button', { name: 'Этапы' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Этапы схемы' });
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByLabel('Пул для нового этапа')).toHaveValue('Pool_1');
-    await dialog.getByRole('button', { name: 'Добавить этап' }).click();
-    await dialog.getByLabel('Название этапа 1').fill('Согласование');
-    await expect(dialog.getByLabel('Пул этапа 1')).toHaveValue('Pool_1');
-    await dialog.getByRole('button', { name: 'Добавить веху к этапу 1' }).click();
-    await dialog.getByLabel('Название вехи 1 этапа 1').fill('Проверка');
-    await dialog.getByRole('button', { name: 'Применить' }).click();
+    // Этапы включаются параметром пула в инспекторе. Кликаем по полосе
+    // названия пула, чтобы не попасть в задачу на холсте.
+    await pool.click({ position: { x: 10, y: 30 } });
+    await page.getByRole('button', { name: 'Свойства', exact: true }).click();
+    const stagesCheckbox = page.getByRole('checkbox', { name: /^Этапы/ });
+    await expect(stagesCheckbox).not.toBeChecked();
+    await stagesCheckbox.check();
 
-    const band = page.locator('.stage-band').first();
-    await expect(band).toBeVisible();
-    await expect(band).toHaveAttribute('data-pool-id', 'Pool_1');
-    await expect(band.locator('.stage-band__name')).toHaveText('Согласование');
-    await expect(band.locator('.stage-milestone__label')).toHaveText('Проверка');
-    await expect(task).toBeVisible();
+    const bands = page.locator('.stage-band');
+    await expect(bands).toHaveCount(1);
+    const firstBand = bands.first();
+    await expect(firstBand.locator('.stage-band__name')).toHaveText('Этап 1');
 
-    // Этап не выходит за границы пула и занимает его высоту.
-    const bandBox = await band.boundingBox();
+    // Первый этап — основная часть пула, а не его полоса с названием.
     const poolBox = await pool.boundingBox();
-    expect(bandBox).not.toBeNull();
+    const firstBandBox = await firstBand.boundingBox();
     expect(poolBox).not.toBeNull();
-    expect(bandBox!.x).toBeGreaterThanOrEqual(poolBox!.x - 1);
-    expect(bandBox!.x + bandBox!.width).toBeLessThanOrEqual(poolBox!.x + poolBox!.width + 1);
-    expect(bandBox!.y).toBeGreaterThanOrEqual(poolBox!.y - 1);
-    expect(bandBox!.height).toBeLessThanOrEqual(poolBox!.height + 1);
+    expect(firstBandBox).not.toBeNull();
+    expect(firstBandBox!.x).toBeGreaterThan(poolBox!.x + 20);
+    expect(firstBandBox!.x + firstBandBox!.width).toBeLessThanOrEqual(
+      poolBox!.x + poolBox!.width + 1,
+    );
 
-    // Свёрнутый этап прячет задачи своей фазы, но XML остаётся прежним.
-    await band.getByRole('button', { name: 'Свернуть этап «Согласование»' }).click();
-    await expect(page.locator('.stage-band').first()).toHaveAttribute('data-collapsed', 'true');
+    // Название этапа меняется двойным щелчком.
+    await firstBand.locator('.stage-band__name').dblclick();
+    const nameInput = page.getByLabel('Название этапа «Этап 1»');
+    await nameInput.fill('Согласование');
+    await nameInput.press('Enter');
+    await expect(firstBand.locator('.stage-band__name')).toHaveText('Согласование');
+
+    // «+» у правой границы последнего этапа добавляет следующий.
+    await firstBand.locator('.stage-band__add').click();
+    await expect(bands).toHaveCount(2);
+    await expect(bands.nth(1).locator('.stage-band__name')).toHaveText('Этап 2');
+
+    // Пул расширился, поэтому вторая фаза помещается справа.
+    const widenedPoolBox = await pool.boundingBox();
+    expect(widenedPoolBox).not.toBeNull();
+    expect(widenedPoolBox!.width).toBeGreaterThan(poolBox!.width + 100);
+
+    // ПКМ по пулу добавляет ещё один этап.
+    await pool.click({ button: 'right', position: { x: 10, y: 30 } });
+    await page.getByRole('menuitem', { name: 'Добавить этап' }).click();
+    await expect(bands).toHaveCount(3);
+    await expect(bands.nth(2).locator('.stage-band__name')).toHaveText('Этап 3');
+
+    // Последняя граница — рамка пула; изгиб «>» есть у каждой линии.
+    await expect(page.locator('.stage-band__line')).toHaveCount(3);
+    await expect(bands.nth(2)).toHaveClass(/stage-band--last/);
+    await expect(bands.nth(2).locator('.stage-band__line')).toHaveClass(/stage-band__line--pool/);
+
+    // Граница первого этапа тянется мышью: этап и пул расширяются,
+    // а следующие этапы сдвигаются вправо.
+    const firstResizer = firstBand.locator('.stage-band__resizer');
+    const firstResizerBox = await firstResizer.boundingBox();
+    const secondBandLeftBefore = (await bands.nth(1).boundingBox())!.x;
+    expect(firstResizerBox).not.toBeNull();
+    await page.mouse.move(firstResizerBox!.x + firstResizerBox!.width / 2, firstResizerBox!.y + 80);
+    await page.mouse.down();
+    await page.mouse.move(
+      firstResizerBox!.x + firstResizerBox!.width / 2 + 60,
+      firstResizerBox!.y + 80,
+      { steps: 6 },
+    );
+    await page.mouse.up();
+    const resizedFirstBox = (await firstBand.boundingBox())!;
+    expect(resizedFirstBox.width).toBeGreaterThan(firstBandBox!.width + 40);
+    const secondBandLeftAfter = (await bands.nth(1).boundingBox())!.x;
+    expect(secondBandLeftAfter).toBeGreaterThan(secondBandLeftBefore + 40);
+
+    // Правый край пула тоже тянется, но пул не сжимается меньше
+    // последнего этапа.
+    const lastResizer = bands.nth(2).locator('.stage-band__resizer');
+    const lastResizerBox = (await lastResizer.boundingBox())!;
+    await page.mouse.move(lastResizerBox.x + lastResizerBox.width / 2, lastResizerBox.y + 80);
+    await page.mouse.down();
+    await page.mouse.move(
+      lastResizerBox.x + lastResizerBox.width / 2 - 500,
+      lastResizerBox.y + 80,
+      { steps: 8 },
+    );
+    await page.mouse.up();
+    const lastBandBox = (await bands.nth(2).boundingBox())!;
+    expect(lastBandBox.width).toBeGreaterThanOrEqual(98);
+
+    // Свёрнутый первый этап прячет свои фигуры, но XML остаётся прежним.
+    await firstBand.getByRole('button', { name: 'Свернуть этап «Согласование»' }).click();
+    await expect(firstBand).toHaveAttribute('data-collapsed', 'true');
     await expect(task).toBeHidden();
-    await expect(band.locator('.stage-milestone')).toHaveCount(0);
     await expect(pool).toBeVisible();
 
     await Promise.all([
@@ -73,23 +129,69 @@ test('этапы: вертикальная фаза внутри пула, ве�
     expect(xml).toContain('bs:stages');
     expect(xml).toContain('Pool_1');
     expect(xml).toContain('Согласование');
-    expect(xml).toContain('Проверка');
+    expect(xml).not.toContain('milestones');
 
-    // После перезагрузки этап и его свёрнутость на месте.
+    // После перезагрузки этапы и свёрнутость на месте.
     await page.reload();
-    await expect(page.locator('.stage-band').first()).toBeVisible();
+    await expect(page.locator('.stage-band')).toHaveCount(3);
     await expect(page.locator('.stage-band').first()).toHaveAttribute('data-collapsed', 'true');
     await expect(page.locator('[data-element-id="Task_Review"]').first()).toBeHidden();
-    await expect(page.locator('.stage-milestone')).toHaveCount(0);
 
-    // Разворачивание возвращает элементы.
     await page
       .locator('.stage-band')
       .first()
       .getByRole('button', { name: 'Развернуть этап «Согласование»' })
       .click();
     await expect(page.locator('[data-element-id="Task_Review"]').first()).toBeVisible();
-    await expect(page.locator('.stage-milestone__label')).toHaveText('Проверка');
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('этапы: элементы сдвигаются вместе с границей этапа', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E stages move ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const pool = page.locator('[data-element-id="Pool_1"]').first();
+    await expect(pool).toBeVisible();
+    await pool.click({ position: { x: 10, y: 30 } });
+    await page.getByRole('button', { name: 'Свойства', exact: true }).click();
+    await page.getByRole('checkbox', { name: /^Этапы/ }).check();
+    await page.locator('.stage-band').first().locator('.stage-band__add').click();
+
+    const bands = page.locator('.stage-band');
+    await expect(bands).toHaveCount(2);
+    const task = page.locator('[data-element-id="Task_Review"]').first();
+    const secondBand = (await bands.nth(1).boundingBox())!;
+    const taskBox = (await task.boundingBox())!;
+    await page.mouse.move(taskBox.x + taskBox.width / 2, taskBox.y + taskBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      secondBand.x + secondBand.width / 2,
+      secondBand.y + secondBand.height / 2,
+      { steps: 8 },
+    );
+    await page.mouse.up();
+
+    const movedTaskBox = (await task.boundingBox())!;
+    expect(movedTaskBox.x).toBeGreaterThan(secondBand.x);
+
+    const resizer = bands.first().locator('.stage-band__resizer');
+    const resizerBox = (await resizer.boundingBox())!;
+    await page.mouse.move(resizerBox.x + resizerBox.width / 2, resizerBox.y + 80);
+    await page.mouse.down();
+    await page.mouse.move(resizerBox.x + resizerBox.width / 2 + 60, resizerBox.y + 80, {
+      steps: 6,
+    });
+    await page.mouse.up();
+
+    const taskAfterResize = (await task.boundingBox())!;
+    expect(taskAfterResize.x).toBeGreaterThan(movedTaskBox.x + 40);
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }

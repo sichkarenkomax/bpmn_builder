@@ -57,6 +57,8 @@ export function PropertiesPanel({
   onClose,
   inspectorOpen,
   markdownToolbar,
+  stageCount,
+  onToggleStages,
 }: {
   element: InspectorElement | null;
   onChange: (patch: InspectorPatch) => void;
@@ -67,6 +69,8 @@ export function PropertiesPanel({
   onClose: () => void;
   inspectorOpen: boolean;
   markdownToolbar: boolean;
+  stageCount: number;
+  onToggleStages: (enabled: boolean) => void;
 }) {
   const [idDraft, setIdDraft] = useState(element?.id ?? '');
   const [idError, setIdError] = useState<string | null>(null);
@@ -227,6 +231,22 @@ export function PropertiesPanel({
           </>
         ) : null}
       </fieldset>
+
+      {element.type === 'bpmn:Participant' ? (
+        <fieldset className="inspector__section">
+          <legend>Этапы</legend>
+          <Checkbox
+            label={stageCount > 0 ? `Этапы (${stageCount})` : 'Этапы'}
+            checked={stageCount > 0}
+            onChange={onToggleStages}
+          />
+          <p className="inspector__hint">
+            {stageCount > 0
+              ? 'Первый этап занимает основную часть пула. Следующий добавляется кнопкой «+» у правой границы последнего этапа или через ПКМ по пулу.'
+              : 'Включите, чтобы превратить основную часть пула в первый этап.'}
+          </p>
+        </fieldset>
+      ) : null}
 
       <fieldset className="inspector__section">
         <legend>Стиль</legend>

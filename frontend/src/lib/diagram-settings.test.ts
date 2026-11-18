@@ -59,10 +59,8 @@ describe('настройки в документе', () => {
           id: 's1',
           name: 'Этап',
           poolId: 'Pool_1',
-          x: 10,
-          width: 120,
+          x: 30,
           collapsed: true,
-          milestones: [],
         },
       ],
     });
@@ -73,10 +71,8 @@ describe('настройки в документе', () => {
         id: 's1',
         name: 'Этап',
         poolId: 'Pool_1',
-        x: 10,
-        width: 120,
+        x: 30,
         collapsed: true,
-        milestones: [],
       },
     ]);
     expect(diagramSettingsProperties({ stages: [] })['stages']).toBeUndefined();

@@ -126,12 +126,19 @@ import {
 import { ContextMenu, type ContextMenuItem, type ContextMenuState } from './ContextMenu';
 import { ReplaceMenu, type ReplaceEntry, type ReplaceMenuState } from './ReplaceMenu';
 import { StageBands } from './StageBands';
-import { StagesDialog } from './StagesDialog';
 import {
   collectStagePools,
+  createStage,
   hiddenStageElementIds,
+  resizeStageBoundary,
+  stageBounds,
+  stageContentRight,
+  stageForPool,
+  STAGE_DEFAULT_WIDTH,
+  STAGE_MIN_WIDTH,
   type DiagramStage,
   type StagePool,
+  type StageResizeResult,
 } from '../lib/stages';
 import { PropertiesPanel } from './PropertiesPanel';
 import { ShortcutSettings } from './ShortcutSettings';
@@ -191,6 +198,7 @@ interface DiagramElement {
     get?: (name: string) => string | undefined;
   };
   parent?: DiagramElement;
+  children?: DiagramElement[];
   source?: DiagramElement;
   target?: DiagramElement;
   labelTarget?: DiagramElement;
@@ -217,6 +225,11 @@ interface ModelingLike {
   addLane: (element: DiagramElement, location: 'top' | 'bottom') => DiagramElement;
   reconnect: (connection: DiagramElement, source: DiagramElement, target: DiagramElement) => void;
   setColor: (elements: DiagramElement[], colors: { fill?: string; stroke?: string }) => void;
+  resizeShape: (
+    shape: DiagramElement,
+    bounds: { x: number; y: number; width: number; height: number },
+  ) => void;
+  moveElements: (elements: DiagramElement[], delta: { x: number; y: number }) => void;
 }
 
 interface LayouterLike {
@@ -788,6 +801,16 @@ interface ModdleLike {
   create: (type: string, attrs: Record<string, unknown>) => unknown;
 }
 
+interface StageDragState {
+  stageId: string;
+  pool: StagePool;
+  minWidth: number;
+  movingElements: DiagramElement[];
+  previewElements: { gfx: SVGGElement; transform: string }[];
+  poolRects: { rect: SVGRectElement; width: number }[];
+  preview: StageResizeResult;
+}
+
 interface CommandStackLike {
   undo: () => void;
   redo: () => void;
@@ -1013,8 +1036,8 @@ export function DiagramEditor({
   } | null>(null);
   const [stages, setStages] = useState<DiagramStage[]>([]);
   const [stagePools, setStagePools] = useState<StagePool[]>([]);
-  const [stagesOpen, setStagesOpen] = useState(false);
   const [viewbox, setViewbox] = useState({ x: 0, y: 0, width: 0, height: 0, scale: 1 });
+  const stageDragRef = useRef<StageDragState | null>(null);
 
   const applyAllStyles = (modeler: Modeler) => {
     const registry = modeler.get<ElementRegistryLike>('elementRegistry');
@@ -1106,7 +1129,7 @@ export function DiagramEditor({
   }, [diagramId, initialXml]);
 
   shortcutsRef.current = shortcuts;
-  overlayOpenRef.current = shortcutsOpen || exportOpen || themeOpen || stagesOpen || menu !== null;
+  overlayOpenRef.current = shortcutsOpen || exportOpen || themeOpen || menu !== null;
 
   const updateShortcuts = useCallback((next: ShortcutMap) => {
     setShortcuts(next);
@@ -1374,6 +1397,230 @@ export function DiagramEditor({
     updateStages(
       stages.map((item) => (item.id === stage.id ? { ...item, collapsed: !item.collapsed } : item)),
     );
+  };
+
+  const renameStage = (stage: DiagramStage, name: string) => {
+    updateStages(stages.map((item) => (item.id === stage.id ? { ...item, name } : item)));
+  };
+
+  // Новый этап добавляется справа: пул расширяется на ширину этапа, поэтому
+  // уже нарисованные элементы и предыдущие фазы остаются на месте.
+  const addStageToPool = (poolId: string) => {
+    const pool = stagePools.find((item) => item.id === poolId);
+    if (!pool) {
+      return;
+    }
+    const next = createStage(stages, pool);
+    const modeler = modelerRef.current;
+    const element = modeler?.get<ElementRegistryLike>('elementRegistry').get(pool.id);
+    if (modeler && element && element.type === 'bpmn:Participant') {
+      const modeling = modeler.get<ModelingLike>('modeling');
+      const targetWidth = Math.max(pool.width, next.x + STAGE_DEFAULT_WIDTH);
+      const delta = targetWidth - pool.width;
+      if (delta > 0) {
+        modeling.resizeShape(element, {
+          x: pool.x,
+          y: pool.y,
+          width: targetWidth,
+          height: pool.height,
+        });
+        for (const lane of element.children ?? []) {
+          if (lane.type !== 'bpmn:Lane') {
+            continue;
+          }
+          modeling.resizeShape(lane, {
+            x: lane.x ?? pool.x,
+            y: lane.y ?? pool.y,
+            width: (lane.width ?? pool.width) + delta,
+            height: lane.height ?? pool.height,
+          });
+        }
+      }
+    }
+    updateStages([...stages, next]);
+  };
+
+  const togglePoolStages = (poolId: string, enabled: boolean) => {
+    const current = stageForPool(stages, poolId);
+    if (!enabled) {
+      updateStages(stages.filter((stage) => stage.poolId !== poolId));
+      return;
+    }
+    if (current.length > 0) {
+      return;
+    }
+    const pool = stagePools.find((item) => item.id === poolId);
+    if (pool) {
+      updateStages([...stages, createStage(stages, pool)]);
+    }
+  };
+
+  const clearStagePreview = (drag: StageDragState) => {
+    for (const item of drag.previewElements) {
+      item.gfx.style.transform = item.transform;
+    }
+    for (const item of drag.poolRects) {
+      item.rect.setAttribute('width', String(item.width));
+    }
+  };
+
+  // На время перетаскивания фигуры и рамка пула двигаются только визуально:
+  // в стек команд и в XML всё попадает одним действием при отпускании.
+  const beginStageDrag = (stage: DiagramStage): StageDragState | null => {
+    const modeler = modelerRef.current;
+    const pool = stagePools.find((item) => item.id === stage.poolId);
+    if (!modeler || !pool) {
+      return null;
+    }
+    const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+    const samePool = stageForPool(stages, pool.id);
+    const index = samePool.findIndex((item) => item.id === stage.id);
+    if (index === -1) {
+      return null;
+    }
+    const all = registry.getAll();
+    const laterBounds = samePool.slice(index + 1).flatMap((item) => {
+      const bounds = stageBounds(item, stagePools, stages);
+      return bounds ? [bounds] : [];
+    });
+    const isStageShape = (element: DiagramElement) =>
+      element.type !== 'label' &&
+      element.type !== 'bpmn:Participant' &&
+      element.type !== 'bpmn:Lane' &&
+      typeof element.x === 'number' &&
+      typeof element.y === 'number' &&
+      typeof element.width === 'number' &&
+      typeof element.height === 'number' &&
+      !element.source &&
+      !element.target;
+    const movingElements = all.filter((element) => {
+      if (!isStageShape(element)) {
+        return false;
+      }
+      const centerX = element.x! + element.width! / 2;
+      const centerY = element.y! + element.height! / 2;
+      return laterBounds.some(
+        (bounds) =>
+          centerX >= bounds.x &&
+          centerX < bounds.x + bounds.width &&
+          centerY >= bounds.y &&
+          centerY < bounds.y + bounds.height,
+      );
+    });
+    const movedIds = new Set(movingElements.map((element) => element.id));
+    const preview = all.filter(
+      (element) =>
+        movedIds.has(element.id) ||
+        (element.labelTarget ? movedIds.has(element.labelTarget.id) : false) ||
+        (element.source && element.target
+          ? movedIds.has(element.source.id) && movedIds.has(element.target.id)
+          : false),
+    );
+    const previewElements = preview.flatMap((element) => {
+      const gfx = registry.getGraphics(element);
+      return gfx ? [{ gfx, transform: gfx.style.transform }] : [];
+    });
+    const poolElement = registry.get(pool.id);
+    const poolElements = [
+      poolElement,
+      ...(poolElement?.children ?? []).filter((element) => element.type === 'bpmn:Lane'),
+    ].filter((element): element is DiagramElement => Boolean(element));
+    const poolRects = poolElements.flatMap((element) => {
+      const gfx = registry.getGraphics(element);
+      const rect = gfx?.querySelector('rect');
+      const width = rect ? Number(rect.getAttribute('width')) : Number.NaN;
+      return rect && Number.isFinite(width) ? [{ rect, width }] : [];
+    });
+    const bounds = stageBounds(stage, stagePools, stages);
+    const contentRight = stageContentRight(stage, all, stagePools, stages);
+    const contentWidth = contentRight && bounds ? contentRight - bounds.x + 16 : 0;
+    const minWidth = Math.max(STAGE_MIN_WIDTH, contentWidth);
+    return {
+      stageId: stage.id,
+      pool,
+      minWidth,
+      movingElements,
+      previewElements,
+      poolRects,
+      preview: resizeStageBoundary(stages, pool, stage.id, 0, minWidth),
+    };
+  };
+
+  const previewStageResize = (stage: DiagramStage, rawDelta: number): number => {
+    let drag = stageDragRef.current;
+    if (!drag || drag.stageId !== stage.id) {
+      drag = beginStageDrag(stage);
+      if (!drag) {
+        return 0;
+      }
+      stageDragRef.current = drag;
+    }
+    const result = resizeStageBoundary(
+      stages,
+      drag.pool,
+      stage.id,
+      Math.round(rawDelta),
+      drag.minWidth,
+    );
+    drag.preview = result;
+    for (const item of drag.previewElements) {
+      item.gfx.style.transform = `translate(${result.delta}px, 0)`;
+    }
+    for (const item of drag.poolRects) {
+      item.rect.setAttribute('width', String(item.width + result.delta));
+    }
+    return result.delta;
+  };
+
+  const commitStageResize = (stage: DiagramStage) => {
+    const drag = stageDragRef.current;
+    if (!drag || drag.stageId !== stage.id) {
+      return;
+    }
+    stageDragRef.current = null;
+    clearStagePreview(drag);
+    const result = drag.preview;
+    if (!result.delta) {
+      return;
+    }
+    const modeler = modelerRef.current;
+    if (!modeler) {
+      return;
+    }
+    const modeling = modeler.get<ModelingLike>('modeling');
+    if (drag.movingElements.length > 0) {
+      modeling.moveElements(drag.movingElements, { x: result.delta, y: 0 });
+    }
+    const element = modeler.get<ElementRegistryLike>('elementRegistry').get(drag.pool.id);
+    if (element && element.type === 'bpmn:Participant') {
+      modeling.resizeShape(element, {
+        x: drag.pool.x,
+        y: drag.pool.y,
+        width: result.poolWidth,
+        height: drag.pool.height,
+      });
+      for (const lane of element.children ?? []) {
+        if (lane.type !== 'bpmn:Lane') {
+          continue;
+        }
+        modeling.resizeShape(lane, {
+          x: lane.x ?? drag.pool.x,
+          y: lane.y ?? drag.pool.y,
+          width: (lane.width ?? drag.pool.width) + result.delta,
+          height: lane.height ?? drag.pool.height,
+        });
+      }
+    }
+    updateStages(result.stages);
+  };
+
+  const cancelStageResize = () => {
+    const drag = stageDragRef.current;
+    if (!drag) {
+      return;
+    }
+    stageDragRef.current = null;
+    clearStagePreview(drag);
   };
 
   // Комментарии живут в БД отдельно от XML (1.3.8): загрузка/мутации идут
@@ -2344,9 +2591,15 @@ export function DiagramEditor({
           },
         });
         items.push({
-          id: 'open-stages',
-          label: 'Этапы схемы…',
-          onSelect: () => setStagesOpen(true),
+          id: 'add-stage',
+          label: stageForPool(stages, target.id).length > 0 ? 'Добавить этап' : 'Включить этапы',
+          onSelect: () => {
+            if (stageForPool(stages, target.id).length > 0) {
+              addStageToPool(target.id);
+            } else {
+              togglePoolStages(target.id, true);
+            }
+          },
         });
       }
       if (isLane) {
@@ -2425,11 +2678,6 @@ export function DiagramEditor({
         },
         { id: 'sep-3', label: '', separator: true },
         {
-          id: 'stages',
-          label: 'Этапы схемы…',
-          onSelect: () => setStagesOpen(true),
-        },
-        {
           id: 'shortcuts',
           label: 'Горячие клавиши…',
           hint: hint('settings'),
@@ -2466,6 +2714,8 @@ export function DiagramEditor({
   };
 
   const selectedInspector = selected ? toInspector(selected) : null;
+  const selectedPoolStages =
+    selected?.type === 'bpmn:Participant' ? stageForPool(stages, selected.id) : [];
   const legendItems = (() => {
     const modeler = modelerRef.current;
     if (!ready || !legendOpen || !modeler) {
@@ -2595,16 +2845,6 @@ export function DiagramEditor({
               onClick={() => setInspectorOpen((value) => !value)}
             >
               <span aria-hidden="true">☰</span>
-            </button>
-            <button
-              type="button"
-              className="ghost-button ghost-button--small"
-              title="Этапы схемы: полосы поверх пулов"
-              aria-label="Этапы"
-              onClick={() => setStagesOpen(true)}
-            >
-              <span aria-hidden="true">▥</span>
-              <span className="ghost-button__label">Этапы</span>
             </button>
           </div>
 
@@ -2886,7 +3126,17 @@ export function DiagramEditor({
             data-viewbox={`${viewbox.x} ${viewbox.y} ${viewbox.width} ${viewbox.height} ${viewbox.scale}`}
             onContextMenu={openContextMenu}
           />
-          <StageBands stages={stages} pools={stagePools} viewbox={viewbox} onToggle={toggleStage} />
+          <StageBands
+            stages={stages}
+            pools={stagePools}
+            viewbox={viewbox}
+            onToggle={toggleStage}
+            onAdd={(stage) => addStageToPool(stage.poolId)}
+            onRename={renameStage}
+            onResizePreview={previewStageResize}
+            onResizeCommit={commitStageResize}
+            onResizeCancel={cancelStageResize}
+          />
           {marquee ? (
             <div
               className="canvas-marquee"
@@ -2949,15 +3199,14 @@ export function DiagramEditor({
             enterSubProcess(selected);
           }
         }}
+        stageCount={selectedPoolStages.length}
+        onToggleStages={(enabled) => {
+          if (selected) {
+            togglePoolStages(selected.id, enabled);
+          }
+        }}
       />
 
-      <StagesDialog
-        open={stagesOpen}
-        stages={stages}
-        pools={stagePools}
-        onChange={updateStages}
-        onClose={() => setStagesOpen(false)}
-      />
       <ConnectionAnchors
         open={anchorEditor !== null}
         sourceName={
