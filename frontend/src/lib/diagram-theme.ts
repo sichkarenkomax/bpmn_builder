@@ -316,10 +316,13 @@ export function applyThemeToGfx(
   // остаётся чёрной независимо от цветовой темы.
   if (type.endsWith('Flow') || type.endsWith('Association')) {
     const isAssociation = type.endsWith('Association');
+    // Тонкая линия по умолчанию; ручная толщина из панели «Стиль» важнее.
+    const strokeWidth = options?.strokeWidth?.trim() || '0.7';
     for (const child of gfx.querySelectorAll<SVGElement>('.djs-visual > *')) {
       if (child instanceof SVGElement && child.tagName !== 'text') {
         child.style.stroke = '#000000';
         child.style.fill = 'none';
+        child.style.strokeWidth = strokeWidth;
         if (isAssociation) {
           // По нотации связь комментария/данных — точками, а не тире.
           child.style.strokeDasharray = '0 6';
@@ -331,10 +334,10 @@ export function applyThemeToGfx(
       marker.style.stroke = '#000000';
       marker.style.fill = '#000000';
     }
-    // Наконечник стрелки заметнее, сама линия остаётся прежней толщины.
+    // Стандартный размер наконечника, чтобы он не перевешивал тонкую линию.
     for (const marker of gfx.querySelectorAll<SVGElement>('.djs-visual defs marker')) {
-      marker.setAttribute('markerWidth', '14');
-      marker.setAttribute('markerHeight', '14');
+      marker.setAttribute('markerWidth', '10');
+      marker.setAttribute('markerHeight', '10');
     }
     return;
   }

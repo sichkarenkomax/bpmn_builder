@@ -16,11 +16,18 @@ function makeGfx(shapes: string[]): SVGGElement {
 }
 
 describe('applyThemeToGfx', () => {
-  it('делает стрелки чёрными в любой теме', () => {
+  it('делает стрелки чёрными и тонкими в любой теме', () => {
     const gfx = makeGfx(['path']);
     applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeById('classic'));
     const path = gfx.querySelector('path');
     expect(path?.style.stroke).toBe('#000000');
+    expect(path?.style.strokeWidth).toBe('0.7');
+  });
+
+  it('не перекрывает ручную толщину линии связи', () => {
+    const gfx = makeGfx(['path']);
+    applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeById('classic'), { strokeWidth: '2' });
+    expect(gfx.querySelector('path')?.style.strokeWidth).toBe('2');
   });
 
   it('красит маркер стрелки в чёрный', () => {
@@ -37,8 +44,8 @@ describe('applyThemeToGfx', () => {
 
     expect(path.style.stroke).toBe('#000000');
     expect(path.style.fill).toBe('#000000');
-    expect(marker.getAttribute('markerWidth')).toBe('14');
-    expect(marker.getAttribute('markerHeight')).toBe('14');
+    expect(marker.getAttribute('markerWidth')).toBe('10');
+    expect(marker.getAttribute('markerHeight')).toBe('10');
   });
 
   it('даёт аннотации мягкий фон и красит только скобку', () => {
