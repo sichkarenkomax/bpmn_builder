@@ -113,6 +113,50 @@ test('связь комментария примыкает точками и и�
   }
 });
 
+test('подпись двигается свободно, а выравнивание не сдвигает её фрейм', async ({
+  page,
+  request,
+}) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E label drag ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const event = page.locator('[data-element-id="StartEvent_1"]').first();
+    const label = page.locator('[data-element-id="StartEvent_1_label"]').first();
+    await expect(event).toBeVisible();
+    await expect(label).toBeVisible();
+
+    const before = (await label.boundingBox())!;
+    await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      before.x + before.width / 2 + 80,
+      before.y + before.height / 2 + 24,
+      { steps: 8 },
+    );
+    await page.mouse.up();
+
+    const moved = (await label.boundingBox())!;
+    expect(moved.x).toBeGreaterThan(before.x + 50);
+    expect(moved.y).toBeGreaterThan(before.y + 10);
+
+    // Выбор события и выравнивание текста не должны возвращать фрейм
+    // к фигуре: двигается только текст внутри него.
+    await event.click();
+    await page.getByRole('button', { name: 'По левому краю' }).click();
+    const aligned = (await label.boundingBox())!;
+    expect(Math.abs(aligned.x - moved.x)).toBeLessThan(2);
+    expect(Math.abs(aligned.y - moved.y)).toBeLessThan(2);
+    await expect(label.locator('.djs-label')).toHaveAttribute('text-anchor', 'start');
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
 test('связи документа и БД тоже идут ортогонально', async ({ page, request }) => {
   const dataXml = annotationXml
     .replace(

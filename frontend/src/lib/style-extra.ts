@@ -258,7 +258,7 @@ type ExternalLabelElement = {
  *
  * Штатно она начинается ровно на нижней границе фигуры, поэтому текст
  * касается контура; добавляем небольшой зазор. Выравнивание берётся
- * с фигуры-владельца: у самой подписи таких атрибутов нет.
+ * с фигуры-владельца, но применяется к тексту внутри фрейма подписи.
  */
 export function applyExternalLabelLayout(
   gfx: SVGGElement | undefined,
@@ -286,8 +286,8 @@ export function applyExternalLabelLayout(
   }
 
   const textBox = safeTextBox(label);
-  if (textBox && typeof host.x === 'number' && typeof host.width === 'number') {
-    fitExternalLabelFrame(gfx, element, host, textBox, align);
+  if (textBox) {
+    fitExternalLabelFrame(gfx, element, host, textBox);
     label.style.transform = '';
   }
 
@@ -320,23 +320,26 @@ export function applyExternalLabelLayout(
     }
   }
 
-  if (align !== 'left' && align !== 'center' && align !== 'right') {
+  const frameWidth = element.width;
+  if (typeof frameWidth !== 'number' || frameWidth <= 0) {
     return;
   }
-  if (typeof host.x !== 'number' || typeof host.width !== 'number') {
-    return;
-  }
-  const padding = Math.min(EXTERNAL_LABEL_PADDING, host.width / 4);
+  // Выравниваем текст внутри уже существующего фрейма. Сам фрейм при этом
+  // не двигаем: пользователь может перетащить его в любое место холста.
+  // Пустое значение — штатное центрирование подписи под фигурой.
+  const effectiveAlign = align === 'left' || align === 'right' ? align : 'center';
+  const padding = Math.min(EXTERNAL_LABEL_PADDING, frameWidth / 4);
   const target =
-    align === 'left'
-      ? host.x + padding
-      : align === 'right'
-        ? host.x + host.width - padding
-        : host.x + host.width / 2;
-  const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
+    effectiveAlign === 'left'
+      ? padding
+      : effectiveAlign === 'right'
+        ? frameWidth - padding
+        : frameWidth / 2;
+  const anchor =
+    effectiveAlign === 'left' ? 'start' : effectiveAlign === 'right' ? 'end' : 'middle';
   label.setAttribute('text-anchor', anchor);
   for (const line of label.querySelectorAll<SVGTextElement>('tspan')) {
-    line.setAttribute('x', String(target - element.x));
+    line.setAttribute('x', String(target));
   }
 }
 
@@ -345,33 +348,34 @@ export function applyExternalLabelLayout(
  *
  * bpmn-js при импорте сохраняет записанную в DI ширину, а кегль подписей
  * в приложении меняется. Из-за этого текст больше фрейма: по центру он
- * выглядит неровно, а по краям вылезает наружу. Расширяем фрейм вокруг
- * выбранной стороны и центрируем строки по вертикали.
+ * выглядит неровно, а по краям вылезает наружу. Меняем только размеры
+ * фрейма, сохраняя его позицию: подпись можно свободно двигать по холсту.
  */
 function fitExternalLabelFrame(
   gfx: SVGGElement,
   element: ExternalLabelElement,
   host: NonNullable<ExternalLabelElement['labelTarget']>,
   textBox: { x: number; y: number; width: number; height: number },
-  align: string,
 ): void {
-  if (textBox.width <= 0 || textBox.height <= 0) {
+  if (
+    textBox.width <= 0 ||
+    textBox.height <= 0 ||
+    typeof element.x !== 'number' ||
+    typeof element.y !== 'number' ||
+    typeof host.width !== 'number'
+  ) {
     return;
   }
-  const padding = Math.min(EXTERNAL_LABEL_PADDING, host.width! / 4);
+  const x = element.x;
+  const padding = Math.min(EXTERNAL_LABEL_PADDING, host.width / 4);
   const width = Math.ceil(textBox.width + padding * 2);
   const height = Math.ceil(textBox.height + 4);
-  const x =
-    align === 'left'
-      ? host.x!
-      : align === 'right'
-        ? host.x! + host.width! - width
-        : host.x! + host.width! / 2 - width / 2;
-  const centerY = element.y! + (element.height ?? height) / 2;
+  // По вертикали сохраняем центр фрейма: при смене кегля он остаётся
+  // на месте, а меняется только его высота.
+  const centerY = element.y + (element.height ?? height) / 2;
   const y = centerY - height / 2;
 
-  if (element.x !== x || element.y !== y || element.width !== width || element.height !== height) {
-    element.x = x;
+  if (element.y !== y || element.width !== width || element.height !== height) {
     element.y = y;
     element.width = width;
     element.height = height;

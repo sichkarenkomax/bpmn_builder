@@ -23,8 +23,8 @@ function makeGfx(text = 'Подпись') {
 
 type Host = { x?: number; y?: number; width?: number; height?: number; waypoints?: unknown };
 
-function labelElement(labelTarget: Host | undefined, x = 100, y = 180) {
-  return { type: 'label', x, y, labelTarget };
+function labelElement(labelTarget: Host | undefined, x = 100, y = 180, width = 100, height = 20) {
+  return { type: 'label', x, y, width, height, labelTarget };
 }
 
 const HOST: Host = { x: 80, y: 100, width: 100, height: 80 };
@@ -63,31 +63,47 @@ describe('applyExternalLabelLayout', () => {
     shape.cleanup();
   });
 
-  it('выравнивает текст по левому, правому краю и центру фигуры', () => {
+  it('выравнивает текст внутри фрейма, не сдвигая сам фрейм', () => {
     const left = makeGfx();
-    applyExternalLabelLayout(left.gfx, labelElement(HOST), 'left');
+    const leftElement = labelElement(HOST, 137, 222, 80, 24);
+    applyExternalLabelLayout(left.gfx, leftElement, 'left');
     expect(left.label.getAttribute('text-anchor')).toBe('start');
-    // host.x + 7 px отступа − element.x
-    expect(left.line.getAttribute('x')).toBe('-13');
+    expect(left.line.getAttribute('x')).toBe('7');
+    expect(leftElement.x).toBe(137);
+    expect(leftElement.y).toBe(222);
     left.cleanup();
 
     const right = makeGfx();
     applyExternalLabelLayout(right.gfx, labelElement(HOST), 'right');
     expect(right.label.getAttribute('text-anchor')).toBe('end');
-    expect(right.line.getAttribute('x')).toBe('73');
+    expect(right.line.getAttribute('x')).toBe('93');
     right.cleanup();
 
     const center = makeGfx();
     applyExternalLabelLayout(center.gfx, labelElement(HOST), 'center');
     expect(center.label.getAttribute('text-anchor')).toBe('middle');
-    expect(center.line.getAttribute('x')).toBe('30');
+    expect(center.line.getAttribute('x')).toBe('50');
     center.cleanup();
   });
 
-  it('уменьшает отступ у мелких фигур и не падает без labelTarget', () => {
+  it('подгоняет размеры фрейма, сохраняя его позицию', () => {
+    const { gfx, label, cleanup } = makeGfx();
+    label.getBBox = () => ({ x: 0, y: 0, width: 60, height: 14 }) as DOMRect;
+    const element = labelElement(HOST, 137, 222, 40, 16);
+
+    applyExternalLabelLayout(gfx, element, 'left');
+
+    expect(element.x).toBe(137);
+    expect(element.y).toBe(221);
+    expect(element.width).toBe(74);
+    expect(element.height).toBe(18);
+    cleanup();
+  });
+
+  it('уменьшает отступ у мелких фреймов и не падает без labelTarget', () => {
     const small = makeGfx();
-    applyExternalLabelLayout(small.gfx, labelElement({ ...HOST, width: 20 }), 'left');
-    expect(small.line.getAttribute('x')).toBe('-15');
+    applyExternalLabelLayout(small.gfx, labelElement(HOST, 100, 180, 20), 'left');
+    expect(small.line.getAttribute('x')).toBe('5');
     small.cleanup();
 
     const orphan = makeGfx();
