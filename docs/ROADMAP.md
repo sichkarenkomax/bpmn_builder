@@ -879,16 +879,24 @@ mypy strict, tsc, eslint, prettier), 16 Playwright-сценариев на жи�
 
 #### Спринт 2.1 — Движок и структурные правила
 
-- [ ] 2.1.1 Модель результата: `Finding` (`rule_id`, `severity`, `message`,
+- [x] 2.1.1 Модель результата: `Finding` (`rule_id`, `severity`, `message`,
       `element_id`, `element_name`, `line`, `column`, `hint`) и `ValidationReport`
       (`valid`, `summary`, `findings`, `duration_ms`, `schema_version`); стабильный
-      JSON-контракт и Pydantic-схема
-- [ ] 2.1.2 Реестр правил и движок: регистрация по коду, категории `structure`,
+      JSON-контракт и Pydantic-схема. Реализовано 19.11.2026 в
+      `app/schemas/validation.py`; `extra="forbid"`, проверка кода правила,
+      согласованности summary/findings и `valid`; 15 тестов контракта.
+- [x] 2.1.2 Реестр правил и движок: регистрация по коду, категории `structure`,
       `gateway`, `event`, `lane`; один проход по модели и графу, без дублей
-      сообщений; порядок findings детерминирован (severity → element_id → rule_id)
-- [ ] 2.1.3 Структурные правила: нет старта/конца, недостижимый элемент, тупик
+      сообщений; порядок findings детерминирован (severity → element_id → rule_id).
+      Реализовано 19.11.2026: `app/validation/rules.py` и `app/validation/engine.py`,
+      `networkx` в зависимостях, дедупликация, фильтры категорий/правил и
+      переопределение severity; 7 тестов движка + 15 тестов контракта.
+- [x] 2.1.3 Структурные правила: нет старта/конца, недостижимый элемент, тупик
       (не-end без исходящего потока), висячая связь, дубль ID, пул без процесса,
-      элемент вне пула/дорожки, дорожка без `flowNodeRef`
+      элемент вне пула/дорожки, дорожка без `flowNodeRef`. Реализовано 19.11.2026
+      в `app/validation/structural.py`: 9 правил `BPMN-STRUCT-001…009`, отдельный
+      граф на процесс, предупреждения для дорожек; 10 тестов + проверка валидной
+      эталонной схемы без findings.
 - [ ] 2.1.4 Правила шлюзов и событий: ветка exclusive/inclusive без условия,
       нет default-flow, default-flow с условием, смешанные типы на одном шлюзе,
       boundary event без `attachedTo`, event-based gateway с некорректной целью,

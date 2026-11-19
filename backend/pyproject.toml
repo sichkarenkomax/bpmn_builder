@@ -18,6 +18,7 @@ dependencies = [
     "openpyxl>=3.1.5",
     "svglib>=2.4.0",
     "reportlab>=5.1.0",
+    "networkx>=3.7",
 ]
 
 [dependency-groups]
@@ -33,6 +34,7 @@ dev = [
     "lxml-stubs>=0.5.1",
     "pip-audit>=2.10.1",
     "pytest-cov>=7.1.0",
+    "types-networkx>=3.6.1.20261117",
 ]
 
 [tool.uv]
