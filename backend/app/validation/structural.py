@@ -73,7 +73,9 @@ def missing_start(context: RuleContext) -> list[Finding]:
             hint="добавьте startEvent, иначе процесс не с чего начать",
         )
         for process in context.document.processes
-        if not any(node.type is NodeType.START_EVENT for node in process.nodes)
+        # Пустой process — это pool-заглушка (например, Bizagi), а не процесс
+        # без старта: требовать от него события бессмысленно.
+        if process.nodes and not any(node.type is NodeType.START_EVENT for node in process.nodes)
     ]
 
 
@@ -88,7 +90,7 @@ def missing_end(context: RuleContext) -> list[Finding]:
             hint="добавьте endEvent, иначе у процесса нет результата",
         )
         for process in context.document.processes
-        if not any(node.type is NodeType.END_EVENT for node in process.nodes)
+        if process.nodes and not any(node.type is NodeType.END_EVENT for node in process.nodes)
     ]
 
 
@@ -218,6 +220,10 @@ def nodes_outside_lanes(context: RuleContext) -> list[Finding]:
         if not lanes:
             continue
         assigned = {ref for lane in lanes for ref in lane.flow_node_refs}
+        if not assigned:
+            # Bizagi рисует дорожки, но не заполняет flowNodeRef. Без единой
+            # ссылки принадлежность не восстановить; пустые дорожки отметит 009.
+            continue
         for node in process.nodes:
             if node.id in assigned:
                 continue
