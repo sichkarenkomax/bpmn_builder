@@ -50,7 +50,20 @@ function withResizeOthers(xml: string): string {
   );
 }
 
+function withAnnotation(xml: string): string {
+  return xml
+    .replace(
+      '  </bpmn:process>',
+      '    <bpmn:textAnnotation id="Annotation_1"><bpmn:text>Комментарий</bpmn:text></bpmn:textAnnotation>\n  </bpmn:process>',
+    )
+    .replace(
+      '    </bpmndi:BPMNPlane>',
+      '      <bpmndi:BPMNShape id="Annotation_1_di" bpmnElement="Annotation_1">\n        <dc:Bounds x="540" y="180" width="100" height="30" />\n      </bpmndi:BPMNShape>\n    </bpmndi:BPMNPlane>',
+    );
+}
+
 const resizableSampleXml = withResizeOthers(sampleXml);
+const annotationSampleXml = withAnnotation(sampleXml);
 const resizableAnnotationXml = withResizeOthers(annotationXml);
 
 function shapeBounds(xml: string, elementId: string) {
@@ -528,9 +541,76 @@ test('направление текста сохраняется в DI', async (
   }
 });
 
+test('многострочная вынесенная подпись сохраняет строки при повороте', async ({
+  page,
+  request,
+}) => {
+  const multilineXml = sampleXml.replace('name="Готово"', 'name="Первая строка&#10;Вторая строка"');
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E multiline label ${Date.now()}`, bpmn_xml: multilineXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const event = page.locator('[data-element-id="EndEvent_1"]').first();
+    const label = page.locator('[data-element-id="EndEvent_1_label"]').first();
+    await expect(event).toBeVisible();
+    await expect(label).toBeVisible();
+    await event.click();
+
+    const lines = label.locator('.djs-label tspan');
+    await expect(lines).toHaveCount(2);
+
+    // Поворот не должен склеивать строки: после −90° они идут столбцами,
+    // то есть различаются по X, а не по Y.
+    await page.getByRole('button', { name: 'Направление текста: поворот' }).click();
+    await expect
+      .poll(() =>
+        label.locator('.djs-visual').evaluate((node) => (node as SVGElement).style.transform),
+      )
+      .toContain('rotate(-90deg)');
+    const rotated = await lines.evaluateAll((nodes) =>
+      nodes.map((node) => node.getBoundingClientRect().toJSON()),
+    );
+    expect(rotated).toHaveLength(2);
+    expect(Math.abs(rotated[0]!.x - rotated[1]!.x)).toBeGreaterThan(5);
+    expect(Math.abs(rotated[0]!.y - rotated[1]!.y)).toBeLessThan(5);
+
+    // В обратную сторону (+90°) строки тоже остаются раздельными.
+    await page.getByRole('button', { name: 'Направление текста: вертикально' }).click();
+    await expect
+      .poll(() =>
+        label.locator('.djs-visual').evaluate((node) => (node as SVGElement).style.transform),
+      )
+      .toContain('rotate(90deg)');
+    const upright = await lines.evaluateAll((nodes) =>
+      nodes.map((node) => node.getBoundingClientRect().toJSON()),
+    );
+    expect(upright).toHaveLength(2);
+    expect(Math.abs(upright[0]!.x - upright[1]!.x)).toBeGreaterThan(5);
+    expect(Math.abs(upright[0]!.y - upright[1]!.y)).toBeLessThan(5);
+
+    // Направление и строки переживают сохранение и перезагрузку.
+    await saveDiagram(page, diagram.id);
+    await page.reload();
+    const reloaded = page.locator('[data-element-id="EndEvent_1_label"]').first();
+    await expect(reloaded).toBeVisible();
+    await expect(reloaded.locator('.djs-label tspan')).toHaveCount(2);
+    await expect
+      .poll(() =>
+        reloaded.locator('.djs-visual').evaluate((node) => (node as SVGElement).style.transform),
+      )
+      .toContain('rotate(90deg)');
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
 test('настройки ресайза скрывают ручки и сохраняются в схеме', async ({ page, request }) => {
   const created = await request.post(`${API}/diagrams`, {
-    data: { title: `E2E resize settings ${Date.now()}`, bpmn_xml: sampleXml },
+    data: { title: `E2E resize settings ${Date.now()}`, bpmn_xml: annotationSampleXml },
   });
   expect(created.ok()).toBeTruthy();
   const diagram = (await created.json()) as { id: string };
@@ -539,21 +619,30 @@ test('настройки ресайза скрывают ручки и сохр�
     await page.goto(`/d/${diagram.id}`);
     const event = page.locator('[data-element-id="StartEvent_1"]').first();
     const task = page.locator('[data-element-id="Task_Review"]').first();
+    const annotation = page.locator('[data-element-id="Annotation_1"]').first();
     await expect(event).toBeVisible();
 
-    // По умолчанию задачи ресайзятся, события — нет.
+    // По умолчанию задачи и комментарии ресайзятся, события — нет.
     await event.click();
     await expect(page.locator('.djs-resizer-StartEvent_1')).toHaveCount(0);
+    await annotation.click();
+    await expect(page.locator('.djs-resizer-Annotation_1')).toHaveCount(8);
     await task.click();
     await expect(page.locator('.djs-resizer-Task_Review')).toHaveCount(8);
 
-    await page.getByRole('button', { name: 'Тема' }).click();
-    await page.getByLabel('Разрешить менять размеры событий, шлюзов, данных и аннотаций').check();
-    await page.getByLabel('Разрешить менять размеры задач и подпроцессов').uncheck();
-    await page.getByRole('button', { name: 'Готово' }).click();
+    await page.getByRole('button', { name: 'Настройки размеров' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Настройки размеров' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel('Разрешить менять размеры событий, шлюзов и данных').check();
+    await dialog
+      .getByLabel('Разрешить менять размеры задач, подпроцессов и комментариев')
+      .uncheck();
+    await dialog.getByRole('button', { name: 'Готово' }).click();
 
     await event.click();
     await expect(page.locator('.djs-resizer-StartEvent_1')).toHaveCount(8);
+    await annotation.click();
+    await expect(page.locator('.djs-resizer-Annotation_1')).toHaveCount(0);
     await task.click();
     await expect(page.locator('.djs-resizer-Task_Review')).toHaveCount(0);
 
@@ -567,6 +656,8 @@ test('настройки ресайза скрывают ручки и сохр�
     await expect(page.locator('[data-element-id="Task_Review"]').first()).toBeVisible();
     await page.locator('[data-element-id="StartEvent_1"]').first().click();
     await expect(page.locator('.djs-resizer-StartEvent_1')).toHaveCount(8);
+    await page.locator('[data-element-id="Annotation_1"]').first().click();
+    await expect(page.locator('.djs-resizer-Annotation_1')).toHaveCount(0);
     await page.locator('[data-element-id="Task_Review"]').first().click();
     await expect(page.locator('.djs-resizer-Task_Review')).toHaveCount(0);
   } finally {

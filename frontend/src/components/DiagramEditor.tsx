@@ -108,6 +108,7 @@ import {
   type CanvasMouseMode,
 } from '../lib/mouse-settings';
 import { DiagramLegend } from './DiagramLegend';
+import { DiagramResizeSettings } from './DiagramResizeSettings';
 import { ThemeSettings } from './ThemeSettings';
 import {
   isSequenceFlowType,
@@ -680,8 +681,7 @@ function isOtherResizableShape(type: string): boolean {
     type.endsWith('Event') ||
     type.endsWith('Gateway') ||
     type === 'bpmn:DataObjectReference' ||
-    type === 'bpmn:DataStoreReference' ||
-    type === 'bpmn:TextAnnotation'
+    type === 'bpmn:DataStoreReference'
   );
 }
 
@@ -690,7 +690,8 @@ function mayResizeShape(type: string | undefined): boolean {
   if (!type || !type.startsWith('bpmn:')) {
     return true;
   }
-  if (isTaskShape(type)) {
+  // Комментарии (аннотации) меняют размер вместе с задачами: общая настройка.
+  if (isTaskShape(type) || type === 'bpmn:TextAnnotation') {
     return resizePermissions.tasks;
   }
   if (isOtherResizableShape(type)) {
@@ -1358,6 +1359,7 @@ export function DiagramEditor({
   const [exportJob, setExportJob] = useState<ExportJobSummary | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [resizeSettingsOpen, setResizeSettingsOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
   const [minimapOpen, setMinimapOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -1381,7 +1383,8 @@ export function DiagramEditor({
   }, [diagramId, initialXml]);
 
   shortcutsRef.current = shortcuts;
-  overlayOpenRef.current = shortcutsOpen || exportOpen || themeOpen || menu !== null;
+  overlayOpenRef.current =
+    shortcutsOpen || exportOpen || themeOpen || resizeSettingsOpen || menu !== null;
 
   const updateShortcuts = useCallback((next: ShortcutMap) => {
     setShortcuts(next);
@@ -3309,6 +3312,15 @@ export function DiagramEditor({
             </button>
             <button
               type="button"
+              className="ghost-button ghost-button--small"
+              title="Настройки размеров"
+              aria-label="Настройки размеров"
+              onClick={() => setResizeSettingsOpen(true)}
+            >
+              <span aria-hidden="true">⚙</span>
+            </button>
+            <button
+              type="button"
               className={
                 legendOpen
                   ? 'ghost-button ghost-button--small ghost-button--active'
@@ -3776,11 +3788,15 @@ export function DiagramEditor({
         value={themeId}
         customColors={customColors}
         canvas={canvasTheme}
-        resizeTasks={resizeSettings.tasks}
-        resizeOthers={resizeSettings.others}
         onChange={updateTheme}
         onCustomColorsChange={updateCustomColors}
         onCanvasChange={updateCanvasTheme}
+        onClose={() => setThemeOpen(false)}
+      />
+      <DiagramResizeSettings
+        open={resizeSettingsOpen}
+        resizeTasks={resizeSettings.tasks}
+        resizeOthers={resizeSettings.others}
         onResizeChange={updateResizeSettings}
         onSavePortalDefaults={() => {
           savePortalDefaults({
@@ -3791,7 +3807,7 @@ export function DiagramEditor({
           });
           notify('success', 'Значения сохранены для новых схем');
         }}
-        onClose={() => setThemeOpen(false)}
+        onClose={() => setResizeSettingsOpen(false)}
       />
       <ShortcutSettings
         open={shortcutsOpen}
