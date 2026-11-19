@@ -29,6 +29,25 @@ export interface VersionSummary {
   created_at: string;
 }
 
+export interface ValidationFinding {
+  rule_id: string;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  element_id: string | null;
+  element_name: string | null;
+  line: number | null;
+  column: number | null;
+  hint: string | null;
+}
+
+export interface ValidationReport {
+  valid: boolean;
+  summary: { errors: number; warnings: number; infos: number };
+  findings: ValidationFinding[];
+  duration_ms: number;
+  schema_version: string;
+}
+
 export const API_BASE: string =
   (import.meta.env['VITE_API_BASE'] as string | undefined) ?? '/api/v1';
 
@@ -79,6 +98,10 @@ export async function fetchDiagramXml(id: string, signal?: AbortSignal): Promise
 
 export function fetchVersions(id: string, signal?: AbortSignal): Promise<VersionSummary[]> {
   return request<VersionSummary[]>(`/diagrams/${id}/versions?limit=20`, { signal });
+}
+
+export function fetchValidation(id: string, signal?: AbortSignal): Promise<ValidationReport> {
+  return request<ValidationReport>(`/diagrams/${id}/validation`, { signal });
 }
 
 export async function saveDiagramXml(

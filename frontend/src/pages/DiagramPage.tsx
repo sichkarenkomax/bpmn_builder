@@ -5,7 +5,13 @@ import demoXml from '../assets/demo-process.bpmn?raw';
 import { DiagramEditor } from '../components/DiagramEditor';
 import { TemplatePicker } from '../components/TemplatePicker';
 import { useDiagram } from '../hooks/useDiagram';
-import { createDiagram, updateDiagram, type DiagramSummary } from '../lib/api';
+import {
+  createDiagram,
+  fetchValidation,
+  updateDiagram,
+  type DiagramSummary,
+  type ValidationReport,
+} from '../lib/api';
 import { withPortalDefaults } from '../lib/portal-defaults';
 
 const DEMO_TITLE = 'Демонстрационный процесс';
@@ -16,6 +22,12 @@ const STATUS_LABELS: Record<string, string> = {
   draft: 'черновик',
   approved: 'утверждена',
   archived: 'в архиве',
+};
+
+const SEVERITY_LABELS: Record<string, string> = {
+  error: 'ошибка',
+  warning: 'предупреждение',
+  info: 'информация',
 };
 
 function normalizeStatus(value: string): DiagramStatus {
@@ -29,6 +41,10 @@ function DiagramHeader({ meta }: { meta: DiagramSummary }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validationOpen, setValidationOpen] = useState(false);
+  const [validation, setValidation] = useState<ValidationReport | null>(null);
+  const [validationLoading, setValidationLoading] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
     setTitle(meta.title);
@@ -37,17 +53,33 @@ function DiagramHeader({ meta }: { meta: DiagramSummary }) {
   }, [meta.id, meta.title, meta.description, meta.status]);
 
   useEffect(() => {
-    if (!open) {
+    if (!open && !validationOpen) {
       return;
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpen(false);
+        setValidationOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open]);
+  }, [open, validationOpen]);
+
+  const check = async () => {
+    setValidationOpen(true);
+    setValidation(null);
+    setValidationLoading(true);
+    setValidationError(null);
+    try {
+      setValidation(await fetchValidation(meta.id));
+    } catch {
+      setValidation(null);
+      setValidationError('не удалось выполнить проверку');
+    } finally {
+      setValidationLoading(false);
+    }
+  };
 
   const save = async () => {
     const nextTitle = title.trim();
@@ -83,6 +115,14 @@ function DiagramHeader({ meta }: { meta: DiagramSummary }) {
         </p>
       </div>
       <div className="page__toolbar-actions">
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={() => void check()}
+          disabled={validationLoading}
+        >
+          {validationLoading ? 'Проверяю…' : 'Проверить'}
+        </button>
         <button type="button" className="ghost-button" onClick={() => setOpen(true)}>
           Настройки схемы
         </button>
@@ -164,6 +204,80 @@ function DiagramHeader({ meta }: { meta: DiagramSummary }) {
                 {saving ? 'Сохраняю…' : 'Сохранить'}
               </button>
             </footer>
+          </section>
+        </div>
+      ) : null}
+
+      {validationOpen ? (
+        <div
+          className="dialog-backdrop"
+          role="presentation"
+          onMouseDown={() => setValidationOpen(false)}
+        >
+          <section
+            className="dialog dialog--wide"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Проверка BPMN"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="dialog__header">
+              <h2 className="dialog__title">Проверка BPMN</h2>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setValidationOpen(false)}
+              >
+                Закрыть
+              </button>
+            </header>
+
+            <p className="dialog__hint">Проверяется сохранённая версия диаграммы.</p>
+
+            {validationLoading ? <p className="dialog__hint">Выполняю проверку…</p> : null}
+            {validationError ? <p className="dialog__error">{validationError}</p> : null}
+
+            {validation ? (
+              <>
+                <p
+                  className={
+                    validation.valid ? 'validation-summary' : 'validation-summary is-invalid'
+                  }
+                >
+                  {validation.valid ? 'Ошибок нет' : `Ошибок: ${validation.summary.errors}`}
+                  {` · предупреждений: ${validation.summary.warnings}`}
+                  {` · ${Math.round(validation.duration_ms)} мс`}
+                </p>
+
+                {validation.findings.length === 0 ? (
+                  <p className="dialog__hint">Замечаний нет.</p>
+                ) : (
+                  <ul className="validation-list">
+                    {validation.findings.map((finding, index) => (
+                      <li
+                        key={`${finding.rule_id}-${finding.element_id ?? 'xml'}-${index}`}
+                        className={`validation-item validation-item--${finding.severity}`}
+                      >
+                        <div className="validation-item__head">
+                          <code>{finding.rule_id}</code>
+                          <span>{SEVERITY_LABELS[finding.severity] ?? finding.severity}</span>
+                        </div>
+                        <p className="validation-item__message">{finding.message}</p>
+                        {finding.element_name || finding.element_id ? (
+                          <p className="validation-item__meta">
+                            элемент: {finding.element_name ?? 'без имени'}
+                            {finding.element_id ? ` (${finding.element_id})` : ''}
+                          </p>
+                        ) : null}
+                        {finding.hint ? (
+                          <p className="validation-item__meta">{finding.hint}</p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : null}
           </section>
         </div>
       ) : null}

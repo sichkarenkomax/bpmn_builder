@@ -55,6 +55,28 @@ async def test_create_with_xml_keeps_it_byte_for_byte(
     assert response.headers["etag"] == f'"{diagram["etag"]}"'
 
 
+async def test_validation_returns_report_for_saved_diagram(
+    db_client: AsyncClient, sample_xml: str
+) -> None:
+    diagram = await _create(db_client, "С проверкой", sample_xml)
+
+    response = await db_client.get(f"{API}/diagrams/{diagram['id']}/validation")
+
+    assert response.status_code == 200
+    report = response.json()
+    assert report["schema_version"] == "1.0"
+    assert report["valid"] is True
+    assert report["summary"] == {"errors": 0, "warnings": 0, "infos": 0}
+    assert report["findings"] == []
+    assert report["duration_ms"] >= 0
+
+
+async def test_validation_missing_diagram_is_404(db_client: AsyncClient) -> None:
+    response = await db_client.get(f"{API}/diagrams/nope/validation")
+
+    assert response.status_code == 404
+
+
 async def test_create_rejects_invalid_xml(db_client: AsyncClient) -> None:
     response = await db_client.post(
         f"{API}/diagrams",
