@@ -5,7 +5,6 @@ export function DiagramResizeSettings({
   open,
   resizeTasks,
   resizeOthers,
-  compactBoundaryEvents,
   onResizeChange,
   onSavePortalDefaults,
   onClose,
@@ -13,12 +12,7 @@ export function DiagramResizeSettings({
   open: boolean;
   resizeTasks: boolean;
   resizeOthers: boolean;
-  compactBoundaryEvents: boolean;
-  onResizeChange: (patch: {
-    tasks?: boolean;
-    others?: boolean;
-    compactBoundaryEvents?: boolean;
-  }) => void;
+  onResizeChange: (patch: { tasks?: boolean; others?: boolean }) => void;
   onSavePortalDefaults: () => void;
   onClose: () => void;
 }) {
@@ -79,25 +73,13 @@ export function DiagramResizeSettings({
             />
             <span>Разрешить менять размеры событий, шлюзов и данных</span>
           </label>
-          <label className="theme-editor__toggle">
-            <input
-              type="checkbox"
-              checked={compactBoundaryEvents}
-              onChange={(event) => onResizeChange({ compactBoundaryEvents: event.target.checked })}
-            />
-            <span>Создавать граничные события вдвое меньше (18×18)</span>
-          </label>
-          <p className="theme-editor__hint">
-            Компактный размер применяется к новым граничным событиям и к сбросу их размера. Уже
-            нарисованные события не меняются.
-          </p>
         </fieldset>
 
         <fieldset className="theme-editor">
           <legend className="theme-editor__title">Новые схемы</legend>
           <p className="theme-editor__hint">
-            Значения по умолчанию для всего портала: текущая тема, фон холста и оба переключателя
-            выше. Уже созданные схемы не меняются.
+            Значения по умолчанию для всего портала: текущая тема, фон холста и переключатели выше.
+            Уже созданные схемы не меняются.
           </p>
           <div className="theme-editor__actions">
             <button

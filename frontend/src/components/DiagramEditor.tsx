@@ -705,7 +705,11 @@ const resizePermissions = {
   others: DEFAULT_RESIZE_OTHERS,
 };
 
-/** Компактные граничные события: 18×18 вместо стандартных 36×36. */
+/**
+ * Компактные граничные события: 18×18 вместо стандартных 36×36. Пункт 1.5.12
+ * отложен: переключатель и портальный дефолт скрыты, но поддержка атрибута
+ * схемы сохранена для продолжения разработки.
+ */
 const boundaryEventSettings = {
   compact: DEFAULT_COMPACT_BOUNDARY_EVENTS,
 };
@@ -4065,7 +4069,6 @@ export function DiagramEditor({
         open={resizeSettingsOpen}
         resizeTasks={resizeSettings.tasks}
         resizeOthers={resizeSettings.others}
-        compactBoundaryEvents={resizeSettings.compactBoundaryEvents}
         onResizeChange={updateResizeSettings}
         onSavePortalDefaults={() => {
           savePortalDefaults({
@@ -4073,7 +4076,6 @@ export function DiagramEditor({
             canvas: canvasTheme,
             resizeTasks: resizeSettings.tasks,
             resizeOthers: resizeSettings.others,
-            compactBoundaryEvents: resizeSettings.compactBoundaryEvents,
           });
           notify('success', 'Значения сохранены для новых схем');
         }}
