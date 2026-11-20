@@ -5,21 +5,41 @@ updates:
     schedule:
       interval: 'weekly'
     open-pull-requests-limit: 5
+    groups:
+      backend-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+      backend-major:
+        patterns: ['*']
+        update-types: ['major']
 
   - package-ecosystem: 'npm'
     directory: '/frontend'
     schedule:
       interval: 'weekly'
     open-pull-requests-limit: 5
+    groups:
+      frontend-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+      frontend-major:
+        patterns: ['*']
+        update-types: ['major']
 
   - package-ecosystem: 'docker'
     directory: '/'
     schedule:
       interval: 'weekly'
     open-pull-requests-limit: 5
+    groups:
+      docker-images:
+        patterns: ['*']
 
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
       interval: 'weekly'
     open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ['*']
