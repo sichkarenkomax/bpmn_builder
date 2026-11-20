@@ -28,6 +28,7 @@ describe('портальные дефолты (1.5.4)', () => {
       canvas: 'dark',
       resizeTasks: false,
       resizeOthers: true,
+      compactBoundaryEvents: true,
     });
 
     expect(loadPortalDefaults()).toEqual({
@@ -35,6 +36,7 @@ describe('портальные дефолты (1.5.4)', () => {
       canvas: 'dark',
       resizeTasks: false,
       resizeOthers: true,
+      compactBoundaryEvents: true,
     });
   });
 
@@ -50,6 +52,7 @@ describe('портальные дефолты (1.5.4)', () => {
       canvas: 'dark',
       resizeTasks: false,
       resizeOthers: true,
+      compactBoundaryEvents: true,
     });
 
     expect(xml).toContain('xmlns:bs="https://bpmn-studio.dev/schema/1.0"');
@@ -57,6 +60,7 @@ describe('портальные дефолты (1.5.4)', () => {
     expect(xml).toContain('bs:canvas="dark"');
     expect(xml).toContain('bs:resize-tasks="false"');
     expect(xml).toContain('bs:resize-others="true"');
+    expect(xml).toContain('bs:compact-boundary-events="true"');
     expect(xml.startsWith('<?xml')).toBe(true);
   });
 

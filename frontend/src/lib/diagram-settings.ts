@@ -20,11 +20,15 @@ export type DiagramSettings = {
   stages: DiagramStage[] | null;
   resizeTasks: boolean;
   resizeOthers: boolean;
+  compactBoundaryEvents: boolean;
 };
 
 /** Задачи и подпроцессы по умолчанию ресайзятся, остальные элементы — нет. */
 export const DEFAULT_RESIZE_TASKS = true;
 export const DEFAULT_RESIZE_OTHERS = false;
+
+/** По умолчанию граничные события остаются стандартного размера 36×36. */
+export const DEFAULT_COMPACT_BOUNDARY_EVENTS = false;
 
 /** Минимальная форма `bpmn:Definitions` от moddle: прямые свойства и `$attrs`. */
 export type DefinitionsLike = {
@@ -56,6 +60,11 @@ export function readDiagramSettings(definitions: DefinitionsLike | undefined): D
   const canvas = attribute(definitions, 'canvas', 'canvas');
   const resizeTasks = attribute(definitions, 'resize-tasks', 'resize-tasks');
   const resizeOthers = attribute(definitions, 'resize-others', 'resize-others');
+  const compactBoundaryEvents = attribute(
+    definitions,
+    'compact-boundary-events',
+    'compact-boundary-events',
+  );
 
   return {
     theme: isThemeId(theme) ? theme : null,
@@ -68,6 +77,10 @@ export function readDiagramSettings(definitions: DefinitionsLike | undefined): D
     // получают привычное поведение без миграции.
     resizeTasks: resizeTasks === undefined ? DEFAULT_RESIZE_TASKS : resizeTasks !== 'false',
     resizeOthers: resizeOthers === undefined ? DEFAULT_RESIZE_OTHERS : resizeOthers === 'true',
+    compactBoundaryEvents:
+      compactBoundaryEvents === undefined
+        ? DEFAULT_COMPACT_BOUNDARY_EVENTS
+        : compactBoundaryEvents === 'true',
   };
 }
 
@@ -80,6 +93,7 @@ export function diagramSettingsProperties(settings: {
   stages?: DiagramStage[];
   resizeTasks?: boolean;
   resizeOthers?: boolean;
+  compactBoundaryEvents?: boolean;
 }): Record<string, string | undefined> {
   const properties: Record<string, string | undefined> = {};
   if (settings.theme !== undefined) {
@@ -105,6 +119,10 @@ export function diagramSettingsProperties(settings: {
   if (settings.resizeOthers !== undefined) {
     properties['resize-others'] =
       settings.resizeOthers === DEFAULT_RESIZE_OTHERS ? undefined : 'true';
+  }
+  if (settings.compactBoundaryEvents !== undefined) {
+    properties['compact-boundary-events'] =
+      settings.compactBoundaryEvents === DEFAULT_COMPACT_BOUNDARY_EVENTS ? undefined : 'true';
   }
   return properties;
 }
