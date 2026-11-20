@@ -550,6 +550,10 @@ code {
   text-align: center;
 }
 
+.editor-toolbar__count--warning {
+  background: #d97706;
+}
+
 .editor-toolbar__section {
   display: flex;
   flex: none;
@@ -1732,6 +1736,42 @@ code {
 
 .comment-pin:hover {
   transform: scale(1.08);
+}
+
+/* --- Предупреждения и ошибки на холсте (2.3.4) --- */
+
+.validation-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 32%);
+  cursor: pointer;
+}
+
+.validation-pin:hover {
+  transform: scale(1.08);
+}
+
+.validation-pin--error {
+  background: #dc2626;
+}
+
+.validation-pin--warning {
+  background: #d97706;
+}
+
+.validation-pin--info {
+  background: #2563eb;
 }
 
 .comments-panel {

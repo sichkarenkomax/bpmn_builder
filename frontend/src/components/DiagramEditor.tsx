@@ -35,11 +35,13 @@ import {
   downloadExportJob,
   fetchComments,
   fetchExportJob,
+  fetchValidation,
   saveDiagramXml,
   updateComment,
   type DiagramComment,
   type ExportJobSummary,
   type ServerExportFormat,
+  type ValidationReport,
 } from '../lib/api';
 import { blobToBase64, downloadBlob, downloadText, modelerSvg, svgToPng } from '../lib/export';
 import { ExportDialog, type ExportKind } from './ExportDialog';
@@ -51,6 +53,13 @@ import {
   openCommentCount,
 } from '../lib/comments';
 import { CommentsPanel } from './CommentsPanel';
+import {
+  summarizeFindingsByElement,
+  validationBadgeText,
+  validationBadgeTitle,
+  validationFindingsCount,
+  VALIDATION_OVERLAY_TYPE,
+} from '../lib/validation';
 import { loadAutosaveSeconds, saveAutosaveSeconds } from '../lib/autosave';
 import { loadMarkdownToolbarEnabled, saveMarkdownToolbarEnabled } from '../lib/markdown-settings';
 import {
@@ -202,6 +211,7 @@ interface DiagramElement {
     get?: (name: string) => string | undefined;
   };
   parent?: DiagramElement;
+  host?: DiagramElement;
   children?: DiagramElement[];
   source?: DiagramElement;
   target?: DiagramElement;
@@ -235,6 +245,13 @@ interface ModelingLike {
     bounds: { x: number; y: number; width: number; height: number },
   ) => void;
   moveElements: (elements: DiagramElement[], delta: { x: number; y: number }) => void;
+  updateAttachment: (shape: DiagramElement, newHost?: DiagramElement) => void;
+  createShape: (
+    shape: { type: string; host?: DiagramElement },
+    position: { x: number; y: number },
+    target: DiagramElement,
+    hints?: { attach?: boolean },
+  ) => DiagramElement;
 }
 
 interface LayouterLike {
@@ -472,6 +489,14 @@ function defaultShapeSize(
   return { width: 100, height: 80 };
 }
 
+/** Центр события на правой границе активности. */
+function boundaryEventPosition(host: DiagramElement): { x: number; y: number } {
+  return {
+    x: (host.x ?? 0) + (host.width ?? 100),
+    y: (host.y ?? 0) + (host.height ?? 80) / 2,
+  };
+}
+
 /** Любое событие BPMN: стартовое, промежуточное, граничное, финиш. */
 function isEventElement(element: DiagramElement | null | undefined): boolean {
   return (element?.type ?? '').endsWith('Event');
@@ -653,6 +678,14 @@ function DirectionIcon({ value }: { value: '' | 'vertical' | 'rotate' }) {
 
 interface ReplaceMenuProviderLike {
   getPopupMenuEntries: (target: DiagramElement) => Record<string, ReplaceEntry>;
+}
+
+interface BpmnReplaceLike {
+  replaceElement: (
+    element: DiagramElement,
+    target: { type: string; host?: DiagramElement },
+    hints?: { layoutConnection?: boolean },
+  ) => DiagramElement;
 }
 
 interface ResizeRuleContext {
@@ -1268,6 +1301,8 @@ export function DiagramEditor({
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsBusy, setCommentsBusy] = useState(false);
   const [commentsError, setCommentsError] = useState<string | null>(null);
+  const [warningsOpen, setWarningsOpen] = useState(true);
+  const [validation, setValidation] = useState<ValidationReport | null>(null);
   const [mouseMode, setMouseMode] = useState<CanvasMouseMode>(() => loadCanvasMouseMode());
   const mouseModeRef = useRef(mouseMode);
   mouseModeRef.current = mouseMode;
@@ -2453,6 +2488,64 @@ export function DiagramEditor({
     };
   }, [stages, stagePools, ready, revision]);
 
+  // Проверка идёт по сохранённой версии: после успешного PUT отчёт обновляется.
+  useEffect(() => {
+    if (!ready || !warningsOpen) {
+      return;
+    }
+    if (save.kind !== 'saved') {
+      // Пока есть несохранённые правки, старые значки могут врать.
+      setValidation(null);
+      return;
+    }
+    const controller = new AbortController();
+    fetchValidation(diagramId, controller.signal)
+      .then((report) => setValidation(report))
+      .catch(() => {
+        // Значки не должны мешать редактированию, если проверка недоступна.
+      });
+    return () => controller.abort();
+  }, [diagramId, ready, warningsOpen, save.kind]);
+
+  // Маркеры предупреждений/ошибок: цвет значка — худшая severity элемента.
+  useEffect(() => {
+    const modeler = modelerRef.current;
+    if (!ready || !warningsOpen || !modeler || !validation) {
+      return;
+    }
+    const overlays = modeler.get<OverlaysLike>('overlays');
+    const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+    const selection = modeler.get<SelectionLike>('selection');
+    overlays.remove({ type: VALIDATION_OVERLAY_TYPE });
+    for (const [elementId, summary] of summarizeFindingsByElement(validation.findings)) {
+      const element = registry.get(elementId);
+      if (!element) {
+        continue;
+      }
+      const badge = document.createElement('button');
+      badge.type = 'button';
+      badge.className = `validation-pin validation-pin--${summary.severity}`;
+      badge.textContent = validationBadgeText(summary.severity);
+      badge.title = validationBadgeTitle(summary);
+      badge.setAttribute('aria-label', badge.title);
+      badge.dataset['validationElement'] = elementId;
+      badge.addEventListener('click', (event) => {
+        event.stopPropagation();
+        selection.select([element]);
+        setInspectorOpen(true);
+      });
+      overlays.add(elementId, VALIDATION_OVERLAY_TYPE, {
+        position: { top: -12, left: -12 },
+        html: badge,
+      });
+    }
+    return () => {
+      if (modelerRef.current === modeler) {
+        overlays.remove({ type: VALIDATION_OVERLAY_TYPE });
+      }
+    };
+  }, [validation, warningsOpen, ready]);
+
   // Маркеры открытых обсуждений: цифра на элементе открывает панель.
   useEffect(() => {
     const modeler = modelerRef.current;
@@ -2936,6 +3029,19 @@ export function DiagramEditor({
             });
           },
         },
+        {
+          id: 'comment',
+          label: 'Добавить комментарий',
+          icon: '💬',
+          disabled: target.type === 'label',
+          onSelect: () => {
+            selection.select([target]);
+            setCommentsOpen(true);
+            window.setTimeout(() => {
+              document.querySelector<HTMLTextAreaElement>('.comments-panel__input')?.focus();
+            }, 0);
+          },
+        },
         ...(target.waypoints
           ? []
           : [
@@ -2966,6 +3072,36 @@ export function DiagramEditor({
           onSelect: () => pasteAtPointer(),
         },
       ];
+
+      if (!target.waypoints && isTaskShape(target.type)) {
+        items.push({
+          id: 'add-boundary-event',
+          label: 'Добавить граничное событие',
+          icon: '◌',
+          onSelect: () => {
+            try {
+              const replace = modeler.get<BpmnReplaceLike>('bpmnReplace', false);
+              if (!replace) {
+                throw new Error('bpmnReplace недоступен');
+              }
+              const event = modeling.createShape(
+                { type: 'bpmn:IntermediateThrowEvent' },
+                boundaryEventPosition(target),
+                target.parent ?? target,
+              );
+              const boundary = replace.replaceElement(
+                event,
+                { type: 'bpmn:BoundaryEvent', host: target },
+                { layoutConnection: false },
+              );
+              modeling.updateAttachment(boundary, target);
+              selection.select([boundary]);
+            } catch {
+              notify('error', 'Не удалось создать граничное событие');
+            }
+          },
+        });
+      }
 
       if (replaceEntries.length > 0) {
         items.push({
@@ -3337,6 +3473,25 @@ export function DiagramEditor({
 
           <div className="editor-toolbar__section" role="group" aria-label="Панели">
             <span className="editor-toolbar__label">Панели</span>
+            <button
+              type="button"
+              className={
+                warningsOpen
+                  ? 'ghost-button ghost-button--small ghost-button--active'
+                  : 'ghost-button ghost-button--small'
+              }
+              title="Предупреждения и ошибки на холсте (по сохранённой версии)"
+              aria-label="Предупреждения и ошибки"
+              aria-pressed={warningsOpen}
+              onClick={() => setWarningsOpen((value) => !value)}
+            >
+              <span aria-hidden="true">⚠</span>
+              {validationFindingsCount(validation) > 0 ? (
+                <span className="editor-toolbar__count editor-toolbar__count--warning">
+                  {validationFindingsCount(validation)}
+                </span>
+              ) : null}
+            </button>
             <button
               type="button"
               className={
