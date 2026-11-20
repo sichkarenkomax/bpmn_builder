@@ -90,6 +90,20 @@ describe('настройки в документе', () => {
 
     expect(settings.resizeTasks).toBe(true);
     expect(settings.resizeOthers).toBe(false);
+    expect(settings.compactBoundaryEvents).toBe(false);
+  });
+
+  it('хранит компактные граничные события только при включении', () => {
+    expect(diagramSettingsProperties({ compactBoundaryEvents: false })).toEqual({
+      'compact-boundary-events': undefined,
+    });
+    expect(diagramSettingsProperties({ compactBoundaryEvents: true })).toEqual({
+      'compact-boundary-events': 'true',
+    });
+    expect(
+      readDiagramSettings({ $attrs: { 'bs:compact-boundary-events': 'true' } })
+        .compactBoundaryEvents,
+    ).toBe(true);
   });
 
   it('читает и пишет настройки ресайза только при отличии от дефолта', () => {

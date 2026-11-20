@@ -78,8 +78,8 @@ export function DiagramResizeSettings({
         <fieldset className="theme-editor">
           <legend className="theme-editor__title">Новые схемы</legend>
           <p className="theme-editor__hint">
-            Значения по умолчанию для всего портала: текущая тема, фон холста и оба переключателя
-            выше. Уже созданные схемы не меняются.
+            Значения по умолчанию для всего портала: текущая тема, фон холста и переключатели выше.
+            Уже созданные схемы не меняются.
           </p>
           <div className="theme-editor__actions">
             <button

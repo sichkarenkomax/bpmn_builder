@@ -20,6 +20,8 @@ from app.schemas.diagram import (
     DiagramUpdate,
     VersionRead,
 )
+from app.schemas.validation import ValidationReport
+from app.validation import ValidationEngine
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -249,6 +251,23 @@ async def put_bpmn(
     diagram.etag = etag
     await session.commit()
     return BpmnSaved(etag=diagram.etag, version_id=version.id)
+
+
+@router.get("/{diagram_id}/validation", response_model=ValidationReport)
+async def validate_diagram(
+    diagram_id: str, session: AsyncSession = Depends(get_session)
+) -> ValidationReport:
+    """Структурная проверка сохранённой версии диаграммы."""
+    diagram = await _load(session, diagram_id)
+    xml = await _current_xml(session, diagram)
+    try:
+        document, _ = parse_and_validate_bpmn(xml)
+    except BpmnError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": type(exc).__name__, **exc.as_detail()},
+        ) from exc
+    return ValidationEngine().validate(document)
 
 
 @router.get("/{diagram_id}/versions", response_model=list[VersionRead])

@@ -35,11 +35,14 @@ import {
   downloadExportJob,
   fetchComments,
   fetchExportJob,
+  fetchValidation,
   saveDiagramXml,
   updateComment,
   type DiagramComment,
   type ExportJobSummary,
   type ServerExportFormat,
+  type ValidationFinding,
+  type ValidationReport,
 } from '../lib/api';
 import { blobToBase64, downloadBlob, downloadText, modelerSvg, svgToPng } from '../lib/export';
 import { ExportDialog, type ExportKind } from './ExportDialog';
@@ -51,6 +54,14 @@ import {
   openCommentCount,
 } from '../lib/comments';
 import { CommentsPanel } from './CommentsPanel';
+import { ProblemsPanel } from './ProblemsPanel';
+import {
+  summarizeFindingsByElement,
+  validationBadgeText,
+  validationBadgeTitle,
+  validationFindingsCount,
+  VALIDATION_OVERLAY_TYPE,
+} from '../lib/validation';
 import { loadAutosaveSeconds, saveAutosaveSeconds } from '../lib/autosave';
 import { loadMarkdownToolbarEnabled, saveMarkdownToolbarEnabled } from '../lib/markdown-settings';
 import {
@@ -79,6 +90,7 @@ import {
   type ThemeId,
 } from '../lib/diagram-theme';
 import {
+  DEFAULT_COMPACT_BOUNDARY_EVENTS,
   DEFAULT_LEGEND_POSITION,
   DEFAULT_RESIZE_OTHERS,
   DEFAULT_RESIZE_TASKS,
@@ -202,6 +214,7 @@ interface DiagramElement {
     get?: (name: string) => string | undefined;
   };
   parent?: DiagramElement;
+  host?: DiagramElement;
   children?: DiagramElement[];
   source?: DiagramElement;
   target?: DiagramElement;
@@ -219,6 +232,7 @@ interface CanvasLike {
   getRootElement: () => DiagramElement;
   setRootElement: (element: DiagramElement) => void;
   findRoot: (id: string) => DiagramElement | undefined;
+  scrollToElement: (element: DiagramElement, padding?: number) => void;
   viewbox: () => { x: number; y: number; width: number; height: number; scale: number };
 }
 
@@ -235,6 +249,13 @@ interface ModelingLike {
     bounds: { x: number; y: number; width: number; height: number },
   ) => void;
   moveElements: (elements: DiagramElement[], delta: { x: number; y: number }) => void;
+  updateAttachment: (shape: DiagramElement, newHost?: DiagramElement) => void;
+  createShape: (
+    shape: { type: string; host?: DiagramElement; width?: number; height?: number },
+    position: { x: number; y: number },
+    target: DiagramElement,
+    hints?: { attach?: boolean },
+  ) => DiagramElement;
 }
 
 interface LayouterLike {
@@ -464,12 +485,21 @@ function defaultShapeSize(
     return { width: 50, height: 50 };
   }
   if (type.endsWith('Event')) {
-    return { width: 36, height: 36 };
+    const size = type === 'bpmn:BoundaryEvent' && boundaryEventSettings.compact ? 18 : 36;
+    return { width: size, height: size };
   }
   if (type === 'bpmn:TextAnnotation') {
     return { width: 100, height: 30 };
   }
   return { width: 100, height: 80 };
+}
+
+/** Центр события на правой границе активности. */
+function boundaryEventPosition(host: DiagramElement): { x: number; y: number } {
+  return {
+    x: (host.x ?? 0) + (host.width ?? 100),
+    y: (host.y ?? 0) + (host.height ?? 80) / 2,
+  };
 }
 
 /** Любое событие BPMN: стартовое, промежуточное, граничное, финиш. */
@@ -655,6 +685,14 @@ interface ReplaceMenuProviderLike {
   getPopupMenuEntries: (target: DiagramElement) => Record<string, ReplaceEntry>;
 }
 
+interface BpmnReplaceLike {
+  replaceElement: (
+    element: DiagramElement,
+    target: { type: string; host?: DiagramElement },
+    hints?: { layoutConnection?: boolean },
+  ) => DiagramElement;
+}
+
 interface ResizeRuleContext {
   shape?: DiagramElement;
   newBounds?: { width: number; height: number };
@@ -665,6 +703,15 @@ interface ResizeRuleContext {
 const resizePermissions = {
   tasks: DEFAULT_RESIZE_TASKS,
   others: DEFAULT_RESIZE_OTHERS,
+};
+
+/**
+ * Компактные граничные события: 18×18 вместо стандартных 36×36. Пункт 1.5.12
+ * отложен: переключатель и портальный дефолт скрыты, но поддержка атрибута
+ * схемы сохранена для продолжения разработки.
+ */
+const boundaryEventSettings = {
+  compact: DEFAULT_COMPACT_BOUNDARY_EVENTS,
 };
 
 function isTaskShape(type: string): boolean {
@@ -1262,12 +1309,18 @@ export function DiagramEditor({
   const [resizeSettings, setResizeSettings] = useState({
     tasks: DEFAULT_RESIZE_TASKS,
     others: DEFAULT_RESIZE_OTHERS,
+    compactBoundaryEvents: DEFAULT_COMPACT_BOUNDARY_EVENTS,
   });
   const [legendPosition, setLegendPosition] = useState<LegendPosition>(DEFAULT_LEGEND_POSITION);
   const [comments, setComments] = useState<DiagramComment[]>([]);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsBusy, setCommentsBusy] = useState(false);
   const [commentsError, setCommentsError] = useState<string | null>(null);
+  const [warningsOpen, setWarningsOpen] = useState(true);
+  const [problemsOpen, setProblemsOpen] = useState(false);
+  const [validation, setValidation] = useState<ValidationReport | null>(null);
+  const [validationBusy, setValidationBusy] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [mouseMode, setMouseMode] = useState<CanvasMouseMode>(() => loadCanvasMouseMode());
   const mouseModeRef = useRef(mouseMode);
   mouseModeRef.current = mouseMode;
@@ -1598,6 +1651,7 @@ export function DiagramEditor({
     stages?: DiagramStage[];
     resizeTasks?: boolean;
     resizeOthers?: boolean;
+    compactBoundaryEvents?: boolean;
   }) => {
     const modeler = modelerRef.current;
     const definitions = modeler ? findDefinitions(modeler) : undefined;
@@ -1645,12 +1699,21 @@ export function DiagramEditor({
     writeDiagramSettings({ canvas: next });
   };
 
-  const updateResizeSettings = (patch: { tasks?: boolean; others?: boolean }) => {
+  const updateResizeSettings = (patch: {
+    tasks?: boolean;
+    others?: boolean;
+    compactBoundaryEvents?: boolean;
+  }) => {
     const next = { ...resizeSettings, ...patch };
     setResizeSettings(next);
     resizePermissions.tasks = next.tasks;
     resizePermissions.others = next.others;
-    writeDiagramSettings({ resizeTasks: next.tasks, resizeOthers: next.others });
+    boundaryEventSettings.compact = next.compactBoundaryEvents;
+    writeDiagramSettings({
+      resizeTasks: next.tasks,
+      resizeOthers: next.others,
+      compactBoundaryEvents: next.compactBoundaryEvents,
+    });
     const modeler = modelerRef.current;
     if (modeler) {
       refreshResizeHandles(modeler);
@@ -2332,7 +2395,12 @@ export function DiagramEditor({
         stored.resizeOthers !== resizePermissions.others;
       resizePermissions.tasks = stored.resizeTasks;
       resizePermissions.others = stored.resizeOthers;
-      setResizeSettings({ tasks: stored.resizeTasks, others: stored.resizeOthers });
+      boundaryEventSettings.compact = stored.compactBoundaryEvents;
+      setResizeSettings({
+        tasks: stored.resizeTasks,
+        others: stored.resizeOthers,
+        compactBoundaryEvents: stored.compactBoundaryEvents,
+      });
       if (resizeChanged) {
         refreshResizeHandles(modeler);
       }
@@ -2364,7 +2432,12 @@ export function DiagramEditor({
         setStages(stored.stages ?? []);
         resizePermissions.tasks = stored.resizeTasks;
         resizePermissions.others = stored.resizeOthers;
-        setResizeSettings({ tasks: stored.resizeTasks, others: stored.resizeOthers });
+        boundaryEventSettings.compact = stored.compactBoundaryEvents;
+        setResizeSettings({
+          tasks: stored.resizeTasks,
+          others: stored.resizeOthers,
+          compactBoundaryEvents: stored.compactBoundaryEvents,
+        });
         setViewbox(modeler.get<CanvasLike>('canvas').viewbox());
         const normalized = normalizeImportedAssociations(modeler);
         applyAllStyles(modeler);
@@ -2452,6 +2525,97 @@ export function DiagramEditor({
       }
     };
   }, [stages, stagePools, ready, revision]);
+
+  // Проверка идёт по сохранённой версии: после успешного PUT отчёт обновляется.
+  useEffect(() => {
+    if (!ready || (!warningsOpen && !problemsOpen)) {
+      return;
+    }
+    if (save.kind !== 'saved') {
+      // Пока есть несохранённые правки, старые значки и находки могут врать.
+      setValidation(null);
+      setValidationBusy(false);
+      setValidationError(null);
+      return;
+    }
+    const controller = new AbortController();
+    setValidationBusy(true);
+    setValidationError(null);
+    // Небольшой дебаунс гасит лишние запросы, если сохранение и открытие
+    // панели происходят почти одновременно.
+    const timer = window.setTimeout(() => {
+      fetchValidation(diagramId, controller.signal)
+        .then((report) => setValidation(report))
+        .catch(() => {
+          // Значки не должны мешать редактированию, если проверка недоступна.
+          if (!controller.signal.aborted) {
+            setValidationError('Не удалось получить результаты проверки.');
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setValidationBusy(false);
+          }
+        });
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [diagramId, ready, warningsOpen, problemsOpen, save.kind]);
+
+  // Маркеры предупреждений/ошибок: цвет значка — худшая severity элемента.
+  useEffect(() => {
+    const modeler = modelerRef.current;
+    if (!ready || !warningsOpen || !modeler || !validation) {
+      return;
+    }
+    const overlays = modeler.get<OverlaysLike>('overlays');
+    const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+    const selection = modeler.get<SelectionLike>('selection');
+    overlays.remove({ type: VALIDATION_OVERLAY_TYPE });
+    for (const [elementId, summary] of summarizeFindingsByElement(validation.findings)) {
+      const element = registry.get(elementId);
+      if (!element) {
+        continue;
+      }
+      const badge = document.createElement('button');
+      badge.type = 'button';
+      badge.className = `validation-pin validation-pin--${summary.severity}`;
+      badge.textContent = validationBadgeText(summary.severity);
+      badge.title = validationBadgeTitle(summary);
+      badge.setAttribute('aria-label', badge.title);
+      badge.dataset['validationElement'] = elementId;
+      badge.addEventListener('click', (event) => {
+        event.stopPropagation();
+        selection.select([element]);
+        setInspectorOpen(true);
+      });
+      overlays.add(elementId, VALIDATION_OVERLAY_TYPE, {
+        position: { top: -12, left: -12 },
+        html: badge,
+      });
+    }
+    return () => {
+      if (modelerRef.current === modeler) {
+        overlays.remove({ type: VALIDATION_OVERLAY_TYPE });
+      }
+    };
+  }, [validation, warningsOpen, ready]);
+
+  const openFinding = (finding: ValidationFinding) => {
+    const modeler = modelerRef.current;
+    if (!finding.element_id || !modeler) {
+      return;
+    }
+    const element = modeler.get<ElementRegistryLike>('elementRegistry').get(finding.element_id);
+    if (!element) {
+      return;
+    }
+    modeler.get<SelectionLike>('selection').select([element]);
+    modeler.get<CanvasLike>('canvas').scrollToElement(element, 80);
+    setInspectorOpen(true);
+  };
 
   // Маркеры открытых обсуждений: цифра на элементе открывает панель.
   useEffect(() => {
@@ -2936,6 +3100,19 @@ export function DiagramEditor({
             });
           },
         },
+        {
+          id: 'comment',
+          label: 'Добавить комментарий',
+          icon: '💬',
+          disabled: target.type === 'label',
+          onSelect: () => {
+            selection.select([target]);
+            setCommentsOpen(true);
+            window.setTimeout(() => {
+              document.querySelector<HTMLTextAreaElement>('.comments-panel__input')?.focus();
+            }, 0);
+          },
+        },
         ...(target.waypoints
           ? []
           : [
@@ -2966,6 +3143,53 @@ export function DiagramEditor({
           onSelect: () => pasteAtPointer(),
         },
       ];
+
+      if (!target.waypoints && isTaskShape(target.type)) {
+        items.push({
+          id: 'add-boundary-event',
+          label: 'Добавить граничное событие',
+          icon: '◌',
+          onSelect: () => {
+            try {
+              const replace = modeler.get<BpmnReplaceLike>('bpmnReplace', false);
+              if (!replace) {
+                throw new Error('bpmnReplace недоступен');
+              }
+              const event = modeling.createShape(
+                { type: 'bpmn:IntermediateThrowEvent' },
+                boundaryEventPosition(target),
+                target.parent ?? target,
+              );
+              const boundary = replace.replaceElement(
+                event,
+                { type: 'bpmn:BoundaryEvent', host: target },
+                { layoutConnection: false },
+              );
+              modeling.updateAttachment(boundary, target);
+              if (boundaryEventSettings.compact) {
+                // Ресайз событий может быть выключен настройкой, поэтому
+                // разрешаем его только на время программного уменьшения.
+                const previousOthers = resizePermissions.others;
+                resizePermissions.others = true;
+                try {
+                  const size = 18;
+                  modeling.resizeShape(boundary, {
+                    x: (target.x ?? 0) + (target.width ?? 100) - size / 2,
+                    y: (target.y ?? 0) + (target.height ?? 80) / 2 - size / 2,
+                    width: size,
+                    height: size,
+                  });
+                } finally {
+                  resizePermissions.others = previousOthers;
+                }
+              }
+              selection.select([boundary]);
+            } catch {
+              notify('error', 'Не удалось создать граничное событие');
+            }
+          },
+        });
+      }
 
       if (replaceEntries.length > 0) {
         items.push({
@@ -3340,6 +3564,44 @@ export function DiagramEditor({
             <button
               type="button"
               className={
+                warningsOpen
+                  ? 'ghost-button ghost-button--small ghost-button--active'
+                  : 'ghost-button ghost-button--small'
+              }
+              title="Предупреждения и ошибки на холсте (по сохранённой версии)"
+              aria-label="Предупреждения и ошибки"
+              aria-pressed={warningsOpen}
+              onClick={() => setWarningsOpen((value) => !value)}
+            >
+              <span aria-hidden="true">⚠</span>
+              {validationFindingsCount(validation) > 0 ? (
+                <span className="editor-toolbar__count editor-toolbar__count--warning">
+                  {validationFindingsCount(validation)}
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className={
+                problemsOpen
+                  ? 'ghost-button ghost-button--small ghost-button--active'
+                  : 'ghost-button ghost-button--small'
+              }
+              title="Проблемы схемы"
+              aria-label="Проблемы"
+              aria-pressed={problemsOpen}
+              onClick={() => setProblemsOpen((value) => !value)}
+            >
+              <span aria-hidden="true">⚑</span>
+              {validationFindingsCount(validation) > 0 ? (
+                <span className="editor-toolbar__count editor-toolbar__count--warning">
+                  {validationFindingsCount(validation)}
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className={
                 commentsOpen
                   ? 'ghost-button ghost-button--small ghost-button--active'
                   : 'ghost-button ghost-button--small'
@@ -3676,6 +3938,16 @@ export function DiagramEditor({
           <p className="canvas-hint" aria-hidden="true">
             ПКМ — меню элемента · {formatCombo(shortcuts.editLabel)} — переименовать
           </p>
+          {problemsOpen ? (
+            <ProblemsPanel
+              report={validation}
+              stale={save.kind !== 'saved'}
+              busy={validationBusy}
+              error={validationError}
+              onSelect={openFinding}
+              onClose={() => setProblemsOpen(false)}
+            />
+          ) : null}
           {commentsOpen ? (
             <CommentsPanel
               key={selected?.id ?? 'none'}
