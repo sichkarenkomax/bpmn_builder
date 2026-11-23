@@ -2671,7 +2671,8 @@ export function DiagramEditor({
         setCommentsOpen(true);
       });
       overlays.add(elementId, COMMENT_OVERLAY_TYPE, {
-        position: { top: -12, right: -12 },
+        // Лёгкое наложение на элемент делает привязку значка очевиднее.
+        position: { top: -6, right: 6 },
         html: pin,
       });
     }

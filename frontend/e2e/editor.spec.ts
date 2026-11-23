@@ -267,7 +267,20 @@ test('тема, комментарии и сохранение пережива�
     await panel.getByRole('button', { name: 'Отправить' }).click();
     await expect(panel.locator('.comment__body strong')).toHaveText('Проверить SLA');
     await expect(panel.locator('.comment__body input[type="checkbox"]')).not.toBeChecked();
-    await expect(page.locator('.comment-pin')).toHaveText('1');
+    const commentPin = page.locator('.comment-pin');
+    await expect(commentPin).toHaveText('1');
+
+    // 1.5.15: значок стоит у верхнего правого угла и слегка заходит на элемент.
+    const pinBox = await commentPin.boundingBox();
+    const taskBox = await taskRect.boundingBox();
+    expect(pinBox).not.toBeNull();
+    expect(taskBox).not.toBeNull();
+    const overlapX =
+      Math.min(pinBox!.x + pinBox!.width, taskBox!.x + taskBox!.width) -
+      Math.max(pinBox!.x, taskBox!.x);
+    expect(overlapX).toBeGreaterThanOrEqual(4);
+    expect(pinBox!.y).toBeLessThan(taskBox!.y);
+    expect(pinBox!.x).toBeLessThan(taskBox!.x + taskBox!.width);
 
     await page.reload();
     await expect(page.locator('[data-element-id="Task_Review"]')).toBeVisible();
