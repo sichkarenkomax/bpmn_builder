@@ -9,13 +9,15 @@ function makeGfx(text = 'Подпись') {
   const gfx = document.createElementNS(SVG_NS, 'g') as SVGGElement;
   const visual = document.createElementNS(SVG_NS, 'g');
   visual.setAttribute('class', 'djs-visual');
+  const hit = document.createElementNS(SVG_NS, 'rect');
+  hit.setAttribute('class', 'djs-hit');
   const label = document.createElementNS(SVG_NS, 'text');
   label.setAttribute('class', 'djs-label');
   const line = document.createElementNS(SVG_NS, 'tspan');
   line.textContent = text;
   label.append(line);
   visual.append(label);
-  gfx.append(visual);
+  gfx.append(visual, hit);
   svg.append(gfx);
   document.body.append(svg);
   return { gfx, visual, label, line, cleanup: () => svg.remove() };
@@ -75,17 +77,37 @@ describe('applyExternalLabelLayout', () => {
     above.cleanup();
   });
 
-  it('не трогает подписи связей и не-подписи', () => {
+  it('центрирует подпись связи, не сдвигая её к фигуре', () => {
     const flow = makeGfx();
-    applyExternalLabelLayout(flow.gfx, labelElement({ ...HOST, waypoints: [] }), 'left');
+    applyExternalLabelLayout(flow.gfx, labelElement({ ...HOST, waypoints: [] }), '');
     expect(flow.visual.style.transform).toBe('');
-    expect(flow.line.getAttribute('x')).toBeNull();
+    expect(flow.label.getAttribute('text-anchor')).toBe('middle');
+    expect(flow.line.getAttribute('x')).toBe('50');
     flow.cleanup();
 
     const shape = makeGfx();
     applyExternalLabelLayout(shape.gfx, { ...labelElement(HOST), type: 'shape' }, 'left');
     expect(shape.line.getAttribute('x')).toBeNull();
     shape.cleanup();
+  });
+
+  it('расширяет видимый фрейм подписи связи, не меняя геометрию элемента', () => {
+    const { gfx, label, line, cleanup } = makeGfx();
+    label.getBBox = () => ({ x: 0, y: 0, width: 160, height: 14 }) as DOMRect;
+    const element = labelElement({ ...HOST, waypoints: [] }, 100, 180, 100, 20);
+
+    applyExternalLabelLayout(gfx, element, '');
+
+    // Ширина элемента не меняется: иначе bpmn-js переразобьёт строки.
+    expect(element.width).toBe(100);
+    expect(element.x).toBe(100);
+    expect(element.height).toBe(20);
+    expect(gfx.getAttribute('transform')).toBeNull();
+    expect(gfx.querySelector('.djs-hit')?.getAttribute('x')).toBe('-37');
+    expect(gfx.querySelector('.djs-hit')?.getAttribute('width')).toBe('174');
+    expect(label.getAttribute('text-anchor')).toBe('middle');
+    expect(line.getAttribute('x')).toBe('50');
+    cleanup();
   });
 
   it('поворачивает фрейм подписи целиком для вертикального текста', () => {
@@ -120,18 +142,34 @@ describe('applyExternalLabelLayout', () => {
     center.cleanup();
   });
 
-  it('подгоняет размеры фрейма, сохраняя его позицию', () => {
-    const { gfx, label, cleanup } = makeGfx();
-    label.getBBox = () => ({ x: 0, y: 0, width: 60, height: 14 }) as DOMRect;
+  it('расширяет тесный фрейм и не сужает широкий', () => {
+    const tight = makeGfx();
+    tight.label.getBBox = () => ({ x: 0, y: 0, width: 60, height: 14 }) as DOMRect;
     const element = labelElement(HOST, 137, 222, 40, 16);
 
-    applyExternalLabelLayout(gfx, element, 'left');
+    applyExternalLabelLayout(tight.gfx, element, 'left');
 
     expect(element.x).toBe(137);
-    expect(element.y).toBe(221);
-    expect(element.width).toBe(74);
-    expect(element.height).toBe(18);
-    cleanup();
+    expect(element.y).toBe(222);
+    expect(element.width).toBe(40);
+    expect(element.height).toBe(16);
+    expect(tight.gfx.getAttribute('transform')).toBeNull();
+    expect(tight.gfx.querySelector('.djs-hit')?.getAttribute('x')).toBe('-17');
+    expect(tight.gfx.querySelector('.djs-hit')?.getAttribute('y')).toBe('-1');
+    expect(tight.gfx.querySelector('.djs-hit')?.getAttribute('width')).toBe('74');
+    expect(tight.gfx.querySelector('.djs-hit')?.getAttribute('height')).toBe('18');
+    expect(tight.line.getAttribute('x')).toBe('7');
+    tight.cleanup();
+
+    // Пользователь сузил или расширил фрейм вручную — не возвращаем размер
+    // обратно к ширине текста при следующем перемещении.
+    const wide = makeGfx();
+    wide.label.getBBox = () => ({ x: 0, y: 0, width: 60, height: 14 }) as DOMRect;
+    const wideElement = labelElement(HOST, 137, 222, 300, 18);
+    applyExternalLabelLayout(wide.gfx, wideElement, 'left');
+    expect(wideElement.width).toBe(300);
+    expect(wideElement.x).toBe(137);
+    wide.cleanup();
   });
 
   it('уменьшает отступ у мелких фреймов и не падает без labelTarget', () => {

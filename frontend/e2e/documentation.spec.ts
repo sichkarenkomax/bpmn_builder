@@ -91,8 +91,8 @@ test('Markdown-панель документации: форматировани
     );
 
     // Переключатель в настройках: панель отключается и переживает перезагрузку.
-    await page.getByRole('button', { name: 'Клавиши' }).click();
-    const settings = page.getByRole('dialog', { name: 'Горячие клавиши' });
+    await page.getByRole('button', { name: 'Настройки редактора' }).click();
+    const settings = page.getByRole('dialog', { name: 'Настройки' });
     await expect(settings).toBeVisible();
     await settings.getByLabel('Markdown-панель в документации элемента').uncheck();
     await settings.getByRole('button', { name: 'Готово' }).click();

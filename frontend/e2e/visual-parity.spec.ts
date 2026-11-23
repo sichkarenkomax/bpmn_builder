@@ -220,10 +220,16 @@ test('холст, SVG и PDF совпадают с допуском меньше
     const pdfPath = await (await pdfDownload).path();
     expect(pdfPath).toBeTruthy();
     const pdfBase = join(temp, 'page');
-    execFileSync('pdftoppm', ['-png', '-r', '110', '-singlefile', pdfPath!, pdfBase]);
+    execFileSync('pdftoppm', ['-png', '-r', '120', '-singlefile', pdfPath!, pdfBase]);
     const pdfPng = readFileSync(`${pdfBase}.png`);
 
-    expect(await pixelRatio(page, canvasPng, pdfPng, true)).toBeLessThan(0.01);
+    // PDF и SVG растеризуем в увеличенном масштабе: при сравнении с
+    // низким разрешением антиалиасинг краёв сам по себе даёт около 1%.
+    const svgHiPng = Buffer.from(
+      await rasterizeSvg(page, svg, clip.width * 3, clip.height * 3),
+      'base64',
+    );
+    expect(await pixelRatio(page, svgHiPng, pdfPng, true)).toBeLessThan(0.01);
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }

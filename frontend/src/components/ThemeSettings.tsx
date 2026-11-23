@@ -1,33 +1,20 @@
 import { useEffect } from 'react';
 
-import {
-  CUSTOM_THEME,
-  THEME_CATEGORIES,
-  THEME_IDS,
-  themeById,
-  withCustomColor,
-  type Category,
-  type ThemeColorsMap,
-  type ThemeId,
-} from '../lib/diagram-theme';
+import { THEME_IDS, themeById, type ThemeId } from '../lib/diagram-theme';
 import type { CanvasTheme } from '../lib/diagram-settings';
 
 export function ThemeSettings({
   open,
   value,
-  customColors,
   canvas,
   onChange,
-  onCustomColorsChange,
   onCanvasChange,
   onClose,
 }: {
   open: boolean;
   value: ThemeId;
-  customColors: ThemeColorsMap;
   canvas: CanvasTheme;
   onChange: (id: ThemeId) => void;
-  onCustomColorsChange: (colors: ThemeColorsMap) => void;
   onCanvasChange: (canvas: CanvasTheme) => void;
   onClose: () => void;
 }) {
@@ -49,10 +36,7 @@ export function ThemeSettings({
     return null;
   }
 
-  const cards = THEME_IDS.map((id) => themeById(id, customColors));
-  const updateColor = (category: Category, key: 'fill' | 'stroke', color: string) => {
-    onCustomColorsChange(withCustomColor(customColors, category, key, color));
-  };
+  const cards = THEME_IDS.map((id) => themeById(id));
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
@@ -71,9 +55,9 @@ export function ThemeSettings({
         </header>
 
         <p className="dialog__hint">
-          Тема задаёт цвета элементов, у которых ещё нет ручного цвета. Если цвет выбран в панели
-          «Стиль», тема его не перекрывает. Тема, свои цвета и фон холста сохраняются вместе со
-          схемой.
+          Цветная тема оставляет цветные заливки и делает все границы чёрными. Чёрно-белая — белые
+          заливки для печати. Ручной цвет из панели «Стиль» важнее темы. Тема и фон холста
+          сохраняются вместе со схемой.
         </p>
 
         <div className="theme-list" role="radiogroup" aria-label="Темы схемы">
@@ -93,67 +77,23 @@ export function ThemeSettings({
                 <span className="theme-card__name">{theme.name}</span>
                 <span className="theme-card__hint">{theme.hint}</span>
               </span>
-              {theme.id === 'none' ? null : (
-                <span className="theme-card__swatches" aria-hidden="true">
-                  {(
-                    ['startEvent', 'intermediateEvent', 'endEvent', 'task', 'gateway'] as const
-                  ).map((category) => (
-                    <span
-                      key={category}
-                      className="theme-card__swatch"
-                      style={{
-                        background: theme.colors[category].fill,
-                        borderColor: theme.colors[category].stroke,
-                      }}
-                    />
-                  ))}
-                </span>
-              )}
+              <span className="theme-card__swatches" aria-hidden="true">
+                {(
+                  ['startEvent', 'intermediateEvent', 'endEvent', 'task', 'gateway'] as const
+                ).map((category) => (
+                  <span
+                    key={category}
+                    className="theme-card__swatch"
+                    style={{
+                      background: theme.colors[category].fill,
+                      borderColor: theme.colors[category].stroke,
+                    }}
+                  />
+                ))}
+              </span>
             </label>
           ))}
         </div>
-
-        <fieldset className="theme-editor">
-          <legend className="theme-editor__title">Своя тема</legend>
-          <p className="theme-editor__hint">
-            Выберите «Свою тему» выше и настройте цвета категорий. Кнопка ниже возвращает набор
-            «Классики».
-          </p>
-          <div className="theme-editor__grid">
-            {THEME_CATEGORIES.map(({ id, label }) => (
-              <div key={id} className="theme-editor__row">
-                <span className="theme-editor__label">{label}</span>
-                <label className="theme-editor__field" title="Заливка">
-                  <span className="theme-editor__field-name">З</span>
-                  <input
-                    type="color"
-                    aria-label={`Заливка: ${label}`}
-                    value={customColors[id].fill}
-                    onChange={(event) => updateColor(id, 'fill', event.target.value)}
-                  />
-                </label>
-                <label className="theme-editor__field" title="Обводка">
-                  <span className="theme-editor__field-name">О</span>
-                  <input
-                    type="color"
-                    aria-label={`Обводка: ${label}`}
-                    value={customColors[id].stroke}
-                    onChange={(event) => updateColor(id, 'stroke', event.target.value)}
-                  />
-                </label>
-              </div>
-            ))}
-          </div>
-          <div className="theme-editor__actions">
-            <button
-              type="button"
-              className="ghost-button ghost-button--small"
-              onClick={() => onCustomColorsChange(CUSTOM_THEME.colors)}
-            >
-              Сбросить к «Классике»
-            </button>
-          </div>
-        </fieldset>
 
         <fieldset className="theme-editor">
           <legend className="theme-editor__title">Холст</legend>

@@ -13,7 +13,7 @@ import {
   diagramSettingsProperties,
   type CanvasTheme,
 } from './diagram-settings';
-import { isThemeId, type ThemeId } from './diagram-theme';
+import { normalizeThemeId, type ThemeId } from './diagram-theme';
 
 export type PortalDefaults = {
   theme: ThemeId;
@@ -28,7 +28,7 @@ export const PORTAL_DEFAULTS_STORAGE_KEY = 'bpmn-studio.portal-defaults';
 const BS_NAMESPACE = 'https://bpmn-studio.dev/schema/1.0';
 
 export const DEFAULT_PORTAL_SETTINGS: PortalDefaults = {
-  theme: 'none',
+  theme: 'mono',
   canvas: 'light',
   resizeTasks: DEFAULT_RESIZE_TASKS,
   resizeOthers: DEFAULT_RESIZE_OTHERS,
@@ -42,7 +42,7 @@ export function loadPortalDefaults(): PortalDefaults {
     }
     const parsed = JSON.parse(raw) as Partial<PortalDefaults>;
     return {
-      theme: isThemeId(parsed.theme) ? parsed.theme : DEFAULT_PORTAL_SETTINGS.theme,
+      theme: normalizeThemeId(parsed.theme) ?? DEFAULT_PORTAL_SETTINGS.theme,
       canvas: parsed.canvas === 'dark' ? 'dark' : 'light',
       resizeTasks:
         typeof parsed.resizeTasks === 'boolean'

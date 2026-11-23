@@ -11,10 +11,16 @@ import { diagramSettingsProperties, readDiagramSettings } from './diagram-settin
 
 describe('настройки в документе', () => {
   it('читает тему и позицию легенды из прямых свойств moddle', () => {
-    const settings = readDiagramSettings({ theme: 'classic', 'legend-x': '200', 'legend-y': '48' });
+    const settings = readDiagramSettings({ theme: 'colored', 'legend-x': '200', 'legend-y': '48' });
 
-    expect(settings.theme).toBe('classic');
+    expect(settings.theme).toBe('colored');
     expect(settings.legend).toEqual({ x: 200, y: 48 });
+  });
+
+  it('открывает старые темы как «Цветную», а «none» — как «Чёрно-белую»', () => {
+    expect(readDiagramSettings({ theme: 'classic' }).theme).toBe('colored');
+    expect(readDiagramSettings({ theme: 'warm' }).theme).toBe('colored');
+    expect(readDiagramSettings({ theme: 'none' }).theme).toBe('mono');
   });
 
   it('читает те же значения из $attrs после импорта', () => {
@@ -22,7 +28,7 @@ describe('настройки в документе', () => {
       $attrs: { 'bs:theme': 'warm', 'bs:legend-x': '10', 'bs:legend-y': '20' },
     });
 
-    expect(settings.theme).toBe('warm');
+    expect(settings.theme).toBe('colored');
     expect(settings.legend).toEqual({ x: 10, y: 20 });
   });
 
@@ -38,18 +44,18 @@ describe('настройки в документе', () => {
     expect(readDiagramSettings({})).toMatchObject({ theme: null, legend: null });
   });
 
-  it('не пишет атрибут для темы «none» и округляет позицию', () => {
-    expect(diagramSettingsProperties({ theme: 'none' })).toEqual({ theme: undefined });
-    expect(diagramSettingsProperties({ theme: 'cool' })).toEqual({ theme: 'cool' });
+  it('не пишет атрибут для темы по умолчанию и округляет позицию', () => {
+    expect(diagramSettingsProperties({ theme: 'mono' })).toEqual({ theme: undefined });
+    expect(diagramSettingsProperties({ theme: 'colored' })).toEqual({ theme: 'colored' });
     expect(diagramSettingsProperties({ legend: { x: 12.4, y: 8.6 } })).toEqual({
       'legend-x': '12',
       'legend-y': '9',
     });
   });
 
-  it('поддерживает свою тему', () => {
-    expect(diagramSettingsProperties({ theme: 'custom' })).toEqual({ theme: 'custom' });
-    expect(readDiagramSettings({ theme: 'custom' }).theme).toBe('custom');
+  it('нормализует свою тему до «Цветной»', () => {
+    expect(diagramSettingsProperties({ theme: 'custom' })).toEqual({ theme: 'colored' });
+    expect(readDiagramSettings({ theme: 'custom' }).theme).toBe('colored');
   });
 
   it('хранит и читает этапы в bs:stages', () => {
@@ -148,7 +154,7 @@ describe('своя тема (1.3.11)', () => {
     expect(readDiagramSettings({ 'bs:custom-theme': 'не json' }).customColors).toBeNull();
   });
 
-  it('тема custom подставляет свои цвета, иначе остаётся «Классика»', () => {
+  it('устаревшая тема custom подставляет свои цвета', () => {
     const colors: ThemeColorsMap = {
       ...DEFAULT_CUSTOM_COLORS,
       gateway: { fill: '#010203', stroke: '#040506' },

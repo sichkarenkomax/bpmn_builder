@@ -24,18 +24,27 @@ describe('портальные дефолты (1.5.4)', () => {
 
   it('сохраняет и читает тему, холст и настройки ресайза', () => {
     savePortalDefaults({
-      theme: 'classic',
+      theme: 'colored',
       canvas: 'dark',
       resizeTasks: false,
       resizeOthers: true,
     });
 
     expect(loadPortalDefaults()).toEqual({
-      theme: 'classic',
+      theme: 'colored',
       canvas: 'dark',
       resizeTasks: false,
       resizeOthers: true,
     });
+  });
+
+  it('нормализует старую сохранённую тему', () => {
+    window.localStorage.setItem(
+      PORTAL_DEFAULTS_STORAGE_KEY,
+      JSON.stringify({ theme: 'classic' }),
+    );
+
+    expect(loadPortalDefaults().theme).toBe('colored');
   });
 
   it('битый JSON не ломает новые схемы', () => {
@@ -46,14 +55,14 @@ describe('портальные дефолты (1.5.4)', () => {
 
   it('записывает настройки в XML новой схемы вместе с namespace', () => {
     const xml = withPortalDefaults(XML, {
-      theme: 'warm',
+      theme: 'colored',
       canvas: 'dark',
       resizeTasks: false,
       resizeOthers: true,
     });
 
     expect(xml).toContain('xmlns:bs="https://bpmn-studio.dev/schema/1.0"');
-    expect(xml).toContain('bs:theme="warm"');
+    expect(xml).toContain('bs:theme="colored"');
     expect(xml).toContain('bs:canvas="dark"');
     expect(xml).toContain('bs:resize-tasks="false"');
     expect(xml).toContain('bs:resize-others="true"');

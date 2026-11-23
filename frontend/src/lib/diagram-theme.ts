@@ -1,6 +1,6 @@
 /** Цветовые темы оформления схем (1.3.3) с приоритетом ручного стиля (1.3.16). */
 
-export type ThemeId = 'none' | 'classic' | 'warm' | 'cool' | 'custom';
+export type ThemeId = 'colored' | 'mono' | 'custom';
 
 export type ThemeColors = {
   fill: string;
@@ -38,80 +38,67 @@ export const THEME_CATEGORIES: { id: Category; label: string }[] = [
   { id: 'pool', label: 'Пулы и дорожки' },
 ];
 
-export const THEME_IDS: ThemeId[] = ['none', 'classic', 'warm', 'cool', 'custom'];
+export const THEME_IDS: ThemeId[] = ['colored', 'mono'];
 
-export function isThemeId(value: unknown): value is ThemeId {
-  return typeof value === 'string' && (THEME_IDS as string[]).includes(value);
+/**
+ * Новые схемы хранят `colored`/`mono`; старые значения читаем без миграции.
+ * Тёплая и холодная темы больше не выбираются, но открываются как цветная.
+ */
+export function normalizeThemeId(value: unknown): ThemeId | null {
+  if (value === 'colored' || value === 'classic' || value === 'warm' || value === 'cool') {
+    return 'colored';
+  }
+  if (value === 'mono' || value === 'none') {
+    return 'mono';
+  }
+  return value === 'custom' ? 'colored' : null;
 }
 
+export function isThemeId(value: unknown): value is ThemeId {
+  return normalizeThemeId(value) !== null;
+}
+
+const BLACK = '#000000';
+
+/** Две выбираемые темы: цветная и чёрно-белая. Все границы чёрные. */
 export const THEMES: DiagramTheme[] = [
   {
-    id: 'none',
-    name: 'Без темы',
-    hint: 'только ручные цвета, выбранные в панели «Стиль»',
+    id: 'colored',
+    name: 'Цветная',
+    hint: 'цветные заливки категорий, все границы чёрные',
     colors: {
-      startEvent: { fill: '#ffffff', stroke: '#4b5563' },
-      intermediateEvent: { fill: '#ffffff', stroke: '#4b5563' },
-      endEvent: { fill: '#ffffff', stroke: '#4b5563' },
-      task: { fill: '#ffffff', stroke: '#4b5563' },
-      gateway: { fill: '#ffffff', stroke: '#4b5563' },
-      subprocess: { fill: '#ffffff', stroke: '#4b5563' },
-      data: { fill: '#ffffff', stroke: '#4b5563' },
-      pool: { fill: '#ffffff', stroke: '#94a3b8' },
+      startEvent: { fill: '#ecfdf5', stroke: BLACK },
+      intermediateEvent: { fill: '#fefce8', stroke: BLACK },
+      endEvent: { fill: '#fef2f2', stroke: BLACK },
+      task: { fill: '#eff6ff', stroke: BLACK },
+      gateway: { fill: '#fef9c3', stroke: BLACK },
+      subprocess: { fill: '#dbeafe', stroke: BLACK },
+      data: { fill: '#f8fafc', stroke: BLACK },
+      pool: { fill: '#ffffff', stroke: BLACK },
     },
   },
   {
-    id: 'classic',
-    name: 'Классика',
-    hint: 'зелёный старт, жёлтые промежуточные события и шлюзы, красный финиш, синие задачи',
+    id: 'mono',
+    name: 'Чёрно-белая',
+    hint: 'белые заливки и чёрные границы для печати и документов',
     colors: {
-      startEvent: { fill: '#ecfdf5', stroke: '#059669' },
-      intermediateEvent: { fill: '#fefce8', stroke: '#ca8a04' },
-      endEvent: { fill: '#fef2f2', stroke: '#dc2626' },
-      task: { fill: '#eff6ff', stroke: '#2563eb' },
-      gateway: { fill: '#fef9c3', stroke: '#d97706' },
-      subprocess: { fill: '#dbeafe', stroke: '#1e40af' },
-      data: { fill: '#f8fafc', stroke: '#64748b' },
-      pool: { fill: '#ffffff', stroke: '#94a3b8' },
-    },
-  },
-  {
-    id: 'warm',
-    name: 'Тёплая',
-    hint: 'терракота и песок для презентаций заказчику',
-    colors: {
-      startEvent: { fill: '#fef3c7', stroke: '#b45309' },
-      intermediateEvent: { fill: '#fef3c7', stroke: '#b45309' },
-      endEvent: { fill: '#fef3c7', stroke: '#b45309' },
-      task: { fill: '#fff1e6', stroke: '#c2410c' },
-      gateway: { fill: '#fde68a', stroke: '#92400e' },
-      subprocess: { fill: '#fae8ff', stroke: '#a21caf' },
-      data: { fill: '#fafaf9', stroke: '#78716c' },
-      pool: { fill: '#fffbf5', stroke: '#d6d3d1' },
-    },
-  },
-  {
-    id: 'cool',
-    name: 'Холодная',
-    hint: 'бирюза и индиго, хорошо читается в тёмной теме',
-    colors: {
-      startEvent: { fill: '#ecfeff', stroke: '#0e7490' },
-      intermediateEvent: { fill: '#ecfeff', stroke: '#0e7490' },
-      endEvent: { fill: '#ecfeff', stroke: '#0e7490' },
-      task: { fill: '#eef2ff', stroke: '#4338ca' },
-      gateway: { fill: '#f0fdfa', stroke: '#0f766e' },
-      subprocess: { fill: '#f5f3ff', stroke: '#6d28d9' },
-      data: { fill: '#f8fafc', stroke: '#475569' },
-      pool: { fill: '#ffffff', stroke: '#94a3b8' },
+      startEvent: { fill: '#ffffff', stroke: BLACK },
+      intermediateEvent: { fill: '#ffffff', stroke: BLACK },
+      endEvent: { fill: '#ffffff', stroke: BLACK },
+      task: { fill: '#ffffff', stroke: BLACK },
+      gateway: { fill: '#ffffff', stroke: BLACK },
+      subprocess: { fill: '#ffffff', stroke: BLACK },
+      data: { fill: '#ffffff', stroke: BLACK },
+      pool: { fill: '#ffffff', stroke: BLACK },
     },
   },
 ];
 
-const CLASSIC_COLORS = THEMES.find((theme) => theme.id === 'classic')!.colors;
+const COLORED_COLORS = THEMES.find((theme) => theme.id === 'colored')!.colors;
 
-/** Стартовый набор для «Своей темы»: цвета «Классики» как понятная база. */
+/** Стартовый набор устаревшей «Своей темы»: цветная палитра как база. */
 export const DEFAULT_CUSTOM_COLORS: ThemeColorsMap = Object.fromEntries(
-  Object.entries(CLASSIC_COLORS).map(([category, colors]) => [category, { ...colors }]),
+  Object.entries(COLORED_COLORS).map(([category, colors]) => [category, { ...colors }]),
 ) as ThemeColorsMap;
 
 export const CUSTOM_THEME: DiagramTheme = {
@@ -259,12 +246,8 @@ export function buildLegendItems(
     const fallback = theme.colors[category];
     seen.set(category, {
       label: LEGEND_LABELS[category],
-      fill:
-        element.di?.get?.('color:background-color') ??
-        (theme.id === 'none' ? '#ffffff' : fallback.fill),
-      stroke:
-        element.di?.get?.('color:border-color') ??
-        (theme.id === 'none' ? '#4b5563' : fallback.stroke),
+      fill: element.di?.get?.('color:background-color') ?? fallback.fill,
+      stroke: element.di?.get?.('color:border-color') ?? fallback.stroke,
     });
   }
   return (Object.keys(LEGEND_LABELS) as Category[])
@@ -289,7 +272,7 @@ export function applyAnnotationStyle(
       child.style.stroke = 'none';
     } else if (child.tagName === 'path') {
       child.style.fill = 'none';
-      child.style.stroke = colors?.stroke || '#4b5563';
+      child.style.stroke = colors?.stroke || '#000000';
     }
   }
 }
@@ -308,7 +291,10 @@ export function applyThemeToGfx(
   // Аннотация по нотации — только раскрытая скобка: bpmn-js кладёт перед ней
   // прозрачный прямоугольник, который тема не должна закрашивать.
   if (type === 'bpmn:TextAnnotation') {
-    applyAnnotationStyle(gfx);
+    applyAnnotationStyle(gfx, {
+      fill: theme.id === 'mono' ? '#ffffff' : '#f8fafc',
+      stroke: '#000000',
+    });
     return;
   }
 

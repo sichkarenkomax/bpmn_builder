@@ -43,6 +43,44 @@ const annotationXml = `<?xml version="1.0" encoding="UTF-8"?>
   </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 
+const longShapeLabelXml = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="D" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="P" isExecutable="false">
+    <bpmn:startEvent id="Start" />
+    <bpmn:intermediateThrowEvent id="Event_Long" name="Очень длинная вынесенная подпись события, которая не должна переразбиваться после перемещения" />
+    <bpmn:endEvent id="End" />
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="Start" targetRef="Event_Long" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Event_Long" targetRef="End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1"><bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="P">
+    <bpmndi:BPMNShape id="Start_di" bpmnElement="Start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Event_Long_di" bpmnElement="Event_Long">
+      <dc:Bounds x="250" y="100" width="36" height="36" />
+      <bpmndi:BPMNLabel><dc:Bounds x="220" y="150" width="96" height="18" /></bpmndi:BPMNLabel>
+    </bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="End_di" bpmnElement="End"><dc:Bounds x="400" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1"><di:waypoint x="136" y="118" /><di:waypoint x="250" y="118" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2"><di:waypoint x="286" y="118" /><di:waypoint x="400" y="118" /></bpmndi:BPMNEdge>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+
+const longLabelXml = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="D" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="P" isExecutable="false">
+    <bpmn:task id="Task_A" name="Начало" />
+    <bpmn:task id="Task_B" name="Конец" />
+    <bpmn:sequenceFlow id="Flow_Long" sourceRef="Task_A" targetRef="Task_B" name="Очень длинная подпись потока, которая не должна вылезать за правый край фрейма" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1"><bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="P">
+    <bpmndi:BPMNShape id="Task_A_di" bpmnElement="Task_A"><dc:Bounds x="100" y="100" width="100" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Task_B_di" bpmnElement="Task_B"><dc:Bounds x="400" y="100" width="100" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNEdge id="Flow_Long_di" bpmnElement="Flow_Long">
+      <di:waypoint x="200" y="140" /><di:waypoint x="400" y="140" />
+      <bpmndi:BPMNLabel><dc:Bounds x="210" y="148" width="60" height="20" /></bpmndi:BPMNLabel>
+    </bpmndi:BPMNEdge>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+
 function withResizeOthers(xml: string): string {
   return xml.replace(
     '<bpmn:definitions ',
@@ -665,13 +703,121 @@ test('настройки ресайза скрывают ручки и сохр�
   }
 });
 
+test('длинная подпись связи центрируется и не выходит за фрейм', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E label layout ${Date.now()}`, bpmn_xml: longLabelXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const label = page.locator('[data-element-id="Flow_Long_label"]');
+    await expect(label).toBeVisible();
+
+    const measure = () =>
+      label.evaluate((owner) => {
+        const text = owner.querySelector('.djs-label')!;
+        const hit = owner.querySelector('.djs-hit')!;
+        const bbox = text.getBBox();
+        return {
+          anchor: text.getAttribute('text-anchor'),
+          right: bbox.x + bbox.width,
+          bottom: bbox.y + bbox.height,
+          width: Number(hit.getAttribute('width')),
+          height: Number(hit.getAttribute('height')),
+          lines: [...text.querySelectorAll('tspan')].map((line) => line.textContent),
+        };
+      });
+
+    const before = await measure();
+    expect(before.anchor).toBe('middle');
+    expect(before.right).toBeLessThanOrEqual(before.width);
+    expect(before.bottom).toBeLessThanOrEqual(before.height);
+
+    await label.scrollIntoViewIfNeeded();
+    const box = await label.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + 50, box!.y + box!.height / 2 + 20, {
+      steps: 8,
+    });
+    await page.mouse.up();
+
+    const after = await measure();
+    expect(after.lines).toEqual(before.lines);
+    expect(after.anchor).toBe('middle');
+    expect(after.right).toBeLessThanOrEqual(after.width);
+    expect(after.bottom).toBeLessThanOrEqual(after.height);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('вынесенная подпись события сохраняет строки после перемещения', async ({
+  page,
+  request,
+}) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E shape label ${Date.now()}`, bpmn_xml: longShapeLabelXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const label = page.locator('[data-element-id="Event_Long_label"]');
+    await expect(label).toBeVisible();
+
+    const measure = () =>
+      label.evaluate((owner) => {
+        const text = owner.querySelector('.djs-label')!;
+        const hit = owner.querySelector('.djs-hit')!;
+        const bbox = text.getBBox();
+        return {
+          anchor: text.getAttribute('text-anchor'),
+          right: bbox.x + bbox.width,
+          bottom: bbox.y + bbox.height,
+          width: Number(hit.getAttribute('width')),
+          height: Number(hit.getAttribute('height')),
+          lines: [...text.querySelectorAll('tspan')].map((line) => line.textContent),
+        };
+      });
+
+    const before = await measure();
+    expect(before.anchor).toBe('middle');
+    expect(before.lines.length).toBeGreaterThan(1);
+    expect(before.right).toBeLessThanOrEqual(before.width);
+    expect(before.bottom).toBeLessThanOrEqual(before.height);
+
+    await label.scrollIntoViewIfNeeded();
+    const box = await label.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + 40, box!.y + box!.height / 2 + 20, {
+      steps: 8,
+    });
+    await page.mouse.up();
+
+    const after = await measure();
+    expect(after.lines).toEqual(before.lines);
+    expect(after.anchor).toBe('middle');
+    expect(after.right).toBeLessThanOrEqual(after.width);
+    expect(after.bottom).toBeLessThanOrEqual(after.height);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
 test('портальные дефолты применяются к новой схеме', async ({ page, request }) => {
   await page.goto('/');
   await page.evaluate(() => {
     window.localStorage.setItem(
       'bpmn-studio.portal-defaults',
       JSON.stringify({
-        theme: 'warm',
+        theme: 'colored',
         canvas: 'dark',
         resizeTasks: false,
         resizeOthers: true,
@@ -693,7 +839,7 @@ test('портальные дефолты применяются к новой �
     const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
     expect(xml).toContain('bs:resize-tasks="false"');
     expect(xml).toContain('bs:resize-others="true"');
-    expect(xml).toContain('bs:theme="warm"');
+    expect(xml).toContain('bs:theme="colored"');
     expect(xml).toContain('bs:canvas="dark"');
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);

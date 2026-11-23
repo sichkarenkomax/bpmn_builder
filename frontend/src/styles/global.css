@@ -554,6 +554,40 @@ code {
   background: #d97706;
 }
 
+.validation-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.validation-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.validation-status--checking {
+  color: var(--accent);
+}
+
+.validation-status--current {
+  color: var(--ok);
+}
+
+.validation-status--stale {
+  color: #b45309;
+}
+
+.validation-status--error {
+  color: var(--error);
+}
+
 .editor-toolbar__section {
   display: flex;
   flex: none;
@@ -1304,6 +1338,16 @@ code {
 
 .settings-field input {
   width: 84px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.settings-field select {
+  max-width: 230px;
   padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;

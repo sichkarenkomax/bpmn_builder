@@ -60,7 +60,12 @@ export function ProblemsPanel({
       <header className="comments-panel__header">
         <div>
           <h2 className="comments-panel__title">Проблемы</h2>
-          <p className="comments-panel__element">
+          <p
+            className="comments-panel__element"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
             {report
               ? `${report.findings.length} находок · ${report.duration_ms} мс`
               : 'проверка схемы'}
@@ -106,7 +111,11 @@ export function ProblemsPanel({
           Есть несохранённые правки. Сохраните схему, чтобы проверить актуальную версию.
         </p>
       ) : null}
-      {busy ? <p className="comments-panel__hint">Проверяется…</p> : null}
+      {busy ? (
+        <p className="comments-panel__hint" role="status" aria-live="polite">
+          Проверяется…
+        </p>
+      ) : null}
       {error ? <p className="comments-panel__error">{error}</p> : null}
 
       {report && report.findings.length === 0 ? (

@@ -274,12 +274,11 @@ export function applyExternalLabelLayout(
     return;
   }
   const host = element.labelTarget;
-  // Подписи связей остаются на линии потока, их не сдвигаем и не выравниваем.
-  if (!host || host.waypoints) {
+  if (!host) {
     return;
   }
 
-  const rotatesFrame = direction === 'rotate' || direction === 'vertical';
+  const rotatesFrame = !host.waypoints && (direction === 'rotate' || direction === 'vertical');
   const frameAngle = direction === 'vertical' ? 90 : -90;
   const label = gfx.querySelector<SVGTextElement>('.djs-label');
   if (!label) {
@@ -291,8 +290,24 @@ export function applyExternalLabelLayout(
   }
 
   const textBox = safeTextBox(label);
+  const padding =
+    host.waypoints || typeof host.width !== 'number'
+      ? EXTERNAL_LABEL_PADDING
+      : Math.min(EXTERNAL_LABEL_PADDING, host.width / 4);
+  // Фрейм расширяем только в DOM: ширину самого элемента не меняем, иначе
+  // bpmn-js при следующей отрисовке переразобьёт строки под новую ширину.
   if (textBox) {
-    fitExternalLabelFrame(gfx, element, host, textBox);
+    expandLabelFrame(gfx, element, textBox, padding);
+  }
+
+  if (host.waypoints) {
+    // Подпись связи живёт в собственном фрейме на линии потока: не двигаем её
+    // к фигуре, но центрируем строки внутри фрейма.
+    layoutLabelText(gfx, element, label, align, textBox);
+    return;
+  }
+
+  if (textBox) {
     label.style.transform = '';
   }
 
@@ -325,13 +340,23 @@ export function applyExternalLabelLayout(
     }
   }
 
+  layoutLabelText(gfx, element, label, align, textBox);
+}
+
+/** Раскладывает строки подписи внутри её фрейма. */
+function layoutLabelText(
+  _gfx: SVGGElement,
+  element: ExternalLabelElement,
+  label: SVGTextElement,
+  align: string,
+  textBox?: { x: number; y: number; width: number; height: number } | null,
+): void {
   const frameWidth = element.width;
   if (typeof frameWidth !== 'number' || frameWidth <= 0) {
     return;
   }
-  // Выравниваем текст внутри уже существующего фрейма. Сам фрейм при этом
-  // не двигаем: пользователь может перетащить его в любое место холста.
-  // Пустое значение — штатное центрирование подписи под фигурой.
+  // Сам элемент не двигаем: пользователь может перетащить фрейм в любое
+  // место холста. Пустое значение — штатное центрирование подписи.
   const effectiveAlign = align === 'left' || align === 'right' ? align : 'center';
   const padding = Math.min(EXTERNAL_LABEL_PADDING, frameWidth / 4);
   const target =
@@ -343,75 +368,55 @@ export function applyExternalLabelLayout(
   const anchor =
     effectiveAlign === 'left' ? 'start' : effectiveAlign === 'right' ? 'end' : 'middle';
   label.setAttribute('text-anchor', anchor);
+  const verticalShift =
+    textBox && typeof element.height === 'number'
+      ? element.height / 2 - (textBox.y + textBox.height / 2)
+      : 0;
   for (const line of label.querySelectorAll<SVGTextElement>('tspan')) {
     line.setAttribute('x', String(target));
+    if (Math.abs(verticalShift) > 0.1) {
+      const y = Number.parseFloat(line.getAttribute('y') ?? '0');
+      if (Number.isFinite(y)) {
+        line.setAttribute('y', String(y + verticalShift));
+      }
+    }
   }
 }
 
 /**
- * Подгоняет невидимый фрейм вынесенной подписи под реальный текст.
+ * Расширяет видимый фрейм подписи под текст, не меняя геометрию элемента.
  *
- * bpmn-js при импорте сохраняет записанную в DI ширину, а кегль подписей
- * в приложении меняется. Из-за этого текст больше фрейма: по центру он
- * выглядит неровно, а по краям вылезает наружу. Меняем только размеры
- * фрейма, сохраняя его позицию: подпись можно свободно двигать по холсту.
+ * Ширина элемента остаётся исходной, поэтому bpmn-js при следующей
+ * отрисовке переносит строки так же, как раньше. Если записать новую ширину
+ * в DI, при перемещении текст переразобьётся на меньшее число строк.
  */
-function fitExternalLabelFrame(
+function expandLabelFrame(
   gfx: SVGGElement,
   element: ExternalLabelElement,
-  host: NonNullable<ExternalLabelElement['labelTarget']>,
   textBox: { x: number; y: number; width: number; height: number },
+  padding: number,
 ): void {
   if (
     textBox.width <= 0 ||
     textBox.height <= 0 ||
-    typeof element.x !== 'number' ||
-    typeof element.y !== 'number' ||
-    typeof host.width !== 'number'
+    typeof element.width !== 'number' ||
+    typeof element.height !== 'number'
   ) {
     return;
   }
-  const x = element.x;
-  const padding = Math.min(EXTERNAL_LABEL_PADDING, host.width / 4);
-  const width = Math.ceil(textBox.width + padding * 2);
-  const height = Math.ceil(textBox.height + 4);
-  // По вертикали сохраняем центр фрейма: при смене кегля он остаётся
-  // на месте, а меняется только его высота.
-  const centerY = element.y + (element.height ?? height) / 2;
-  const y = centerY - height / 2;
+  const width = Math.max(element.width, Math.ceil(textBox.width + padding * 2));
+  const height = Math.max(element.height, Math.ceil(textBox.height + 4));
+  const offsetX = (width - element.width) / 2;
+  const offsetY = (height - element.height) / 2;
 
-  if (element.y !== y || element.width !== width || element.height !== height) {
-    element.y = y;
-    element.width = width;
-    element.height = height;
-
-    const bounds = element.di?.label?.bounds;
-    if (bounds) {
-      bounds.x = x;
-      bounds.y = y;
-      bounds.width = width;
-      bounds.height = height;
-    }
-    gfx.setAttribute('transform', `matrix(1 0 0 1 ${x} ${y})`);
-    const hit = gfx.querySelector<SVGRectElement>('.djs-hit');
-    if (hit) {
-      hit.setAttribute('x', '0');
-      hit.setAttribute('y', '0');
-      hit.setAttribute('width', String(width));
-      hit.setAttribute('height', String(height));
-    }
-  }
-
-  // Строки bpmn-js раскладывает от верхнего края; центрируем готовый текст
-  // по вертикали, чтобы подпись не прилипала к верхней границе фрейма.
-  const delta = height / 2 - (textBox.y + textBox.height / 2);
-  if (Math.abs(delta) > 0.1) {
-    for (const line of gfx.querySelectorAll<SVGTextElement>('.djs-label tspan')) {
-      const current = Number.parseFloat(line.getAttribute('y') ?? '0');
-      if (Number.isFinite(current)) {
-        line.setAttribute('y', String(current + delta));
-      }
-    }
+  // Расширяем hit-область вокруг центра, не меняя transform элемента: так
+  // экспорт SVG/PDF остаётся пиксельно совместимым с холстом.
+  const hit = gfx.querySelector<SVGRectElement>('.djs-hit');
+  if (hit) {
+    hit.setAttribute('x', String(-offsetX));
+    hit.setAttribute('y', String(-offsetY));
+    hit.setAttribute('width', String(width));
+    hit.setAttribute('height', String(height));
   }
 }
 

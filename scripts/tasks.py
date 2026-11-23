@@ -2,7 +2,7 @@
 """Сводка статусов задач из дорожной карты.
 
 Трекер не используем: источник правды — чекбоксы в docs/ROADMAP.md,
-этот скрипт их только читает и считает.
+завершённые задачи лежат в docs/ROADMAP_DONE.md; скрипт читает оба файла.
 
     python3 scripts/tasks.py            # сводка по этапам
     python3 scripts/tasks.py --stage 0  # список задач этапа
@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROADMAP_PATH = Path(__file__).resolve().parent.parent / "docs" / "ROADMAP.md"
+ARCHIVE_PATH = Path(__file__).resolve().parent.parent / "docs" / "ROADMAP_DONE.md"
 
 TASK_RE = re.compile(r"^- \[(?P<mark>[ x~!])\] (?P<task_id>\d+(?:\.\d+)+) (?P<title>.+)$")
 STAGE_RE = re.compile(r"^## \d+\. ЭТАП (?P<number>\d+) — (?P<title>.+)$")
@@ -77,6 +78,11 @@ def parse(markdown: str) -> list[Stage]:
 
     for number, title in titles.items():
         stages.setdefault(number, Stage(number=number, title=title))
+
+    for stage in stages.values():
+        stage.tasks.sort(
+            key=lambda task: tuple(int(part) for part in task.task_id.split(".")),
+        )
 
     return [stages[number] for number in sorted(stages)]
 
@@ -151,7 +157,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Не найден файл дорожной карты: {args.path}", file=sys.stderr)
         return 2
 
-    stages = parse(args.path.read_text(encoding="utf-8"))
+    paths = [args.path]
+    if args.path == ROADMAP_PATH and ARCHIVE_PATH.exists():
+        paths.append(ARCHIVE_PATH)
+    markdown = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+    stages = parse(markdown)
     if not stages:
         print("Задачи в дорожной карте не найдены", file=sys.stderr)
         return 1

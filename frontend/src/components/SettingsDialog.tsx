@@ -7,6 +7,7 @@ import {
   clampAutosaveSeconds,
 } from '../lib/autosave';
 import type { CanvasMouseMode } from '../lib/mouse-settings';
+import type { ValidationMode } from '../lib/validation-settings';
 import {
   comboFromEvent,
   DEFAULT_SHORTCUTS,
@@ -20,12 +21,14 @@ import {
   type ShortcutMap,
 } from '../lib/shortcuts';
 
-export function ShortcutSettings({
+export function SettingsDialog({
   open,
   shortcuts,
   onChange,
   autosaveSeconds,
   onAutosaveChange,
+  validationMode,
+  onValidationModeChange,
   markdownToolbar,
   onMarkdownToolbarChange,
   mouseMode,
@@ -37,6 +40,8 @@ export function ShortcutSettings({
   onChange: (next: ShortcutMap) => void;
   autosaveSeconds: number;
   onAutosaveChange: (seconds: number) => void;
+  validationMode: ValidationMode;
+  onValidationModeChange: (mode: ValidationMode) => void;
   markdownToolbar: boolean;
   onMarkdownToolbarChange: (enabled: boolean) => void;
   mouseMode: CanvasMouseMode;
@@ -127,18 +132,18 @@ export function ShortcutSettings({
         className="dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Горячие клавиши"
+        aria-label="Настройки"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog__header">
-          <h2 className="dialog__title">Горячие клавиши</h2>
+          <h2 className="dialog__title">Настройки</h2>
           <button type="button" className="ghost-button" onClick={onClose}>
             Закрыть
           </button>
         </header>
 
         <p className="dialog__hint">
-          Нажмите «Изменить» и введите комбинацию. Настройки хранятся в этом браузере.
+          Настройки действуют для всех схем и хранятся в этом браузере.
         </p>
 
         <div className="settings-section">
@@ -164,6 +169,26 @@ export function ShortcutSettings({
             По умолчанию {AUTOSAVE_DEFAULT_SECONDS} с, допустимо от {AUTOSAVE_MIN_SECONDS} до{' '}
             {AUTOSAVE_MAX_SECONDS} с. Локальный черновик пишется чаще — он страхует от потери
             правок.
+          </p>
+        </div>
+
+        <div className="settings-section">
+          <h3 className="settings-section__title">Проверка схемы</h3>
+          <label className="settings-field">
+            <span>Когда проверять</span>
+            <select
+              value={validationMode}
+              onChange={(event) =>
+                onValidationModeChange(event.target.value as ValidationMode)
+              }
+            >
+              <option value="after-save">После сохранения</option>
+              <option value="manual">Только по требованию</option>
+            </select>
+          </label>
+          <p className="dialog__hint">
+            «После сохранения» обновляет отчёт и маркеры автоматически. «Только по требованию»
+            запускает проверку кнопкой «Проверить» или горячей клавишей.
           </p>
         </div>
 
@@ -197,6 +222,9 @@ export function ShortcutSettings({
           </p>
         </div>
 
+        <p className="dialog__hint">
+          Горячие клавиши: нажмите «Изменить» и введите комбинацию.
+        </p>
         <div className="shortcut-list">
           {SHORTCUT_DEFINITIONS.map((definition) => {
             const isCapturing = capturing === definition.action;

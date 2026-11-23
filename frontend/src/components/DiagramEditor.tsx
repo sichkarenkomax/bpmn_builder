@@ -65,6 +65,11 @@ import {
 import { loadAutosaveSeconds, saveAutosaveSeconds } from '../lib/autosave';
 import { loadMarkdownToolbarEnabled, saveMarkdownToolbarEnabled } from '../lib/markdown-settings';
 import {
+  loadValidationMode,
+  saveValidationMode,
+  type ValidationMode,
+} from '../lib/validation-settings';
+import {
   clearDefaultStyle,
   getDefaultStyle,
   loadStyleDefaults,
@@ -83,10 +88,8 @@ import {
   applyAnnotationStyle,
   applyThemeToGfx,
   buildLegendItems,
-  DEFAULT_CUSTOM_COLORS,
   hasManualColor,
   themeById,
-  type ThemeColorsMap,
   type ThemeId,
 } from '../lib/diagram-theme';
 import {
@@ -157,7 +160,7 @@ import {
   type StageResizeResult,
 } from '../lib/stages';
 import { PropertiesPanel } from './PropertiesPanel';
-import { ShortcutSettings } from './ShortcutSettings';
+import { SettingsDialog } from './SettingsDialog';
 
 interface ModdleDocumentation {
   text?: string;
@@ -1299,12 +1302,9 @@ export function DiagramEditor({
   const [styleDefaults, setStyleDefaults] = useState<StyleDefaults>(() => loadStyleDefaults());
   const styleDefaultsRef = useRef(styleDefaults);
   styleDefaultsRef.current = styleDefaults;
-  const [themeId, setThemeId] = useState<ThemeId>('none');
+  const [themeId, setThemeId] = useState<ThemeId>('mono');
   const themeRef = useRef(themeId);
   themeRef.current = themeId;
-  const [customColors, setCustomColors] = useState<ThemeColorsMap>(DEFAULT_CUSTOM_COLORS);
-  const customColorsRef = useRef(customColors);
-  customColorsRef.current = customColors;
   const [canvasTheme, setCanvasTheme] = useState<CanvasTheme>('light');
   const [resizeSettings, setResizeSettings] = useState({
     tasks: DEFAULT_RESIZE_TASKS,
@@ -1321,6 +1321,33 @@ export function DiagramEditor({
   const [validation, setValidation] = useState<ValidationReport | null>(null);
   const [validationBusy, setValidationBusy] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [validationNonce, setValidationNonce] = useState(0);
+  const lastValidationNonceRef = useRef(0);
+  const [validationMode, setValidationMode] = useState<ValidationMode>(() => loadValidationMode());
+  const validationCount = validationFindingsCount(validation);
+  const validationState =
+    validationBusy || save.kind === 'saving'
+      ? 'checking'
+      : save.kind !== 'saved'
+        ? 'stale'
+        : validationError
+          ? 'error'
+          : validation
+            ? 'current'
+            : 'idle';
+  const validationStatusLabel =
+    validationState === 'checking'
+      ? 'Проверяется…'
+      : validationState === 'stale'
+        ? 'Устарело'
+        : validationState === 'error'
+          ? 'Ошибка проверки'
+          : validationState === 'current'
+            ? `Актуально · ${validationCount === 0 ? 'проблем нет' : `находок: ${validationCount}`}`
+            : 'Не проверялось';
+  const validationSummaryTitle = validation
+    ? `Ошибки: ${validation.summary.errors}; предупреждения: ${validation.summary.warnings}; информация: ${validation.summary.infos}`
+    : undefined;
   const [mouseMode, setMouseMode] = useState<CanvasMouseMode>(() => loadCanvasMouseMode());
   const mouseModeRef = useRef(mouseMode);
   mouseModeRef.current = mouseMode;
@@ -1343,7 +1370,7 @@ export function DiagramEditor({
 
   const applyAllStyles = (modeler: Modeler) => {
     const registry = modeler.get<ElementRegistryLike>('elementRegistry');
-    const theme = themeById(themeRef.current, customColorsRef.current);
+    const theme = themeById(themeRef.current);
     for (const element of registry.getAll()) {
       const gfx = registry.getGraphics(element);
       if (gfx) {
@@ -1405,7 +1432,7 @@ export function DiagramEditor({
       modeler.get<ModelingLike>('modeling').setColor([element], style);
     }, 0);
   };
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
@@ -1437,7 +1464,7 @@ export function DiagramEditor({
 
   shortcutsRef.current = shortcuts;
   overlayOpenRef.current =
-    shortcutsOpen || exportOpen || themeOpen || resizeSettingsOpen || menu !== null;
+    settingsOpen || exportOpen || themeOpen || resizeSettingsOpen || menu !== null;
 
   const updateShortcuts = useCallback((next: ShortcutMap) => {
     setShortcuts(next);
@@ -1646,7 +1673,6 @@ export function DiagramEditor({
   const writeDiagramSettings = (settings: {
     theme?: ThemeId;
     legend?: LegendPosition;
-    customColors?: ThemeColorsMap;
     canvas?: CanvasTheme;
     stages?: DiagramStage[];
     resizeTasks?: boolean;
@@ -1686,12 +1712,6 @@ export function DiagramEditor({
     setThemeId(next);
     themeRef.current = next;
     writeDiagramSettings({ theme: next });
-  };
-
-  const updateCustomColors = (next: ThemeColorsMap) => {
-    setCustomColors(next);
-    customColorsRef.current = next;
-    writeDiagramSettings({ customColors: next });
   };
 
   const updateCanvasTheme = (next: CanvasTheme) => {
@@ -2376,17 +2396,13 @@ export function DiagramEditor({
       // Undo/redo может вернуть прежнюю тему или позицию легенды: состояние
       // панелей синхронизируем с документом до перерисовки стилей.
       const stored = readDiagramSettings(findDefinitions(modeler));
-      const storedTheme = stored.theme ?? 'none';
+      const storedTheme = stored.theme ?? 'mono';
       if (storedTheme !== themeRef.current) {
         themeRef.current = storedTheme;
         setThemeId(storedTheme);
       }
       if (stored.legend) {
         setLegendPosition(stored.legend);
-      }
-      if (stored.customColors) {
-        customColorsRef.current = stored.customColors;
-        setCustomColors(stored.customColors);
       }
       setCanvasTheme(stored.canvas);
       setStages(stored.stages ?? []);
@@ -2420,14 +2436,10 @@ export function DiagramEditor({
         modeler.get<CanvasLike>('canvas').zoom('fit-viewport');
         setMinimapOpen(modeler.get<MinimapLike>('minimap').isOpen());
         const stored = readDiagramSettings(findDefinitions(modeler));
-        const storedTheme = stored.theme ?? 'none';
+        const storedTheme = stored.theme ?? 'mono';
         themeRef.current = storedTheme;
         setThemeId(storedTheme);
         setLegendPosition(stored.legend ?? DEFAULT_LEGEND_POSITION);
-        if (stored.customColors) {
-          customColorsRef.current = stored.customColors;
-          setCustomColors(stored.customColors);
-        }
         setCanvasTheme(stored.canvas);
         setStages(stored.stages ?? []);
         resizePermissions.tasks = stored.resizeTasks;
@@ -2528,7 +2540,7 @@ export function DiagramEditor({
 
   // Проверка идёт по сохранённой версии: после успешного PUT отчёт обновляется.
   useEffect(() => {
-    if (!ready || (!warningsOpen && !problemsOpen)) {
+    if (!ready) {
       return;
     }
     if (save.kind !== 'saved') {
@@ -2538,6 +2550,12 @@ export function DiagramEditor({
       setValidationError(null);
       return;
     }
+    if (validationMode === 'manual' && validationNonce === lastValidationNonceRef.current) {
+      // В ручном режиме сохранение не запускает проверку: ждём кнопку или клавишу.
+      setValidationBusy(false);
+      return;
+    }
+    lastValidationNonceRef.current = validationNonce;
     const controller = new AbortController();
     setValidationBusy(true);
     setValidationError(null);
@@ -2562,7 +2580,7 @@ export function DiagramEditor({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [diagramId, ready, warningsOpen, problemsOpen, save.kind]);
+  }, [diagramId, ready, save.kind, validationNonce, validationMode]);
 
   // Маркеры предупреждений/ошибок: цвет значка — худшая severity элемента.
   useEffect(() => {
@@ -2616,6 +2634,15 @@ export function DiagramEditor({
     modeler.get<CanvasLike>('canvas').scrollToElement(element, 80);
     setInspectorOpen(true);
   };
+
+  const checkValidation = useCallback(() => {
+    setProblemsOpen(true);
+    if (save.kind !== 'saved') {
+      notify('info', 'Проверяется сохранённая версия. Сначала сохраните схему.');
+      return;
+    }
+    setValidationNonce((value) => value + 1);
+  }, [notify, save.kind]);
 
   // Маркеры открытых обсуждений: цифра на элементе открывает панель.
   useEffect(() => {
@@ -2734,6 +2761,9 @@ export function DiagramEditor({
         case 'save':
           void persist();
           return;
+        case 'validate':
+          checkValidation();
+          return;
         case 'undo':
         case 'redo':
         case 'copy':
@@ -2764,7 +2794,7 @@ export function DiagramEditor({
           return;
         }
         case 'settings':
-          setShortcutsOpen(true);
+          setSettingsOpen(true);
           return;
         case 'editLabel': {
           const element = modeler.get<SelectionLike>('selection').get()[0];
@@ -2806,7 +2836,7 @@ export function DiagramEditor({
         }
       }
     },
-    [duplicateSelection, getCanvas, pasteAtPointer, persist],
+    [checkValidation, duplicateSelection, getCanvas, pasteAtPointer, persist],
   );
 
   // Горячие клавиши перехватываются до bpmn-js: так переназначение реально работает.
@@ -3416,9 +3446,9 @@ export function DiagramEditor({
         { id: 'sep-3', label: '', separator: true },
         {
           id: 'shortcuts',
-          label: 'Горячие клавиши…',
+          label: 'Настройки…',
           hint: hint('settings'),
-          onSelect: () => setShortcutsOpen(true),
+          onSelect: () => setSettingsOpen(true),
         },
       ];
     }
@@ -3464,7 +3494,7 @@ export function DiagramEditor({
         type: element.businessObject.$type,
         di: element.di,
       })),
-      themeById(themeId, customColors),
+      themeById(themeId),
     );
   })();
 
@@ -3559,6 +3589,29 @@ export function DiagramEditor({
             </button>
           </div>
 
+          <div className="editor-toolbar__section" role="group" aria-label="Проверка">
+            <span className="editor-toolbar__label">Проверка</span>
+            <button
+              type="button"
+              className="ghost-button ghost-button--small"
+              title={`Проверить схему (${formatCombo(shortcuts.validate)})`}
+              aria-label="Проверить схему"
+              onClick={() => executeAction('validate')}
+            >
+              <span aria-hidden="true">✓</span>
+              <span className="ghost-button__label">Проверить</span>
+            </button>
+            <span
+              className={`validation-status validation-status--${validationState}`}
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              title={validationSummaryTitle}
+            >
+              {validationStatusLabel}
+            </span>
+          </div>
+
           <div className="editor-toolbar__section" role="group" aria-label="Панели">
             <span className="editor-toolbar__label">Панели</span>
             <button
@@ -3569,14 +3622,22 @@ export function DiagramEditor({
                   : 'ghost-button ghost-button--small'
               }
               title="Предупреждения и ошибки на холсте (по сохранённой версии)"
-              aria-label="Предупреждения и ошибки"
+              aria-label={
+                validationCount > 0
+                  ? `Предупреждения и ошибки: ${validationCount}`
+                  : 'Предупреждения и ошибки'
+              }
               aria-pressed={warningsOpen}
               onClick={() => setWarningsOpen((value) => !value)}
             >
               <span aria-hidden="true">⚠</span>
-              {validationFindingsCount(validation) > 0 ? (
-                <span className="editor-toolbar__count editor-toolbar__count--warning">
-                  {validationFindingsCount(validation)}
+              {validationCount > 0 ? (
+                <span
+                  className="editor-toolbar__count editor-toolbar__count--warning"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  {validationCount}
                 </span>
               ) : null}
             </button>
@@ -3588,14 +3649,18 @@ export function DiagramEditor({
                   : 'ghost-button ghost-button--small'
               }
               title="Проблемы схемы"
-              aria-label="Проблемы"
+              aria-label={validationCount > 0 ? `Проблемы: ${validationCount}` : 'Проблемы'}
               aria-pressed={problemsOpen}
               onClick={() => setProblemsOpen((value) => !value)}
             >
               <span aria-hidden="true">⚑</span>
-              {validationFindingsCount(validation) > 0 ? (
-                <span className="editor-toolbar__count editor-toolbar__count--warning">
-                  {validationFindingsCount(validation)}
+              {validationCount > 0 ? (
+                <span
+                  className="editor-toolbar__count editor-toolbar__count--warning"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  {validationCount}
                 </span>
               ) : null}
             </button>
@@ -3668,9 +3733,9 @@ export function DiagramEditor({
             <button
               type="button"
               className="ghost-button ghost-button--small"
-              title={`Клавиши (${formatCombo(shortcuts.settings)})`}
-              aria-label="Клавиши"
-              onClick={() => setShortcutsOpen(true)}
+              title={`Настройки (${formatCombo(shortcuts.settings)})`}
+              aria-label="Настройки редактора"
+              onClick={() => setSettingsOpen(true)}
             >
               <span aria-hidden="true">⌨</span>
             </button>
@@ -4058,10 +4123,8 @@ export function DiagramEditor({
       <ThemeSettings
         open={themeOpen}
         value={themeId}
-        customColors={customColors}
         canvas={canvasTheme}
         onChange={updateTheme}
-        onCustomColorsChange={updateCustomColors}
         onCanvasChange={updateCanvasTheme}
         onClose={() => setThemeOpen(false)}
       />
@@ -4081,19 +4144,21 @@ export function DiagramEditor({
         }}
         onClose={() => setResizeSettingsOpen(false)}
       />
-      <ShortcutSettings
-        open={shortcutsOpen}
+      <SettingsDialog
+        open={settingsOpen}
         shortcuts={shortcuts}
         onChange={updateShortcuts}
         autosaveSeconds={autosaveSeconds}
         onAutosaveChange={(seconds) => setAutosaveSeconds(saveAutosaveSeconds(seconds))}
+        validationMode={validationMode}
+        onValidationModeChange={(mode) => setValidationMode(saveValidationMode(mode))}
         markdownToolbar={markdownToolbar}
         onMarkdownToolbarChange={(enabled) =>
           setMarkdownToolbar(saveMarkdownToolbarEnabled(enabled))
         }
         mouseMode={mouseMode}
         onMouseModeChange={(mode) => setMouseMode(saveCanvasMouseMode(mode))}
-        onClose={() => setShortcutsOpen(false)}
+        onClose={() => setSettingsOpen(false)}
       />
     </div>
   );

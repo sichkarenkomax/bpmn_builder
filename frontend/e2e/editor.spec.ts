@@ -210,29 +210,28 @@ test('тема, комментарии и сохранение пережива�
       .evaluate((node) => getComputedStyle(node).strokeWidth);
     expect(endStroke).toBe('4px');
 
-    // 1.3.11: своя тема — цвета по категориям и тёмный фон холста.
+    // 1.5.13: только две темы, у цветной все границы чёрные.
     await page.getByRole('button', { name: 'Тема' }).click();
     const dialog = page.getByRole('dialog', { name: 'Тема оформления' });
     await expect(dialog).toBeVisible();
-    await dialog.locator('input[name="diagram-theme"][value="custom"]').check();
+    await expect(dialog.locator('input[name="diagram-theme"]')).toHaveCount(2);
 
-    const taskFill = dialog.getByLabel('Заливка: Задачи');
-    await taskFill.evaluate((node) => {
-      const input = node as HTMLInputElement;
-      // Нативный setter обходит value-трекер React: иначе onChange не увидит правку.
-      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-      setValue?.call(input, '#cc0000');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await expect
-      .poll(() =>
-        page
-          .locator('[data-element-id="Task_Review"] .djs-visual rect')
-          .first()
-          .evaluate((node) => getComputedStyle(node).fill),
-      )
-      .toBe('rgb(204, 0, 0)');
+    const taskRect = page.locator('[data-element-id="Task_Review"] .djs-visual rect').first();
+    await dialog.locator('input[name="diagram-theme"][value="mono"]').check();
+    await expect.poll(() => taskRect.evaluate((node) => getComputedStyle(node).fill)).toBe(
+      'rgb(255, 255, 255)',
+    );
+    await expect.poll(() => taskRect.evaluate((node) => getComputedStyle(node).stroke)).toBe(
+      'rgb(0, 0, 0)',
+    );
+
+    await dialog.locator('input[name="diagram-theme"][value="colored"]').check();
+    await expect.poll(() => taskRect.evaluate((node) => getComputedStyle(node).fill)).toBe(
+      'rgb(239, 246, 255)',
+    );
+    await expect.poll(() => taskRect.evaluate((node) => getComputedStyle(node).stroke)).toBe(
+      'rgb(0, 0, 0)',
+    );
 
     await dialog.getByLabel('Тёмный фон холста (для презентаций и тёмных тем)').check();
     await expect(page.locator('[data-testid="diagram-editor"]')).toHaveAttribute(
@@ -273,7 +272,7 @@ test('тема, комментарии и сохранение пережива�
     await page.reload();
     await expect(page.locator('[data-element-id="Task_Review"]')).toBeVisible();
 
-    // После перезагрузки: тема, свой цвет, фон и комментарий на месте.
+    // После перезагрузки: тема, чёрные границы, фон и комментарий на месте.
     await expect
       .poll(() =>
         page
@@ -281,7 +280,15 @@ test('тема, комментарии и сохранение пережива�
           .first()
           .evaluate((node) => getComputedStyle(node).fill),
       )
-      .toBe('rgb(204, 0, 0)');
+      .toBe('rgb(239, 246, 255)');
+    await expect
+      .poll(() =>
+        page
+          .locator('[data-element-id="Task_Review"] .djs-visual rect')
+          .first()
+          .evaluate((node) => getComputedStyle(node).stroke),
+      )
+      .toBe('rgb(0, 0, 0)');
     await expect(page.locator('[data-testid="diagram-editor"]')).toHaveAttribute(
       'data-canvas',
       'dark',
@@ -289,8 +296,8 @@ test('тема, комментарии и сохранение пережива�
     await expect(page.locator('.comment-pin')).toHaveText('1');
 
     const savedXml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
-    expect(savedXml).toContain('bs:custom-theme');
-    expect(savedXml).toContain('bs:theme="custom"');
+    expect(savedXml).toContain('bs:theme="colored"');
+    expect(savedXml).not.toContain('bs:custom-theme');
     expect(savedXml).toContain('bs:canvas="dark"');
 
     // Resolve убирает маркер, но сообщение остаётся в ветке.

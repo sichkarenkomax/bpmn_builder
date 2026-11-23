@@ -1,7 +1,7 @@
 /** Настройки схемы, которые живут в самом документе (`bs:*` на `bpmn:definitions`). */
 
 import {
-  isThemeId,
+  normalizeThemeId,
   parseCustomTheme,
   serializeCustomTheme,
   type ThemeColorsMap,
@@ -67,7 +67,7 @@ export function readDiagramSettings(definitions: DefinitionsLike | undefined): D
   );
 
   return {
-    theme: isThemeId(theme) ? theme : null,
+    theme: normalizeThemeId(theme),
     legend: Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null,
     // `bs:custom-theme` — JSON в атрибуте; битый атрибут не ломает открытие.
     customColors: parseCustomTheme(attribute(definitions, 'custom-theme', 'custom-theme')),
@@ -97,7 +97,10 @@ export function diagramSettingsProperties(settings: {
 }): Record<string, string | undefined> {
   const properties: Record<string, string | undefined> = {};
   if (settings.theme !== undefined) {
-    properties['theme'] = settings.theme === 'none' ? undefined : settings.theme;
+    // «Чёрно-белая» — тема по умолчанию: не пишем лишний атрибут.
+    // Устаревшие темы при записи нормализуются до «Цветной».
+    properties['theme'] =
+      settings.theme === 'mono' ? undefined : (normalizeThemeId(settings.theme) ?? undefined);
   }
   if (settings.customColors) {
     properties['custom-theme'] = serializeCustomTheme(settings.customColors);

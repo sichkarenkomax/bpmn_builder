@@ -2,6 +2,7 @@ export const SHORTCUTS_STORAGE_KEY = 'bpmn-studio.shortcuts';
 
 export type ShortcutAction =
   | 'save'
+  | 'validate'
   | 'undo'
   | 'redo'
   | 'copy'
@@ -30,6 +31,7 @@ export interface ShortcutDefinition {
 
 export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { action: 'save', label: 'Сохранить', group: 'Файл', combo: 'mod+s' },
+  { action: 'validate', label: 'Проверить схему', group: 'Файл', combo: 'mod+shift+v' },
   { action: 'undo', label: 'Отменить', group: 'Правка', combo: 'mod+z' },
   { action: 'redo', label: 'Повторить', group: 'Правка', combo: 'mod+y' },
   { action: 'copy', label: 'Копировать', group: 'Правка', combo: 'mod+c' },
@@ -50,7 +52,7 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
     group: 'Элемент',
     combo: 'shift+d',
   },
-  { action: 'settings', label: 'Горячие клавиши', group: 'Элемент', combo: 'mod+/' },
+  { action: 'settings', label: 'Настройки', group: 'Вид', combo: 'mod+/' },
 ];
 
 export type ShortcutMap = Record<ShortcutAction, string>;

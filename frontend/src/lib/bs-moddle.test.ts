@@ -77,7 +77,7 @@ describe('bs namespace', () => {
 
     const reloaded = await parse(result.xml);
     const settings = readDiagramSettings(reloaded.rootElement as unknown as DefinitionsLike);
-    expect(settings.theme).toBe('classic');
+    expect(settings.theme).toBe('colored');
     expect(settings.legend).toEqual({ x: 200, y: 40 });
   });
 

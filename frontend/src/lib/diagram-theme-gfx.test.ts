@@ -18,7 +18,7 @@ function makeGfx(shapes: string[]): SVGGElement {
 describe('applyThemeToGfx', () => {
   it('делает стрелки чёрными и тонкими в любой теме', () => {
     const gfx = makeGfx(['path']);
-    applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeById('classic'));
+    applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeById('colored'));
     const path = gfx.querySelector('path');
     expect(path?.style.stroke).toBe('#000000');
     expect(path?.style.strokeWidth).toBe('0.7');
@@ -26,11 +26,11 @@ describe('applyThemeToGfx', () => {
 
   it('не перекрывает ручную толщину линии связи', () => {
     const gfx = makeGfx(['path']);
-    applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeById('classic'), { strokeWidth: '2' });
+    applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeById('colored'), { strokeWidth: '2' });
     expect(gfx.querySelector('path')?.style.strokeWidth).toBe('2');
 
     const association = makeGfx(['path']);
-    applyThemeToGfx(association, 'bpmn:Association', themeById('classic'), { strokeWidth: '2' });
+    applyThemeToGfx(association, 'bpmn:Association', themeById('colored'), { strokeWidth: '2' });
     expect(association.querySelector('path')?.style.strokeWidth).toBe('2');
   });
 
@@ -44,7 +44,7 @@ describe('applyThemeToGfx', () => {
     defs.append(marker);
     visual?.append(defs);
 
-    applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeById('classic'));
+    applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeById('colored'));
 
     expect(path.style.stroke).toBe('#000000');
     expect(path.style.fill).toBe('#000000');
@@ -55,17 +55,17 @@ describe('applyThemeToGfx', () => {
 
   it('даёт аннотации мягкий фон и красит только скобку', () => {
     const gfx = makeGfx(['rect', 'path']);
-    applyThemeToGfx(gfx, 'bpmn:TextAnnotation', themeById('classic'));
+    applyThemeToGfx(gfx, 'bpmn:TextAnnotation', themeById('colored'));
     const [background, bracket] = gfx.querySelectorAll<SVGElement>('.djs-visual > *');
     expect(background?.style.fill).toBe('#f8fafc');
     expect(background?.style.stroke).toBe('none');
     expect(bracket?.style.fill).toBe('none');
-    expect(bracket?.style.stroke).toBe('#4b5563');
+    expect(bracket?.style.stroke).toBe('#000000');
   });
 
   it('рисует ассоциацию точками толщиной 1', () => {
     const gfx = makeGfx(['path']);
-    applyThemeToGfx(gfx, 'bpmn:Association', themeById('classic'));
+    applyThemeToGfx(gfx, 'bpmn:Association', themeById('colored'));
     const path = gfx.querySelector('path');
     expect(path?.style.strokeDasharray).toBe('0 6');
     expect(path?.style.strokeLinecap).toBe('round');
@@ -74,15 +74,15 @@ describe('applyThemeToGfx', () => {
 
   it('даёт завершающему событию толстую границу', () => {
     const gfx = makeGfx(['circle']);
-    applyThemeToGfx(gfx, 'bpmn:EndEvent', themeById('classic'));
+    applyThemeToGfx(gfx, 'bpmn:EndEvent', themeById('colored'));
     const circle = gfx.querySelector('circle');
     expect(circle?.style.strokeWidth).toBe('4px');
-    expect(circle?.style.stroke).toBe('#dc2626');
+    expect(circle?.style.stroke).toBe('#000000');
   });
 
   it('не утолщает иконку внутри завершающего события', () => {
     const gfx = makeGfx(['circle', 'path']);
-    applyThemeToGfx(gfx, 'bpmn:EndEvent', themeById('classic'));
+    applyThemeToGfx(gfx, 'bpmn:EndEvent', themeById('colored'));
     const [border, icon] = gfx.querySelectorAll<SVGElement>('.djs-visual > *');
     expect(border?.style.strokeWidth).toBe('4px');
     expect(icon?.style.strokeWidth).toBe('');
@@ -90,7 +90,15 @@ describe('applyThemeToGfx', () => {
 
   it('не перекрывает ручную толщину завершающего события', () => {
     const gfx = makeGfx(['circle']);
-    applyThemeToGfx(gfx, 'bpmn:EndEvent', themeById('classic'), { strokeWidth: '2' });
+    applyThemeToGfx(gfx, 'bpmn:EndEvent', themeById('colored'), { strokeWidth: '2' });
     expect(gfx.querySelector('circle')?.style.strokeWidth).toBe('');
+  });
+
+  it('в чёрно-белой теме делает заливку белой, а границы чёрными', () => {
+    const gfx = makeGfx(['rect']);
+    applyThemeToGfx(gfx, 'bpmn:Task', themeById('mono'));
+    const rect = gfx.querySelector('rect');
+    expect(rect?.style.fill).toBe('#ffffff');
+    expect(rect?.style.stroke).toBe('#000000');
   });
 });
