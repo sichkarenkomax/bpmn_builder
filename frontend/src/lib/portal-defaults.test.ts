@@ -39,10 +39,7 @@ describe('портальные дефолты (1.5.4)', () => {
   });
 
   it('нормализует старую сохранённую тему', () => {
-    window.localStorage.setItem(
-      PORTAL_DEFAULTS_STORAGE_KEY,
-      JSON.stringify({ theme: 'classic' }),
-    );
+    window.localStorage.setItem(PORTAL_DEFAULTS_STORAGE_KEY, JSON.stringify({ theme: 'classic' }));
 
     expect(loadPortalDefaults().theme).toBe('colored');
   });

@@ -78,18 +78,18 @@ export function ThemeSettings({
                 <span className="theme-card__hint">{theme.hint}</span>
               </span>
               <span className="theme-card__swatches" aria-hidden="true">
-                {(
-                  ['startEvent', 'intermediateEvent', 'endEvent', 'task', 'gateway'] as const
-                ).map((category) => (
-                  <span
-                    key={category}
-                    className="theme-card__swatch"
-                    style={{
-                      background: theme.colors[category].fill,
-                      borderColor: theme.colors[category].stroke,
-                    }}
-                  />
-                ))}
+                {(['startEvent', 'intermediateEvent', 'endEvent', 'task', 'gateway'] as const).map(
+                  (category) => (
+                    <span
+                      key={category}
+                      className="theme-card__swatch"
+                      style={{
+                        background: theme.colors[category].fill,
+                        borderColor: theme.colors[category].stroke,
+                      }}
+                    />
+                  ),
+                )}
               </span>
             </label>
           ))}

@@ -178,9 +178,7 @@ export function SettingsDialog({
             <span>Когда проверять</span>
             <select
               value={validationMode}
-              onChange={(event) =>
-                onValidationModeChange(event.target.value as ValidationMode)
-              }
+              onChange={(event) => onValidationModeChange(event.target.value as ValidationMode)}
             >
               <option value="after-save">После сохранения</option>
               <option value="manual">Только по требованию</option>
@@ -222,9 +220,7 @@ export function SettingsDialog({
           </p>
         </div>
 
-        <p className="dialog__hint">
-          Горячие клавиши: нажмите «Изменить» и введите комбинацию.
-        </p>
+        <p className="dialog__hint">Горячие клавиши: нажмите «Изменить» и введите комбинацию.</p>
         <div className="shortcut-list">
           {SHORTCUT_DEFINITIONS.map((definition) => {
             const isCapturing = capturing === definition.action;
