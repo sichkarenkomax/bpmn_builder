@@ -85,10 +85,18 @@ import {
   toStyleAttributes,
 } from '../lib/style-extra';
 import {
+  laneBoundsOutsidePoolHeader,
+  moveGroupsToFront,
+  renderFrameBackgrounds,
+  type FrameGraphics,
+} from '../lib/pool-layout';
+import {
   applyAnnotationStyle,
   applyThemeToGfx,
   buildLegendItems,
   hasManualColor,
+  manualFill,
+  manualStroke,
   themeById,
   type ThemeId,
 } from '../lib/diagram-theme';
@@ -205,6 +213,7 @@ interface DiagramElement {
   businessObject: BusinessObject;
   di?: {
     isExpanded?: boolean;
+    isHorizontal?: boolean;
     fontFamily?: string;
     fontSize?: string;
     fontColor?: string;
@@ -659,6 +668,50 @@ function syncRotatedResizers(
       }
     }
   }
+}
+
+/** Стандартный значок заливки — ведро с каплей. */
+function FillColorIcon() {
+  return (
+    <svg
+      className="editor-toolbar__icon"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        fill="currentColor"
+        d="M16.56 8.94 7.62 0 6.21 1.41l2.38 2.38-5.15 5.15a1.49 1.49 0 0 0 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5a1.49 1.49 0 0 0 0-2.12ZM5.21 10 10 5.21 14.79 10H5.21ZM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5Z"
+      />
+    </svg>
+  );
+}
+
+/** Стандартный значок обводки — квадрат с толстым контуром. */
+function StrokeColorIcon() {
+  return (
+    <svg
+      className="editor-toolbar__icon"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect
+        x="3.5"
+        y="3.5"
+        width="17"
+        height="17"
+        rx="2.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+      />
+    </svg>
+  );
 }
 
 /** Значки направления текста: «А» со стрелкой, повёрнутой вместе с текстом. */
@@ -1135,6 +1188,7 @@ interface CopyPasteLike {
 
 interface ClipboardLike {
   isEmpty: () => boolean;
+  get?: () => Record<string, { type?: string; businessObject?: { $type?: string } }[]> | undefined;
 }
 
 interface DirectEditingLike {
@@ -1189,8 +1243,8 @@ function toInspector(element: DiagramElement): InspectorElement {
     collection: loop?.collection ?? '',
     elementVariable: loop?.elementVariable ?? '',
     isExpanded: element.di?.isExpanded ?? true,
-    fillColor: element.di?.get?.('color:background-color') ?? '',
-    strokeColor: element.di?.get?.('color:border-color') ?? '',
+    fillColor: manualFill(element.di) ?? '',
+    strokeColor: manualStroke(element.di) ?? '',
     ...readExtendedStyle(element.di),
     customProperties: (bo.extensionElements?.values ?? [])
       .filter((value) => value.$type === 'camunda:Properties')
@@ -1227,6 +1281,127 @@ function shapeBounds(element: DiagramElement | undefined) {
     return null;
   }
   return { x: element.x, y: element.y, width: element.width, height: element.height };
+}
+
+/**
+ * Bizagi иногда отдаёт дорожку, начинающуюся под заголовком пула. Исправляем
+ * геометрию при открытии, иначе подпись дорожки наезжает на имя участника.
+ */
+function normalizeImportedLaneBounds(modeler: Modeler): boolean {
+  const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+  const modeling = modeler.get<ModelingLike>('modeling');
+  let changed = false;
+  for (const pool of registry.getAll()) {
+    if (pool.type !== 'bpmn:Participant') {
+      continue;
+    }
+    const poolBounds = shapeBounds(pool);
+    if (!poolBounds) {
+      continue;
+    }
+    for (const lane of pool.children ?? []) {
+      if (lane.type !== 'bpmn:Lane') {
+        continue;
+      }
+      const laneBounds = shapeBounds(lane);
+      if (!laneBounds) {
+        continue;
+      }
+      const next = laneBoundsOutsidePoolHeader(
+        { ...poolBounds, isHorizontal: pool.di?.isHorizontal },
+        laneBounds,
+      );
+      if (next) {
+        modeling.resizeShape(lane, next);
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
+/**
+ * Пул и его дорожки — фон: держим их группы ниже всех остальных фигур.
+ *
+ * Перестановки групп мало, когда пулы накладываются друг на друга: фон
+ * верхнего пула всё равно рисуется после задач нижнего. Поэтому непрозрачные
+ * части рам выносим в отдельный нижний слой, а в исходной группе оставляем
+ * только подписи.
+ */
+function syncFrameBackgrounds(modeler: Modeler): void {
+  const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+  const items: FrameGraphics[] = [];
+  for (const element of registry.getAll()) {
+    const gfx = registry.getGraphics(element);
+    if (gfx) {
+      items.push({ type: element.type, gfx });
+    }
+  }
+  renderFrameBackgrounds(items);
+}
+
+/** Пул и его дорожки — фон: держим их группы ниже всех остальных фигур. */
+function sendPoolsBehindElements(modeler: Modeler): void {
+  const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+  const groupsByLayer = new Map<Element, Set<Element>>();
+  for (const element of registry.getAll()) {
+    if (element.type !== 'bpmn:Participant') {
+      continue;
+    }
+    const group = registry.getGraphics(element)?.parentNode;
+    const layer = group?.parentNode;
+    if (group instanceof Element && layer instanceof Element) {
+      const groups = groupsByLayer.get(layer) ?? new Set<Element>();
+      groups.add(group);
+      groupsByLayer.set(layer, groups);
+    }
+  }
+
+  for (const [layer, groups] of groupsByLayer) {
+    moveGroupsToFront(layer, groups);
+  }
+}
+
+/**
+ * Контейнер для вставки под курсором. Корень коллаборации для этого не
+ * подходит: его ребёнок-задача не попадает в процесс и теряется при сохранении.
+ */
+function pasteTargetAt(
+  modeler: Modeler,
+  canvas: CanvasLike,
+  point: { x: number; y: number } | undefined,
+): DiagramElement {
+  const root = canvas.getRootElement();
+  if (root.type !== 'bpmn:Collaboration') {
+    return root;
+  }
+  const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+  const containers = registry
+    .getAll()
+    .filter(
+      (element) =>
+        ['bpmn:Participant', 'bpmn:Lane', 'bpmn:SubProcess'].includes(element.type) &&
+        !(element.type === 'bpmn:SubProcess' && element.di?.isExpanded === false),
+    );
+  const inside = point
+    ? containers
+        .filter((element) => {
+          const { x, y, width, height } = element;
+          return (
+            x !== undefined &&
+            y !== undefined &&
+            width !== undefined &&
+            height !== undefined &&
+            point.x >= x &&
+            point.x <= x + width &&
+            point.y >= y &&
+            point.y <= y + height
+          );
+        })
+        .sort((a, b) => (a.width ?? 0) * (a.height ?? 0) - (b.width ?? 0) * (b.height ?? 0))[0]
+    : undefined;
+  // Вне пулов вставляем в первый пул: так элемент остаётся частью процесса.
+  return inside ?? containers.find((element) => element.type === 'bpmn:Participant') ?? root;
 }
 
 /** Чинит старые ассоциации с диагональными сегментами при открытии схемы. */
@@ -1367,6 +1542,17 @@ export function DiagramEditor({
   const [stagePools, setStagePools] = useState<StagePool[]>([]);
   const [viewbox, setViewbox] = useState({ x: 0, y: 0, width: 0, height: 0, scale: 1 });
   const stageDragRef = useRef<StageDragState | null>(null);
+  const frameBackgroundsRafRef = useRef<number | null>(null);
+
+  const scheduleFrameBackgrounds = (modeler: Modeler) => {
+    if (frameBackgroundsRafRef.current !== null) {
+      return;
+    }
+    frameBackgroundsRafRef.current = window.requestAnimationFrame(() => {
+      frameBackgroundsRafRef.current = null;
+      syncFrameBackgrounds(modeler);
+    });
+  };
 
   const applyAllStyles = (modeler: Modeler) => {
     const registry = modeler.get<ElementRegistryLike>('elementRegistry');
@@ -1385,8 +1571,8 @@ export function DiagramEditor({
       );
       if (hasManualColor(element.di)) {
         // Ручной цвет важнее темы: переносим его в inline-стиль поверх возможного оверрайда.
-        const fill = element.di?.get?.('color:background-color');
-        const stroke = element.di?.get?.('color:border-color');
+        const fill = manualFill(element.di);
+        const stroke = manualStroke(element.di);
         if (element.businessObject.$type === 'bpmn:TextAnnotation') {
           // У аннотации красим фон и скобку отдельно, не превращая её в квадрат.
           applyAnnotationStyle(gfx, { fill, stroke });
@@ -1409,6 +1595,8 @@ export function DiagramEditor({
         });
       }
     }
+    sendPoolsBehindElements(modeler);
+    syncFrameBackgrounds(modeler);
     syncRotatedResizers(
       modeler.get<SelectionLike>('selection').get()[0],
       modeler.get<CanvasLike>('canvas').getLayer('resizers'),
@@ -1424,7 +1612,7 @@ export function DiagramEditor({
       return;
     }
     // Не перекрашиваем то, что пришло с собственным цветом (копии, вставка).
-    if (element.di?.get?.('color:background-color') || element.di?.get?.('color:border-color')) {
+    if (hasManualColor(element.di)) {
       return;
     }
     // setColor — отдельная команда: выполняем после завершения создания элемента.
@@ -2389,6 +2577,24 @@ export function DiagramEditor({
       applyDefaultStyle(event.context?.connection, modeler);
     });
 
+    // bpmn-js переупорядочивает группы по модели уже после commandStack.changed.
+    // Возвращаем пул в начало слоя ещё раз, когда порядок окончательно собран.
+    eventBus.on('elements.changed', 500, () => {
+      sendPoolsBehindElements(modeler);
+      scheduleFrameBackgrounds(modeler);
+    });
+
+    // При перетаскивании/изменении размера рам bpmn-js обновляет их gfx
+    // каждый кадр: фоновый слой должен успевать за геометрией.
+    eventBus.on('element.changed', 500, (event) => {
+      if (
+        event.element?.type &&
+        ['bpmn:Participant', 'bpmn:Lane', 'bpmn:Group'].includes(event.element.type)
+      ) {
+        scheduleFrameBackgrounds(modeler);
+      }
+    });
+
     eventBus.on('commandStack.changed', () => {
       const stack = modeler.get<CommandStackLike>('commandStack');
       setCanUndo(stack.canUndo());
@@ -2451,11 +2657,12 @@ export function DiagramEditor({
           compactBoundaryEvents: stored.compactBoundaryEvents,
         });
         setViewbox(modeler.get<CanvasLike>('canvas').viewbox());
-        const normalized = normalizeImportedAssociations(modeler);
+        const normalized = normalizeImportedLaneBounds(modeler);
+        const normalizedAssociations = normalizeImportedAssociations(modeler);
         applyAllStyles(modeler);
         setReady(true);
         // Миграция диагональных связей — реальное изменение, его нужно сохранить.
-        setSave({ kind: normalized ? 'dirty' : 'saved' });
+        setSave({ kind: normalized || normalizedAssociations ? 'dirty' : 'saved' });
       })
       .catch((reason: unknown) => {
         if (!disposed) {
@@ -2478,6 +2685,10 @@ export function DiagramEditor({
       if (localTimerRef.current !== null) {
         window.clearTimeout(localTimerRef.current);
         localTimerRef.current = null;
+      }
+      if (frameBackgroundsRafRef.current !== null) {
+        window.cancelAnimationFrame(frameBackgroundsRafRef.current);
+        frameBackgroundsRafRef.current = null;
       }
       selectedRef.current = null;
       modelerRef.current = null;
@@ -2730,8 +2941,19 @@ export function DiagramEditor({
     if (!modeler || !canvas) {
       return;
     }
+    const point = pointAtPointer();
     const copyPaste = modeler.get<CopyPasteLike>('copyPaste');
-    copyPaste.paste({ element: canvas.getRootElement(), point: pointAtPointer() });
+    const clipboard = modeler.get<ClipboardLike>('clipboard', false);
+    const copiesPool = Object.values(clipboard?.get?.() ?? {}).some((branch) =>
+      branch.some((entry) => {
+        const type = entry.type ?? entry.businessObject?.$type;
+        return type === 'bpmn:Participant' || type === 'bpmn:Collaboration';
+      }),
+    );
+    copyPaste.paste({
+      element: copiesPool ? canvas.getRootElement() : pasteTargetAt(modeler, canvas, point),
+      point,
+    });
   }, [getCanvas, pointAtPointer]);
 
   const duplicateSelection = useCallback(() => {
@@ -2745,9 +2967,13 @@ export function DiagramEditor({
       return;
     }
     const point = pointAtPointer();
+    const offset = point ? { x: point.x + 20, y: point.y + 20 } : undefined;
+    const copiesPool = elements.some(
+      (element) => element.type === 'bpmn:Participant' || element.type === 'bpmn:Collaboration',
+    );
     modeler.get<CopyPasteLike>('copyPaste').duplicate(elements, {
-      element: canvas.getRootElement(),
-      ...(point ? { point: { x: point.x + 20, y: point.y + 20 } } : {}),
+      element: copiesPool ? canvas.getRootElement() : pasteTargetAt(modeler, canvas, offset),
+      ...(offset ? { point: offset } : {}),
     });
   }, [getCanvas, pointAtPointer]);
 
@@ -3032,8 +3258,8 @@ export function DiagramEditor({
       return;
     }
     const style: ElementStyle = {};
-    const fill = element.di?.get?.('color:background-color');
-    const stroke = element.di?.get?.('color:border-color');
+    const fill = manualFill(element.di);
+    const stroke = manualStroke(element.di);
     if (fill) {
       style.fill = fill;
     }
@@ -3855,7 +4081,7 @@ export function DiagramEditor({
           <div className="editor-toolbar__section" role="group" aria-label="Стиль элементов">
             <span className="editor-toolbar__label">Стиль</span>
             <label className="editor-toolbar__color" title="Заливка">
-              <span aria-hidden="true">З</span>
+              <FillColorIcon />
               <input
                 type="color"
                 aria-label="Заливка"
@@ -3865,7 +4091,7 @@ export function DiagramEditor({
               />
             </label>
             <label className="editor-toolbar__color" title="Обводка">
-              <span aria-hidden="true">О</span>
+              <StrokeColorIcon />
               <input
                 type="color"
                 aria-label="Обводка"

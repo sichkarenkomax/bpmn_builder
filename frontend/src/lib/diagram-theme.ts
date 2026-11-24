@@ -205,15 +205,23 @@ export function themeCategoryFor(type: string): Category {
   return 'task';
 }
 
+type ColorCarrier = { get?: (name: string) => string | undefined } | undefined;
+
+/**
+ * bpmn-js пишет ручной цвет в устаревший `bioc:*`, новые инструменты — в
+ * `color:*` из BPMN in Color. Поддерживаем оба, иначе тема перекрывает цвет.
+ */
+export function manualFill(di: ColorCarrier): string | undefined {
+  return di?.get?.('color:background-color') ?? di?.get?.('bioc:fill');
+}
+
+export function manualStroke(di: ColorCarrier): string | undefined {
+  return di?.get?.('color:border-color') ?? di?.get?.('bioc:stroke');
+}
+
 /** Есть ли у элемента ручной цвет: тогда тема его не трогает (1.3.16). */
-export function hasManualColor(
-  di:
-    | {
-        get?: (name: string) => string | undefined;
-      }
-    | undefined,
-): boolean {
-  return Boolean(di?.get?.('color:background-color') || di?.get?.('color:border-color'));
+export function hasManualColor(di: ColorCarrier): boolean {
+  return Boolean(manualFill(di) || manualStroke(di));
 }
 
 export type LegendItem = { label: string; fill: string; stroke: string };
@@ -246,13 +254,17 @@ export function buildLegendItems(
     const fallback = theme.colors[category];
     seen.set(category, {
       label: LEGEND_LABELS[category],
-      fill: element.di?.get?.('color:background-color') ?? fallback.fill,
-      stroke: element.di?.get?.('color:border-color') ?? fallback.stroke,
+      fill: manualFill(element.di) ?? fallback.fill,
+      stroke: manualStroke(element.di) ?? fallback.stroke,
     });
   }
   return (Object.keys(LEGEND_LABELS) as Category[])
     .filter((category) => seen.has(category))
     .map((category) => seen.get(category)!);
+}
+
+function ownVisual(gfx: SVGGElement | undefined): SVGGElement | null {
+  return gfx?.querySelector<SVGGElement>(':scope > .djs-visual') ?? null;
 }
 
 /**
@@ -263,10 +275,11 @@ export function applyAnnotationStyle(
   gfx: SVGGElement | undefined,
   colors?: { fill?: string; stroke?: string },
 ): void {
-  if (!gfx) {
+  const visual = ownVisual(gfx);
+  if (!visual) {
     return;
   }
-  for (const child of gfx.querySelectorAll<SVGElement>('.djs-visual > *')) {
+  for (const child of visual.querySelectorAll<SVGElement>(':scope > *')) {
     if (child.tagName === 'rect') {
       child.style.fill = colors?.fill || '#f8fafc';
       child.style.stroke = 'none';
@@ -298,6 +311,13 @@ export function applyThemeToGfx(
     return;
   }
 
+  const visual = ownVisual(gfx);
+  // У корня (Process/Collaboration) своего .djs-visual нет: без этой проверки
+  // querySelectorAll зацепил бы визуалы всех фигур диаграммы и перекрасил их.
+  if (!visual) {
+    return;
+  }
+
   // Потоки и ассоциации — линии: заливка им не нужна, а обводка по нотации
   // остаётся чёрной независимо от цветовой темы.
   if (type.endsWith('Flow') || type.endsWith('Association')) {
@@ -305,8 +325,8 @@ export function applyThemeToGfx(
     // Тонкие потоки и чуть плотнее пунктирные ассоциации; ручная толщина
     // из панели «Стиль» важнее.
     const strokeWidth = options?.strokeWidth?.trim() || (isAssociation ? '1' : '0.7');
-    for (const child of gfx.querySelectorAll<SVGElement>('.djs-visual > *')) {
-      if (child instanceof SVGElement && child.tagName !== 'text') {
+    for (const child of visual.querySelectorAll<SVGElement>(':scope > *')) {
+      if (child.tagName !== 'text') {
         child.style.stroke = '#000000';
         child.style.fill = 'none';
         child.style.strokeWidth = strokeWidth;
@@ -340,10 +360,7 @@ export function applyThemeToGfx(
   // Иконка внутри (terminate, error, message…) рисуется следом и должна
   // оставаться обычной толщины.
   let isBorder = isEndEvent;
-  for (const child of gfx.querySelectorAll<SVGElement>('.djs-visual > *')) {
-    if (!(child instanceof SVGElement)) {
-      continue;
-    }
+  for (const child of visual.querySelectorAll<SVGElement>(':scope > *')) {
     if (child.tagName === 'text' || child.classList.contains('djs-label')) {
       continue;
     }

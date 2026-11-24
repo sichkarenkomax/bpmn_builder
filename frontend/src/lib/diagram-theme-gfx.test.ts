@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyThemeToGfx, themeById } from './diagram-theme';
+import { applyThemeToGfx, manualFill, manualStroke, themeById } from './diagram-theme';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -92,6 +92,27 @@ describe('applyThemeToGfx', () => {
     const gfx = makeGfx(['circle']);
     applyThemeToGfx(gfx, 'bpmn:EndEvent', themeById('colored'), { strokeWidth: '2' });
     expect(gfx.querySelector('circle')?.style.strokeWidth).toBe('');
+  });
+
+  it('не перекрашивает фигуры через корневую группу диаграммы', () => {
+    const rootGfx = document.createElementNS(SVG_NS, 'g') as SVGGElement;
+    const taskGfx = makeGfx(['rect']);
+    rootGfx.append(taskGfx);
+    const rect = taskGfx.querySelector('rect')!;
+    rect.style.fill = '#22c55e';
+
+    applyThemeToGfx(rootGfx, 'bpmn:Collaboration', themeById('colored'));
+
+    expect(rect.style.fill).toBe('#22c55e');
+  });
+
+  it('читает ручной цвет в старом формате bioc', () => {
+    const di = {
+      get: (name: string) =>
+        ({ 'bioc:fill': '#22c55e', 'bioc:stroke': '#166534' })[name] as string | undefined,
+    };
+    expect(manualFill(di)).toBe('#22c55e');
+    expect(manualStroke(di)).toBe('#166534');
   });
 
   it('в чёрно-белой теме делает заливку белой, а границы чёрными', () => {
