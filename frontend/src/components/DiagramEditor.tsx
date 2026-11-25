@@ -38,10 +38,12 @@ import {
   fetchExportJob,
   fetchValidation,
   saveDiagramXml,
+  simulateDiagram,
   updateComment,
   type DiagramComment,
   type ExportJobSummary,
   type ServerExportFormat,
+  type SimulationReport,
   type ValidationFinding,
   type ValidationReport,
 } from '../lib/api';
@@ -115,6 +117,7 @@ import {
 import bsModdle from '../lib/bs-moddle.json';
 import { attributeTypeForXml, parseAttributeType } from '../lib/attributes';
 import { savePortalDefaults } from '../lib/portal-defaults';
+import { loadTypePaletteEnabled, saveTypePaletteEnabled } from '../lib/type-palette';
 import { isElementLocked } from '../lib/lock';
 import {
   clearLocalDraft,
@@ -154,6 +157,8 @@ import {
 import { ContextMenu, type ContextMenuItem, type ContextMenuState } from './ContextMenu';
 import { ReplaceMenu, type ReplaceEntry, type ReplaceMenuState } from './ReplaceMenu';
 import { StageBands } from './StageBands';
+import { StageDocumentationDialog } from './StageDocumentationDialog';
+import { SimulationPanel } from './SimulationPanel';
 import {
   collectStagePools,
   createStage,
@@ -247,6 +252,8 @@ interface CanvasLike {
   findRoot: (id: string) => DiagramElement | undefined;
   scrollToElement: (element: DiagramElement, padding?: number) => void;
   viewbox: () => { x: number; y: number; width: number; height: number; scale: number };
+  addMarker?: (element: DiagramElement, className: string) => void;
+  removeMarker?: (element: DiagramElement, className: string) => void;
 }
 
 interface ModelingLike {
@@ -1470,6 +1477,10 @@ export function DiagramEditor({
   const [canRedo, setCanRedo] = useState(false);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [replaceMenu, setReplaceMenu] = useState<ReplaceMenuState | null>(null);
+  const [replaceInline, setReplaceInline] = useState(false);
+  const [typePaletteEnabled, setTypePaletteEnabled] = useState<boolean>(() =>
+    loadTypePaletteEnabled(),
+  );
   const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => loadShortcuts());
   const [autosaveSeconds, setAutosaveSeconds] = useState<number>(() => loadAutosaveSeconds());
   const [markdownToolbar, setMarkdownToolbar] = useState<boolean>(() =>
@@ -1542,6 +1553,16 @@ export function DiagramEditor({
   } | null>(null);
   const [stages, setStages] = useState<DiagramStage[]>([]);
   const [stagePools, setStagePools] = useState<StagePool[]>([]);
+  const [docsStage, setDocsStage] = useState<DiagramStage | null>(null);
+  const [simulationOpen, setSimulationOpen] = useState(false);
+  const [simulation, setSimulation] = useState<SimulationReport | null>(null);
+  const [simulationChoices, setSimulationChoices] = useState<Record<string, string>>({});
+  const [simulationIndex, setSimulationIndex] = useState(0);
+  const [simulationPlaying, setSimulationPlaying] = useState(false);
+  const [simulationSpeed, setSimulationSpeed] = useState(1);
+  const [simulationBusy, setSimulationBusy] = useState(false);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+  const simulationAbortRef = useRef<AbortController | null>(null);
   const [viewbox, setViewbox] = useState({ x: 0, y: 0, width: 0, height: 0, scale: 1 });
   const stageDragRef = useRef<StageDragState | null>(null);
   const frameBackgroundsRafRef = useRef<number | null>(null);
@@ -1929,6 +1950,96 @@ export function DiagramEditor({
       refreshResizeHandles(modeler);
     }
   };
+
+  const runSimulation = useCallback(
+    async (choices: Record<string, string> = {}) => {
+      simulationAbortRef.current?.abort();
+      const controller = new AbortController();
+      simulationAbortRef.current = controller;
+      setSimulationBusy(true);
+      setSimulationError(null);
+      setSimulationPlaying(false);
+      setSimulationChoices(choices);
+      try {
+        const report = await simulateDiagram(diagramId, {}, choices, controller.signal);
+        setSimulation(report);
+        setSimulationIndex(0);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setSimulation(null);
+        const detail = error instanceof ApiError ? error.detail : undefined;
+        const nested =
+          detail && typeof detail === 'object' && 'detail' in detail
+            ? (detail as { detail?: { message?: string } }).detail
+            : undefined;
+        setSimulationError(
+          nested?.message ?? (error instanceof Error ? error.message : 'симуляция не удалась'),
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setSimulationBusy(false);
+        }
+      }
+    },
+    [diagramId],
+  );
+
+  // Ветка, которую не определить по условию, выбирается вручную в панели.
+  const chooseSimulationBranch = (flowId: string) => {
+    const decision = simulation?.decision;
+    if (!decision) {
+      return;
+    }
+    void runSimulation({ ...simulationChoices, [decision.node_id]: flowId });
+  };
+
+  // Автопроигрывание журнала: один шаг раз в 900 мс, скорость — множитель.
+  useEffect(() => {
+    if (!simulationPlaying || !simulation || simulation.steps.length === 0) {
+      return;
+    }
+    if (simulationIndex >= simulation.steps.length - 1) {
+      setSimulationPlaying(false);
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setSimulationIndex((current) => Math.min(current + 1, simulation.steps.length - 1)),
+      900 / simulationSpeed,
+    );
+    return () => window.clearTimeout(timer);
+  }, [simulationPlaying, simulation, simulationIndex, simulationSpeed]);
+
+  // Подсветка: пройденный путь — visited, текущий шаг — active.
+  useEffect(() => {
+    const modeler = modelerRef.current;
+    if (!modeler || !ready) {
+      return;
+    }
+    const canvas = modeler.get<CanvasLike>('canvas');
+    const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+    const marked: DiagramElement[] = [];
+    if (simulationOpen && simulation) {
+      simulation.steps.slice(0, simulationIndex + 1).forEach((step, index) => {
+        const element = registry.get(step.node_id);
+        if (!element) {
+          return;
+        }
+        canvas.addMarker?.(
+          element,
+          index === simulationIndex ? 'bpmn-sim-active' : 'bpmn-sim-visited',
+        );
+        marked.push(element);
+      });
+    }
+    return () => {
+      for (const element of marked) {
+        canvas.removeMarker?.(element, 'bpmn-sim-active');
+        canvas.removeMarker?.(element, 'bpmn-sim-visited');
+      }
+    };
+  }, [simulationOpen, simulation, simulationIndex, ready]);
 
   const updateStages = (next: DiagramStage[]) => {
     setStages(next);
@@ -3058,6 +3169,8 @@ export function DiagramEditor({
             const entries = Object.values(provider.getPopupMenuEntries(element));
             if (entries.length > 0) {
               const point = pointerRef.current ?? { x: 240, y: 160 };
+              setMenu(null);
+              setReplaceInline(false);
               setReplaceMenu({ x: point.x, y: point.y, entries });
             }
           } catch {
@@ -3466,17 +3579,23 @@ export function DiagramEditor({
         });
       }
 
-      if (replaceEntries.length > 0) {
+      // Настройка выключена: палитра не показывается сразу, но остаётся
+      // доступной пунктом «Сменить тип».
+      if (replaceEntries.length > 0 && !typePaletteEnabled) {
         items.push({
           id: 'replace',
           label: 'Сменить тип',
           icon: '⟳',
-          onSelect: () =>
+          keepOpen: true,
+          onSelect: () => {
+            setMenu(null);
+            setReplaceInline(false);
             setReplaceMenu({
               x: event.clientX,
               y: event.clientY,
               entries: replaceEntries,
-            }),
+            });
+          },
         });
       }
 
@@ -3645,7 +3764,18 @@ export function DiagramEditor({
           onSelect: () => executeAction('delete'),
         },
       );
+
+      // Палитра смены типа открывается сразу вместе с ПКМ-меню (1.5.8).
+      if (replaceEntries.length > 0 && typePaletteEnabled) {
+        setReplaceInline(true);
+        setReplaceMenu({ x: event.clientX, y: event.clientY, entries: replaceEntries });
+      } else {
+        setReplaceInline(false);
+        setReplaceMenu(null);
+      }
     } else {
+      setReplaceInline(false);
+      setReplaceMenu(null);
       items = [
         {
           id: 'paste',
@@ -3855,6 +3985,26 @@ export function DiagramEditor({
             >
               {validationStatusLabel}
             </span>
+            <button
+              type="button"
+              className={
+                simulationOpen
+                  ? 'ghost-button ghost-button--small ghost-button--active'
+                  : 'ghost-button ghost-button--small'
+              }
+              title="Симуляция процесса: прогон токена по схеме"
+              aria-label="Симуляция процесса"
+              aria-pressed={simulationOpen}
+              onClick={() => {
+                setSimulationOpen((value) => !value);
+                if (!simulation) {
+                  void runSimulation();
+                }
+              }}
+            >
+              <span aria-hidden="true">▶</span>
+              <span className="ghost-button__label">Симуляция</span>
+            </button>
           </div>
 
           <div className="editor-toolbar__section" role="group" aria-label="Панели">
@@ -4227,6 +4377,7 @@ export function DiagramEditor({
             onToggle={toggleStage}
             onAdd={(stage) => addStageToPool(stage.poolId)}
             onRename={renameStage}
+            onDocumentation={setDocsStage}
             onResizePreview={previewStageResize}
             onResizeCommit={commitStageResize}
             onResizeCancel={cancelStageResize}
@@ -4258,6 +4409,31 @@ export function DiagramEditor({
               onDownload={() => void downloadReport()}
               downloading={reportDownloading}
               onClose={() => setProblemsOpen(false)}
+            />
+          ) : null}
+          {simulationOpen ? (
+            <SimulationPanel
+              report={simulation}
+              index={simulationIndex}
+              playing={simulationPlaying}
+              speed={simulationSpeed}
+              busy={simulationBusy}
+              error={simulationError}
+              onRun={() => void runSimulation()}
+              onChooseBranch={chooseSimulationBranch}
+              onStep={(next) => {
+                if (!simulation) {
+                  return;
+                }
+                setSimulationPlaying(false);
+                setSimulationIndex(Math.max(0, Math.min(next, simulation.steps.length - 1)));
+              }}
+              onTogglePlay={() => setSimulationPlaying((value) => !value)}
+              onSpeedChange={setSimulationSpeed}
+              onClose={() => {
+                setSimulationOpen(false);
+                setSimulationPlaying(false);
+              }}
             />
           ) : null}
           {commentsOpen ? (
@@ -4354,8 +4530,36 @@ export function DiagramEditor({
         }}
         onClose={() => setAnchorEditor(null)}
       />
-      <ContextMenu menu={menu} onClose={() => setMenu(null)} />
-      <ReplaceMenu menu={replaceMenu} onClose={() => setReplaceMenu(null)} />
+      <ContextMenu
+        menu={menu}
+        onClose={() => {
+          setMenu(null);
+          setReplaceMenu(null);
+          setReplaceInline(false);
+        }}
+        aside={
+          replaceInline && replaceMenu ? (
+            <ReplaceMenu
+              menu={replaceMenu}
+              inline
+              onClose={() => {
+                setReplaceMenu(null);
+                setReplaceInline(false);
+                setMenu(null);
+              }}
+            />
+          ) : undefined
+        }
+      />
+      {!replaceInline ? (
+        <ReplaceMenu
+          menu={replaceMenu}
+          onClose={() => {
+            setReplaceMenu(null);
+            setReplaceInline(false);
+          }}
+        />
+      ) : null}
       <ExportDialog
         open={exportOpen}
         diagramId={diagramId}
@@ -4375,10 +4579,23 @@ export function DiagramEditor({
         onCanvasChange={updateCanvasTheme}
         onClose={() => setThemeOpen(false)}
       />
+      <StageDocumentationDialog
+        stage={docsStage}
+        onSave={(stage, description) => {
+          const value = description.trim();
+          updateStages(
+            stages.map((item) =>
+              item.id === stage.id ? { ...item, description: value || undefined } : item,
+            ),
+          );
+        }}
+        onClose={() => setDocsStage(null)}
+      />
       <DiagramResizeSettings
         open={resizeSettingsOpen}
         resizeTasks={resizeSettings.tasks}
         resizeOthers={resizeSettings.others}
+        compactBoundaryEvents={resizeSettings.compactBoundaryEvents}
         onResizeChange={updateResizeSettings}
         onSavePortalDefaults={() => {
           savePortalDefaults({
@@ -4386,6 +4603,7 @@ export function DiagramEditor({
             canvas: canvasTheme,
             resizeTasks: resizeSettings.tasks,
             resizeOthers: resizeSettings.others,
+            compactBoundaryEvents: resizeSettings.compactBoundaryEvents,
           });
           notify('success', 'Значения сохранены для новых схем');
         }}
@@ -4405,6 +4623,13 @@ export function DiagramEditor({
         }
         mouseMode={mouseMode}
         onMouseModeChange={(mode) => setMouseMode(saveCanvasMouseMode(mode))}
+        typePalette={typePaletteEnabled}
+        onTypePaletteChange={(enabled) => {
+          setTypePaletteEnabled(saveTypePaletteEnabled(enabled));
+          if (!enabled) {
+            setReplaceMenu(null);
+          }
+        }}
         onClose={() => setSettingsOpen(false)}
       />
     </div>

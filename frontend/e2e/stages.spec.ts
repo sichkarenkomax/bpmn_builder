@@ -148,6 +148,68 @@ test('этапы: параметр пула, добавление через «+
   }
 });
 
+test('документация этапа: Markdown из кнопки и ПКМ, сохранение и просмотр (1.5.7)', async ({
+  page,
+  request,
+}) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E stage docs ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const pool = page.locator('[data-element-id="Pool_1"]').first();
+    await expect(pool).toBeVisible();
+    await pool.click({ position: { x: 10, y: 30 } });
+    await page.getByRole('button', { name: 'Свойства', exact: true }).click();
+    await page.getByRole('checkbox', { name: /^Этапы/ }).check();
+
+    const band = page.locator('.stage-band').first();
+    await expect(band).toBeVisible();
+
+    // ПКМ по названию этапа открывает меню с документацией.
+    await band.locator('.stage-band__name').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Документация этапа…' }).click();
+    const dialog = page.getByRole('dialog', { name: /Документация этапа/ });
+    await expect(dialog).toBeVisible();
+    await dialog.locator('textarea').fill('## Согласование\n\nМинимум **два** согласующих.');
+    await dialog.getByRole('button', { name: 'Сохранить' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(band.locator('.stage-band__docs')).toHaveAttribute('title', /Минимум/);
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes(`/diagrams/${diagram.id}/bpmn`) &&
+          response.request().method() === 'PUT' &&
+          response.ok(),
+      ),
+      page.keyboard.press('ControlOrMeta+s'),
+    ]);
+    const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
+    expect(xml).toContain('Минимум');
+
+    // После перезагрузки Markdown остался в bs:stages и виден в подсказке.
+    await page.reload();
+    const reloaded = page.locator('.stage-band').first();
+    await expect(reloaded.locator('.stage-band__docs')).toHaveAttribute('title', /\*\*два\*\*/);
+
+    // Пустое значение очищает документацию и возвращает подсказку по умолчанию.
+    await reloaded.locator('.stage-band__docs').click();
+    const reopened = page.getByRole('dialog', { name: /Документация этапа/ });
+    await reopened.locator('textarea').fill('');
+    await reopened.getByRole('button', { name: 'Сохранить' }).click();
+    await expect(reloaded.locator('.stage-band__docs')).toHaveAttribute(
+      'title',
+      'Документация этапа',
+    );
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
 test('этапы: элементы сдвигаются вместе с границей этапа', async ({ page, request }) => {
   const created = await request.post(`${API}/diagrams`, {
     data: { title: `E2E stages move ${Date.now()}`, bpmn_xml: sampleXml },

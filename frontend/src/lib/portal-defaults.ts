@@ -8,6 +8,7 @@
  */
 
 import {
+  DEFAULT_COMPACT_BOUNDARY_EVENTS,
   DEFAULT_RESIZE_OTHERS,
   DEFAULT_RESIZE_TASKS,
   diagramSettingsProperties,
@@ -20,6 +21,7 @@ export type PortalDefaults = {
   canvas: CanvasTheme;
   resizeTasks: boolean;
   resizeOthers: boolean;
+  compactBoundaryEvents: boolean;
 };
 
 export const PORTAL_DEFAULTS_STORAGE_KEY = 'bpmn-studio.portal-defaults';
@@ -32,6 +34,7 @@ export const DEFAULT_PORTAL_SETTINGS: PortalDefaults = {
   canvas: 'light',
   resizeTasks: DEFAULT_RESIZE_TASKS,
   resizeOthers: DEFAULT_RESIZE_OTHERS,
+  compactBoundaryEvents: DEFAULT_COMPACT_BOUNDARY_EVENTS,
 };
 
 export function loadPortalDefaults(): PortalDefaults {
@@ -52,6 +55,10 @@ export function loadPortalDefaults(): PortalDefaults {
         typeof parsed.resizeOthers === 'boolean'
           ? parsed.resizeOthers
           : DEFAULT_PORTAL_SETTINGS.resizeOthers,
+      compactBoundaryEvents:
+        typeof parsed.compactBoundaryEvents === 'boolean'
+          ? parsed.compactBoundaryEvents
+          : DEFAULT_PORTAL_SETTINGS.compactBoundaryEvents,
     };
   } catch {
     return DEFAULT_PORTAL_SETTINGS;
@@ -73,6 +80,7 @@ export function withPortalDefaults(xml: string, settings = loadPortalDefaults())
     canvas: settings.canvas,
     resizeTasks: settings.resizeTasks,
     resizeOthers: settings.resizeOthers,
+    compactBoundaryEvents: settings.compactBoundaryEvents,
   });
   const attributes = Object.entries(properties)
     .filter(([, value]) => value !== undefined)
