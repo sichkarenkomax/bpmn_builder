@@ -173,3 +173,39 @@ test('симуляция: ветку без условия выбирают вр
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }
 });
+
+test('симуляция: таймер ждёт свою длительность', async ({ page, request }) => {
+  const timerXml = readFileSync('e2e/fixtures/timer.bpmn', 'utf8');
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E timer ${Date.now()}`, bpmn_xml: timerXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    await expect(page.locator('[data-element-id="Wait_Timer"]').first()).toBeVisible();
+
+    await page.getByRole('button', { name: 'Симуляция процесса' }).click();
+    const panel = page.getByRole('complementary', { name: 'Симуляция процесса' });
+    await expect(panel.getByRole('status')).toContainText('Завершено: 3 шагов');
+
+    // Шаг таймера показывает выражение и держит токен на событии.
+    await panel.getByRole('button', { name: 'Следующий шаг' }).click();
+    await expect(panel.locator('.simulation-panel__current')).toContainText(
+      'ожидание таймера: PT2S',
+    );
+    await expectTokenAt(page, 'Wait_Timer');
+
+    // На скорости 2× ожидание PT2S — секунда: сразу шаг не перескакивает.
+    await panel.getByLabel('Скорость').selectOption('2');
+    await panel.getByRole('button', { name: 'Играть' }).click();
+    await page.waitForTimeout(400);
+    await expect(panel.locator('.simulation-panel__current')).toContainText('Пауза');
+    await expect(panel.locator('.simulation-panel__current')).toContainText('Готово', {
+      timeout: 3000,
+    });
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});

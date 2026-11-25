@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from app.bpmn import BpmnDocument, parse_bpmn
+from app.bpmn import BpmnDocument, parse_bpmn, serialize_bpmn
+from app.bpmn.model import TimerDefinition, TimerKind
 from app.simulation import ExpressionError, SimulationError, evaluate_condition, simulate
 from app.simulation.expressions import ExpressionError as ExpressionErrorDirect
+from app.simulation.timers import parse_duration_ms, timer_wait_ms
 from httpx import AsyncClient
 
 API = "/api/v1"
@@ -216,6 +218,81 @@ def test_bad_condition_and_step_limit_are_reported() -> None:
     )
     with pytest.raises(SimulationError, match="цикл"):
         simulate(loop, max_steps=20)
+
+
+# --- таймеры ---------------------------------------------------------------
+
+
+def timer_body(kind: str = "timeDuration", value: str = "PT1H30M") -> str:
+    return f"""
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:intermediateCatchEvent id="Wait" name="Пауза">
+      <bpmn:incoming>F1</bpmn:incoming>
+      <bpmn:outgoing>F2</bpmn:outgoing>
+      <bpmn:timerEventDefinition><bpmn:{kind}>{value}</bpmn:{kind}>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Wait" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Wait" targetRef="End" />
+  </bpmn:process>"""
+
+
+def test_timer_definition_parsed_and_serialized() -> None:
+    document = parse_bpmn(xml(timer_body()))
+    wait = next(node for node in document.nodes() if node.id == "Wait")
+    assert wait.timer == TimerDefinition(kind=TimerKind.DURATION, expression="PT1H30M")
+
+    restored = parse_bpmn(serialize_bpmn(document.detached()))
+    wait = next(node for node in restored.nodes() if node.id == "Wait")
+    assert wait.timer == TimerDefinition(kind=TimerKind.DURATION, expression="PT1H30M")
+
+
+def test_empty_timer_definition_is_ignored() -> None:
+    document = parse_bpmn(xml(timer_body("timeDate", "")))
+    wait = next(node for node in document.nodes() if node.id == "Wait")
+    assert wait.timer is None
+
+
+@pytest.mark.parametrize(
+    ("expression", "expected"),
+    [
+        ("PT45S", 45_000),
+        ("PT1H30M", 5_400_000),
+        ("P1DT2H", 93_600_000),
+        ("P1W", 604_800_000),
+        ("PT0,5S", 500),
+        ("P", None),
+        ("PT", None),
+        ("1 hour", None),
+    ],
+)
+def test_parse_duration_ms(expression: str, expected: int | None) -> None:
+    assert parse_duration_ms(expression) == expected
+
+
+def test_timer_step_waits_for_duration() -> None:
+    report = simulate(document(timer_body()))
+    assert report.completed is True
+    wait = next(step for step in report.steps if step.node_id == "Wait")
+    assert wait.action == "waiting"
+    assert wait.wait_ms == 5_400_000
+    assert wait.message == "ожидание таймера: PT1H30M"
+
+
+def test_timer_date_has_no_wait_but_still_waits() -> None:
+    report = simulate(document(timer_body("timeDate", "2026-12-31T23:59:59Z")))
+    assert report.completed is True
+    wait = next(step for step in report.steps if step.node_id == "Wait")
+    assert wait.action == "waiting"
+    assert wait.wait_ms is None
+
+
+def test_timer_wait_ms_ignores_non_duration() -> None:
+    timer = TimerDefinition(kind=TimerKind.CYCLE, expression="R3/PT10M")
+    assert timer_wait_ms(timer) is None
+    assert timer_wait_ms(None) is None
 
 
 # --- API -------------------------------------------------------------------

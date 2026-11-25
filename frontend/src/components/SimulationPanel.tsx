@@ -186,7 +186,9 @@ export function SimulationPanel({
             <p className="simulation-panel__current">
               Шаг {currentStep.index}/{total}:{' '}
               <strong>{currentStep.node_name || currentStep.node_id}</strong>
-              {currentStep.action === 'waiting' ? ' · ожидание веток' : ''}
+              {currentStep.action === 'waiting'
+                ? ` · ${currentStep.message ?? 'ожидание веток'}`
+                : ''}
             </p>
           ) : null}
 

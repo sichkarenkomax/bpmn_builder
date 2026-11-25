@@ -42,6 +42,8 @@ class SimulationStep(BaseModel):
     action: SimulationStepAction
     flow_id: str | None = None
     message: str | None = None
+    #: Сколько симуляция ждёт на таймере (`timeDuration`), мс.
+    wait_ms: int | None = Field(default=None, ge=0)
 
 
 class SimulationBranch(BaseModel):
