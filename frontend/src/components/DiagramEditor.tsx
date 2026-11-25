@@ -2015,6 +2015,8 @@ export function DiagramEditor({
   };
 
   // Автопроигрывание журнала: один шаг раз в 900 мс, скорость — множитель.
+  // На шаге таймера ждём его длительность, но не дольше 3 с: час ожидания
+  // в симуляции не должен останавливать просмотр.
   useEffect(() => {
     if (!simulationPlaying || !simulation || simulation.steps.length === 0) {
       return;
@@ -2023,9 +2025,10 @@ export function DiagramEditor({
       setSimulationPlaying(false);
       return;
     }
+    const waitMs = Math.min(simulation.steps[simulationIndex]?.wait_ms ?? 0, 3000);
     const timer = window.setTimeout(
       () => setSimulationIndex((current) => Math.min(current + 1, simulation.steps.length - 1)),
-      900 / simulationSpeed,
+      Math.max(900, waitMs) / simulationSpeed,
     );
     return () => window.clearTimeout(timer);
   }, [simulationPlaying, simulation, simulationIndex, simulationSpeed]);

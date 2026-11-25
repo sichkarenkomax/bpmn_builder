@@ -194,6 +194,9 @@ def _emit_node(parent: etree._Element, node: Node) -> None:
             element.set("scriptFormat", node.script_format)
         if node.script is not None:
             _sub(element, "script").text = node.script
+    if node.timer is not None:
+        definition = _sub(element, "timerEventDefinition")
+        _sub(definition, node.timer.kind.value).text = node.timer.expression
 
 
 def _emit_flow(parent: etree._Element, flow: Flow) -> None:

@@ -23,6 +23,8 @@ from app.bpmn.model import (
     NodeType,
     Participant,
     Process,
+    TimerDefinition,
+    TimerKind,
     Waypoint,
 )
 from app.bpmn.namespaces import BPMN, BPMNDI, DC, DI, q
@@ -35,6 +37,7 @@ _BOUNDS = q(DC, "Bounds")
 _WAYPOINT = q(DI, "waypoint")
 
 _NODE_TYPES = {node_type.value: node_type for node_type in NodeType}
+_TIMER_KINDS = {kind.value: kind for kind in TimerKind}
 _ARTIFACT_TYPES = {artifact_type.value: artifact_type for artifact_type in ArtifactType}
 
 
@@ -255,7 +258,21 @@ def _parse_node(element: etree._Element, node_type: NodeType, di: _DiIndex) -> N
         script_format=element.get("scriptFormat"),
         script=script.text if script is not None and script.text else None,
         default_flow=element.get("default"),
+        timer=_parse_timer(element),
     )
+
+
+def _parse_timer(element: etree._Element) -> TimerDefinition | None:
+    """Достаёт `timeDuration`/`timeDate`/`timeCycle` из timerEventDefinition."""
+    definition = element.find(q(BPMN, "timerEventDefinition"))
+    if definition is None:
+        return None
+    for child in definition:
+        local = etree.QName(child).localname
+        text = child.text.strip() if child.text else ""
+        if local in _TIMER_KINDS and text:
+            return TimerDefinition(kind=_TIMER_KINDS[local], expression=text)
+    return None
 
 
 def _parse_flow(element: etree._Element, flow_type: FlowType, di: _DiIndex) -> Flow:

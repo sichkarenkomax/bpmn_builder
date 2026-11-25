@@ -116,6 +116,7 @@ export interface SimulationStep {
   action: 'completed' | 'waiting';
   flow_id: string | null;
   message: string | null;
+  wait_ms: number | null;
 }
 
 export interface SimulationBranch {

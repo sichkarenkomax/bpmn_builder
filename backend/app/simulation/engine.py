@@ -5,9 +5,10 @@
 шлюзы. Условия на потоках вычисляются безопасным `evaluate_condition`, без
 `eval`. Если условие не задано, ссылается на неизвестную переменную или ни одна
 ветка не подошла, прогон останавливается с `decision`: ветку выбирает
-пользователь, а повторный запуск получает выбор в `choices`. Таймеры и
-промежуточные события считаются «ручным шагом» — токен проходит дальше;
-подпроцессы не раскрываются. Эти ограничения — граница первого среза `v0.3`.
+пользователь, а повторный запуск получает выбор в `choices`. Таймер события
+даёт шаг `waiting` с `wait_ms` (для `timeDuration`), остальные промежуточные
+события считаются «ручным шагом» — токен проходит дальше; подпроцессы не
+раскрываются. Эти ограничения — граница первого среза `v0.3`.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from app.simulation.expressions import (
     MissingVariableError,
     evaluate_condition,
 )
+from app.simulation.timers import timer_wait_ms
 
 
 class SimulationError(ValueError):
@@ -148,6 +150,14 @@ class _Runner:
                 return
             self._arrivals[node.id] = set()
             self._log(token, node, "completed", message="ветки синхронизированы")
+        elif node.timer is not None:
+            self._log(
+                token,
+                node,
+                "waiting",
+                message=f"ожидание таймера: {node.timer.expression}",
+                wait_ms=timer_wait_ms(node.timer),
+            )
         else:
             self._log(token, node, "completed")
 
@@ -297,6 +307,7 @@ class _Runner:
         node: Node,
         action: SimulationStepAction,
         message: str | None = None,
+        wait_ms: int | None = None,
     ) -> None:
         self._steps.append(
             SimulationStep(
@@ -308,6 +319,7 @@ class _Runner:
                 action=action,
                 flow_id=token.from_flow,
                 message=message,
+                wait_ms=wait_ms,
             )
         )
 
