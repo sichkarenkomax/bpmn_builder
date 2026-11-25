@@ -254,6 +254,7 @@ def _parse_node(element: etree._Element, node_type: NodeType, di: _DiIndex) -> N
         implementation=element.get("implementation"),
         script_format=element.get("scriptFormat"),
         script=script.text if script is not None and script.text else None,
+        default_flow=element.get("default"),
     )
 
 

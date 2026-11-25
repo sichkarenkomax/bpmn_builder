@@ -15,7 +15,7 @@ async def test_liveness_reports_service(client: AsyncClient) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["service"] == "bpmn-studio"
-    assert body["version"] == "0.1.0"
+    assert body["version"] == "0.2.0"
 
 
 async def test_readiness_ok_when_dependencies_up(

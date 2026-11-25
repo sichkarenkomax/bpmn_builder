@@ -18,6 +18,8 @@ export function ProblemsPanel({
   busy,
   error,
   onSelect,
+  onDownload,
+  downloading,
   onClose,
 }: {
   report: ValidationReport | null;
@@ -25,6 +27,8 @@ export function ProblemsPanel({
   busy: boolean;
   error: string | null;
   onSelect: (finding: ValidationFinding) => void;
+  onDownload: () => void;
+  downloading: boolean;
   onClose: () => void;
 }) {
   const [filters, setFilters] = useState<Record<Severity, boolean>>({
@@ -71,10 +75,32 @@ export function ProblemsPanel({
               : 'проверка схемы'}
           </p>
         </div>
-        <button type="button" className="ghost-button ghost-button--small" onClick={onClose}>
-          Закрыть
-        </button>
+        <div className="problems-panel__actions">
+          <button
+            type="button"
+            className="ghost-button ghost-button--small"
+            disabled={!report || downloading}
+            title="Скачать отчёт проверки в DOCX"
+            onClick={onDownload}
+          >
+            {downloading ? 'Отчёт…' : 'DOCX'}
+          </button>
+          <button type="button" className="ghost-button ghost-button--small" onClick={onClose}>
+            Закрыть
+          </button>
+        </div>
       </header>
+
+      {report?.config_errors?.length ? (
+        <div className="problems-panel__config" role="status">
+          <strong>Конфиг правил</strong>
+          <ul>
+            {report.config_errors.map((message) => (
+              <li key={message}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="problems-panel__filters" aria-label="Фильтр по важности">
         {SEVERITIES.map((severity) => {

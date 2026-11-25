@@ -46,6 +46,7 @@ export interface ValidationReport {
   findings: ValidationFinding[];
   duration_ms: number;
   schema_version: string;
+  config_errors?: string[];
 }
 
 export const API_BASE: string =
@@ -101,7 +102,15 @@ export function fetchVersions(id: string, signal?: AbortSignal): Promise<Version
 }
 
 export function fetchValidation(id: string, signal?: AbortSignal): Promise<ValidationReport> {
-  return request<ValidationReport>(`/diagrams/${id}/validation`, { signal });
+  return request<ValidationReport>(`/diagrams/${id}/validate`, { method: 'POST', signal });
+}
+
+export async function downloadValidationReport(id: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/diagrams/${id}/validation/report.docx`);
+  if (!response.ok) {
+    throw new ApiError(response.status, `Отчёт вернул ${response.status}`);
+  }
+  return response.blob();
 }
 
 export async function saveDiagramXml(

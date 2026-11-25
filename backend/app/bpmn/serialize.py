@@ -38,6 +38,7 @@ _FLOW_ELEMENT_TYPES = {
     NodeType.EXCLUSIVE_GATEWAY,
     NodeType.PARALLEL_GATEWAY,
     NodeType.INCLUSIVE_GATEWAY,
+    NodeType.EVENT_BASED_GATEWAY,
     NodeType.SUB_PROCESS,
 }
 
@@ -182,6 +183,8 @@ def _emit_node(parent: etree._Element, node: Node) -> None:
         element.set("attachedToRef", node.attached_to or "")
         if node.cancel_activity is not None:
             element.set("cancelActivity", _bool(node.cancel_activity))
+    if node.default_flow:
+        element.set("default", node.default_flow)
     if node.type is NodeType.SERVICE_TASK and node.implementation:
         element.set("implementation", node.implementation)
     if node.type is NodeType.SCRIPT_TASK:

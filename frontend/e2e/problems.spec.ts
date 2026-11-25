@@ -19,7 +19,7 @@ test('ручной режим проверки: без автозапуска, �
   const diagram = (await created.json()) as { id: string };
   const validationRequests: string[] = [];
   page.on('request', (event) => {
-    if (event.url().includes('/api/v1/') && event.url().includes('/validation')) {
+    if (event.url().includes('/api/v1/') && event.url().includes('/validate')) {
       validationRequests.push(event.url());
     }
   });
@@ -45,8 +45,7 @@ test('ручной режим проверки: без автозапуска, �
 
     await Promise.all([
       page.waitForResponse(
-        (response) =>
-          response.url().includes(`/diagrams/${diagram.id}/validation`) && response.ok(),
+        (response) => response.url().includes(`/diagrams/${diagram.id}/validate`) && response.ok(),
       ),
       page.getByRole('button', { name: 'Проверить схему' }).click(),
     ]);
@@ -66,6 +65,29 @@ test('ручной режим проверки: без автозапуска, �
     await page.reload();
     await expect(status).toContainText('Не проверялось');
     expect(validationRequests).toHaveLength(0);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('DOCX-отчёт скачивается из панели проблем', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E validation report ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    await expect(page.locator('.validation-status')).toContainText('Актуально', {
+      timeout: 15_000,
+    });
+    await page.getByRole('button', { name: /^Проблемы/ }).click();
+    const panel = page.getByRole('region', { name: 'Проблемы' });
+    const downloadPromise = page.waitForEvent('download');
+    await panel.getByRole('button', { name: 'DOCX' }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toContain('validation.docx');
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }
@@ -113,8 +135,7 @@ test('ошибка валидации: панель, переход к элем�
 
     await Promise.all([
       page.waitForResponse(
-        (response) =>
-          response.url().includes(`/diagrams/${diagram.id}/validation`) && response.ok(),
+        (response) => response.url().includes(`/diagrams/${diagram.id}/validate`) && response.ok(),
       ),
       page.getByRole('button', { name: 'Проверить схему' }).click(),
     ]);

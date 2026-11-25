@@ -1,10 +1,30 @@
 """Валидация BPMN: реестр правил и движок (этап 2)."""
 
+from app.validation.config import (
+    CustomRuleConfig,
+    RuleConfig,
+    build_engine,
+    build_registry,
+    load_rule_config,
+    parse_rule_config,
+)
 from app.validation.engine import (
     EngineOptions,
     ValidationEngine,
     build_context,
     build_graph,
+)
+from app.validation.flow import (
+    boundary_event_missing_attachment,
+    boundary_event_on_non_activity,
+    default_flow_not_outgoing,
+    default_flow_with_condition,
+    end_event_with_outgoing,
+    event_gateway_targets,
+    gateway_branch_without_condition,
+    gateway_splits_and_merges,
+    gateway_without_default,
+    start_event_without_outgoing,
 )
 from app.validation.rules import (
     Rule,
@@ -27,23 +47,39 @@ from app.validation.structural import (
 )
 
 __all__ = [
+    "CustomRuleConfig",
     "EngineOptions",
     "Rule",
+    "RuleConfig",
     "RuleCategory",
     "RuleCheck",
     "RuleContext",
     "RuleRegistry",
     "ValidationEngine",
+    "boundary_event_missing_attachment",
+    "boundary_event_on_non_activity",
     "build_context",
+    "build_engine",
     "build_graph",
+    "build_registry",
     "dangling_flows",
     "dead_ends",
+    "default_flow_not_outgoing",
+    "default_flow_with_condition",
     "default_registry",
     "duplicate_ids",
     "empty_leaf_lanes",
+    "end_event_with_outgoing",
+    "event_gateway_targets",
+    "gateway_branch_without_condition",
+    "gateway_splits_and_merges",
+    "gateway_without_default",
+    "load_rule_config",
     "missing_end",
     "missing_start",
     "nodes_outside_lanes",
+    "parse_rule_config",
     "participants_without_process",
+    "start_event_without_outgoing",
     "unreachable_nodes",
 ]
