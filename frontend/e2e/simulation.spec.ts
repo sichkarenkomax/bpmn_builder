@@ -56,11 +56,30 @@ test('симуляция: прогон линейного процесса, ша
     await expect(steps.nth(0)).toHaveText(/Заявка получена/);
     await expect(steps.nth(1)).toHaveText(/Проверить заявку/);
 
-    // Текущий шаг подсвечен, следующий открывается кнопкой.
+    // Текущий шаг подсвечен, токен виден поверх холста.
     await expect(page.locator('[data-element-id="StartEvent_1"]').first()).toHaveClass(
       /bpmn-sim-active/,
     );
+    const token = page.getByTestId('sim-tokens').locator('.sim-token');
+    await expect(token).toHaveCount(1);
+    await expect(token).toHaveText('1');
+    // Токен стоит по центру элемента, а не в углу холста.
+    const tokenBox = await token.boundingBox();
+    const startBox = await page.locator('[data-element-id="StartEvent_1"]').first().boundingBox();
+    expect(tokenBox && startBox).toBeTruthy();
+    if (tokenBox && startBox) {
+      expect(
+        Math.abs(tokenBox.x + tokenBox.width / 2 - (startBox.x + startBox.width / 2)),
+      ).toBeLessThan(8);
+      expect(
+        Math.abs(tokenBox.y + tokenBox.height / 2 - (startBox.y + startBox.height / 2)),
+      ).toBeLessThan(8);
+    }
+    const startPosition = await token.getAttribute('style');
+
     await panel.getByRole('button', { name: 'Следующий шаг' }).click();
+    // Токен уезжает по потоку к следующему элементу.
+    await expect(token).not.toHaveAttribute('style', startPosition ?? '');
     await expect(panel.locator('.simulation-panel__current')).toContainText('Проверить заявку');
     await expect(page.locator('[data-element-id="Task_Review"]').first()).toHaveClass(
       /bpmn-sim-active/,
@@ -76,6 +95,33 @@ test('симуляция: прогон линейного процесса, ша
     await expect(page.locator('[data-element-id="Task_Review"]').first()).not.toHaveClass(
       /bpmn-sim-active/,
     );
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('симуляция: переменные из панели выбирают ветку автоматически', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E simulation variables ${Date.now()}`, bpmn_xml: decisionXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    await expect(page.locator('[data-element-id="Split"]').first()).toBeVisible();
+
+    await page.getByRole('button', { name: 'Симуляция процесса' }).click();
+    const panel = page.getByRole('complementary', { name: 'Симуляция процесса' });
+    // Без переменной прогон спрашивает ветку, с `ok = true` — идёт сам.
+    await expect(panel.getByRole('group', { name: 'Выбор ветки симуляции' })).toBeVisible();
+    await panel.locator('.simulation-panel__variables summary').click();
+    await panel.getByLabel('Переменные симуляции').fill('ok = true');
+    await panel.getByRole('button', { name: 'Перезапустить' }).click();
+
+    await expect(panel.getByRole('status')).toContainText('Завершено: 3 шагов');
+    await expect(panel.locator('.simulation-panel__log')).toContainText('Отказано');
+    await expect(panel.getByRole('group', { name: 'Выбор ветки симуляции' })).toHaveCount(0);
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }
