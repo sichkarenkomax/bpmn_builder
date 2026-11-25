@@ -2,11 +2,34 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sampleXml = readFileSync(resolve(here, 'fixtures/pool.bpmn'), 'utf8');
 const API = '/api/v1';
+
+/** Токен должен стоять по центру элемента, а не на конце входящего потока. */
+async function expectTokenAt(page: Page, elementId: string) {
+  const token = page.getByTestId('sim-tokens').locator('.sim-token').first();
+  await expect
+    .poll(
+      async () => {
+        const tokenBox = await token.boundingBox();
+        const elementBox = await page
+          .locator(`[data-element-id="${elementId}"]`)
+          .first()
+          .boundingBox();
+        if (!tokenBox || !elementBox) {
+          return Number.POSITIVE_INFINITY;
+        }
+        const dx = tokenBox.x + tokenBox.width / 2 - (elementBox.x + elementBox.width / 2);
+        const dy = tokenBox.y + tokenBox.height / 2 - (elementBox.y + elementBox.height / 2);
+        return Math.max(Math.abs(dx), Math.abs(dy));
+      },
+      { timeout: 3000 },
+    )
+    .toBeLessThan(8);
+}
 
 // Шлюз с условием на неизвестной переменной: ветку выбирает пользователь.
 const decisionXml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -64,22 +87,13 @@ test('симуляция: прогон линейного процесса, ша
     await expect(token).toHaveCount(1);
     await expect(token).toHaveText('1');
     // Токен стоит по центру элемента, а не в углу холста.
-    const tokenBox = await token.boundingBox();
-    const startBox = await page.locator('[data-element-id="StartEvent_1"]').first().boundingBox();
-    expect(tokenBox && startBox).toBeTruthy();
-    if (tokenBox && startBox) {
-      expect(
-        Math.abs(tokenBox.x + tokenBox.width / 2 - (startBox.x + startBox.width / 2)),
-      ).toBeLessThan(8);
-      expect(
-        Math.abs(tokenBox.y + tokenBox.height / 2 - (startBox.y + startBox.height / 2)),
-      ).toBeLessThan(8);
-    }
+    await expectTokenAt(page, 'StartEvent_1');
     const startPosition = await token.getAttribute('style');
 
     await panel.getByRole('button', { name: 'Следующий шаг' }).click();
-    // Токен уезжает по потоку к следующему элементу.
+    // Токен уезжает по потоку и приезжает в центр следующего элемента.
     await expect(token).not.toHaveAttribute('style', startPosition ?? '');
+    await expectTokenAt(page, 'Task_Review');
     await expect(panel.locator('.simulation-panel__current')).toContainText('Проверить заявку');
     await expect(page.locator('[data-element-id="Task_Review"]').first()).toHaveClass(
       /bpmn-sim-active/,
@@ -88,8 +102,14 @@ test('симуляция: прогон линейного процесса, ша
       /bpmn-sim-visited/,
     );
 
-    // Счётчики прохождений и закрытие панели убирают подсветку.
+    // Счётчики прохождений и тепловая карта: бейджи с числом визитов.
     await expect(panel.locator('.simulation-panel__counts')).toContainText('Прохождения');
+    const heatmap = panel.getByRole('checkbox', { name: 'Тепловая карта' });
+    await heatmap.check();
+    await expect(page.locator('.sim-heat').first()).toBeVisible();
+    await expect(page.locator('.sim-heat').first()).toHaveText('1');
+    await heatmap.uncheck();
+    await expect(page.locator('.sim-heat')).toHaveCount(0);
     await panel.getByRole('button', { name: 'Закрыть' }).click();
     await expect(panel).toBeHidden();
     await expect(page.locator('[data-element-id="Task_Review"]').first()).not.toHaveClass(

@@ -1568,6 +1568,7 @@ export function DiagramEditor({
   const [simulationBusy, setSimulationBusy] = useState(false);
   const [simulationError, setSimulationError] = useState<string | null>(null);
   const [simulationVariablesText, setSimulationVariablesText] = useState('');
+  const [simulationHeatmap, setSimulationHeatmap] = useState(false);
   const simulationAbortRef = useRef<AbortController | null>(null);
   const [viewbox, setViewbox] = useState({ x: 0, y: 0, width: 0, height: 0, scale: 1 });
   const stageDragRef = useRef<StageDragState | null>(null);
@@ -2028,6 +2029,29 @@ export function DiagramEditor({
     );
     return () => window.clearTimeout(timer);
   }, [simulationPlaying, simulation, simulationIndex, simulationSpeed]);
+
+  // Тепловая карта: бейдж с числом прохождений поверх узла, цвет — по нагрузке.
+  useEffect(() => {
+    const modeler = modelerRef.current;
+    if (!modeler || !ready) {
+      return;
+    }
+    const overlays = modeler.get<OverlaysLike>('overlays');
+    if (simulationOpen && simulation && simulationHeatmap) {
+      const counts = Object.entries(simulation.counts);
+      const busiest = Math.max(1, ...counts.map(([, count]) => count));
+      for (const [nodeId, count] of counts) {
+        const level = count / busiest >= 0.66 ? 3 : count / busiest >= 0.33 ? 2 : 1;
+        overlays.add(nodeId, 'sim-heat', {
+          position: { top: -10, right: -10 },
+          html: `<span class="sim-heat sim-heat--${level}" title="Прохождений: ${count}">${count}</span>`,
+        });
+      }
+    }
+    return () => {
+      overlays.remove({ type: 'sim-heat' });
+    };
+  }, [simulationOpen, simulation, simulationHeatmap, ready]);
 
   // Координаты элементов и ломаные потоков — для оверлея токена.
   const simulationPoints = useMemo(() => {
@@ -4481,6 +4505,8 @@ export function DiagramEditor({
               variablesText={simulationVariablesText}
               variablesError={simulationVariables.error}
               onVariablesChange={setSimulationVariablesText}
+              heatmap={simulationHeatmap}
+              onHeatmapChange={setSimulationHeatmap}
               onRun={() => void runSimulation({}, simulationVariables.variables)}
               onChooseBranch={chooseSimulationBranch}
               onStep={(next) => {

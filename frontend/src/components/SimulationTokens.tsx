@@ -67,14 +67,17 @@ export function SimulationTokens({
       if (!to) {
         continue;
       }
-      const path = step.flow_id ? (flows[step.flow_id] ?? null) : null;
+      const flowPath = step.flow_id ? (flows[step.flow_id] ?? null) : null;
       const previous = positionsRef.current[step.token];
-      const from = previous ?? path?.[0] ?? to;
+      const from = previous ?? flowPath?.[0] ?? to;
       if (Math.hypot(from.x - to.x, from.y - to.y) < 0.5) {
         resting[step.token] = to;
         continue;
       }
-      travels.push({ token: step.token, from, to, path });
+      // Ломаная потока начинается и кончается на границах фигур, поэтому
+      // добавляем центры: токен должен приехать в элемент, а не в стрелку.
+      const route = flowPath && flowPath.length > 1 ? [from, ...flowPath, to] : null;
+      travels.push({ token: step.token, from, to, path: route });
     }
 
     if (travels.length === 0) {

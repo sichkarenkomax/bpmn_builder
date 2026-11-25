@@ -13,6 +13,8 @@ export function SimulationPanel({
   variablesText,
   variablesError,
   onVariablesChange,
+  heatmap,
+  onHeatmapChange,
   onRun,
   onChooseBranch,
   onStep,
@@ -29,6 +31,8 @@ export function SimulationPanel({
   variablesText: string;
   variablesError: string | null;
   onVariablesChange: (text: string) => void;
+  heatmap: boolean;
+  onHeatmapChange: (value: boolean) => void;
   onRun: () => void;
   onChooseBranch: (flowId: string) => void;
   onStep: (index: number) => void;
@@ -92,6 +96,14 @@ export function SimulationPanel({
         >
           ›
         </button>
+        <label className="simulation-panel__heatmap">
+          <input
+            type="checkbox"
+            checked={heatmap}
+            onChange={(event) => onHeatmapChange(event.currentTarget.checked)}
+          />
+          <span>Тепловая карта</span>
+        </label>
         <label className="simulation-panel__speed">
           <span>Скорость</span>
           <select value={speed} onChange={(event) => onSpeedChange(Number(event.target.value))}>
