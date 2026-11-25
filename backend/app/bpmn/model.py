@@ -33,6 +33,7 @@ class NodeType(StrEnum):
     EXCLUSIVE_GATEWAY = "exclusiveGateway"
     PARALLEL_GATEWAY = "parallelGateway"
     INCLUSIVE_GATEWAY = "inclusiveGateway"
+    EVENT_BASED_GATEWAY = "eventBasedGateway"
     SUB_PROCESS = "subProcess"
 
 
@@ -97,6 +98,8 @@ class Node(DiagramElement):
     )
     script_format: str | None = None
     script: str | None = None
+    #: id исходящего потока по умолчанию (`default` у шлюза или активности).
+    default_flow: str | None = None
 
     @field_validator("script")
     @classmethod

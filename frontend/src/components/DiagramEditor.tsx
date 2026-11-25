@@ -33,6 +33,7 @@ import {
   createExportJob,
   deleteComment,
   downloadExportJob,
+  downloadValidationReport,
   fetchComments,
   fetchExportJob,
   fetchValidation,
@@ -1497,6 +1498,7 @@ export function DiagramEditor({
   const [validationBusy, setValidationBusy] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationNonce, setValidationNonce] = useState(0);
+  const [reportDownloading, setReportDownloading] = useState(false);
   const lastValidationNonceRef = useRef(0);
   const [validationMode, setValidationMode] = useState<ValidationMode>(() => loadValidationMode());
   const validationCount = validationFindingsCount(validation);
@@ -2792,6 +2794,22 @@ export function DiagramEditor({
       controller.abort();
     };
   }, [diagramId, ready, save.kind, validationNonce, validationMode]);
+
+  const downloadReport = async () => {
+    if (reportDownloading) {
+      return;
+    }
+    setReportDownloading(true);
+    try {
+      const blob = await downloadValidationReport(diagramId);
+      downloadBlob(blob, `bpmn-${diagramId.slice(0, 8)}-validation.docx`);
+      notify('success', 'Отчёт проверки готов');
+    } catch {
+      setValidationError('Не удалось скачать отчёт проверки.');
+    } finally {
+      setReportDownloading(false);
+    }
+  };
 
   // Маркеры предупреждений/ошибок: цвет значка — худшая severity элемента.
   useEffect(() => {
@@ -4237,6 +4255,8 @@ export function DiagramEditor({
               busy={validationBusy}
               error={validationError}
               onSelect={openFinding}
+              onDownload={() => void downloadReport()}
+              downloading={reportDownloading}
               onClose={() => setProblemsOpen(false)}
             />
           ) : null}

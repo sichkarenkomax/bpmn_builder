@@ -100,6 +100,12 @@ class RuleRegistry:
 
         return decorator
 
+    def copy(self) -> RuleRegistry:
+        """Независимая копия: конфиг добавляет правила, не меняя глобальный реестр."""
+        clone = RuleRegistry()
+        clone._rules = dict(self._rules)
+        return clone
+
     def get(self, rule_id: str) -> Rule | None:
         return self._rules.get(rule_id)
 

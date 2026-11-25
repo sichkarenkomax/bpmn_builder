@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help up up-full down ps logs build restart test test-backend test-frontend lint typecheck fmt fmt-check tasks migrate seed gif check audit coverage clean
+.PHONY: help up up-full down ps logs build restart test test-backend test-frontend lint typecheck fmt fmt-check tasks migrate seed gif check audit coverage validate bench clean
 
 help: ## Показать команды
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -73,6 +73,13 @@ audit: ## Проверить зависимости на известные CVE
 
 coverage: ## Покрытие app/bpmn с порогом 80%
 	cd backend && uv run pytest --cov=app.bpmn --cov-fail-under=80
+
+validate: ## Проверить диаграмму через API (DIAGRAM_ID=..., BPMN_API_URL=...)
+	@test -n "$(DIAGRAM_ID)" || (echo "нужен DIAGRAM_ID=<id>" >&2; exit 2)
+	@cd backend && uv run python ../scripts/validate.py --diagram-id "$(DIAGRAM_ID)"
+
+bench: ## Бенчмарк валидации 200/500/1000 элементов
+	cd backend && uv run python ../scripts/benchmark_validation.py --check
 
 clean: ## Удалить артефакты сборки
 	rm -rf frontend/dist frontend/node_modules backend/.venv
