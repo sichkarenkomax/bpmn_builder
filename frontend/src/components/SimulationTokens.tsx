@@ -26,8 +26,9 @@ function easeInOut(progress: number): number {
 
 /**
  * Токены поверх холста: каждый токен — кружок с номером, который едет по
- * ломаной своего входящего потока к текущему шагу. Позиции в координатах схемы,
- * на экран пересчитываются через viewBox, поэтому токен не отстаёт при зуме.
+ * ломаной своего входящего потока к текущему шагу. Точки приходят уже в
+ * пикселях относительно холста (сняты с графики фигур), поэтому токен не
+ * зависит от viewBox, зума, панорамы и порядка отрисовки.
  */
 export function SimulationTokens({
   steps,
@@ -35,14 +36,12 @@ export function SimulationTokens({
   speed,
   nodes,
   flows,
-  viewbox,
 }: {
   steps: SimulationStep[];
   index: number;
   speed: number;
   nodes: Record<string, TokenPoint>;
   flows: Record<string, TokenPoint[]>;
-  viewbox: { x: number; y: number; scale: number };
 }) {
   const [positions, setPositions] = useState<Record<number, TokenPoint>>({});
   const positionsRef = useRef<Record<number, TokenPoint>>({});
@@ -116,20 +115,16 @@ export function SimulationTokens({
 
   return (
     <div className="sim-tokens" aria-hidden="true" data-testid="sim-tokens">
-      {tokens.map(([token, point]) => {
-        const left = (point.x - viewbox.x) * viewbox.scale;
-        const top = (point.y - viewbox.y) * viewbox.scale;
-        return (
-          <span
-            key={token}
-            className="sim-token"
-            data-token={token}
-            style={{ transform: `translate3d(${left}px, ${top}px, 0)` }}
-          >
-            <span className="sim-token__dot">{token}</span>
-          </span>
-        );
-      })}
+      {tokens.map(([token, point]) => (
+        <span
+          key={token}
+          className="sim-token"
+          data-token={token}
+          style={{ transform: `translate3d(${point.x}px, ${point.y}px, 0)` }}
+        >
+          <span className="sim-token__dot">{token}</span>
+        </span>
+      ))}
     </div>
   );
 }

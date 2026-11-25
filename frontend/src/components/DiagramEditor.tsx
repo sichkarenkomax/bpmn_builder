@@ -1462,6 +1462,7 @@ export function DiagramEditor({
   initialEtag: string | null;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
   const { notify } = useToast();
   const modelerRef = useRef<Modeler | null>(null);
   const etagRef = useRef<string | null>(initialEtag);
@@ -2056,16 +2057,39 @@ export function DiagramEditor({
     };
   }, [simulationOpen, simulation, simulationHeatmap, ready]);
 
-  // Координаты элементов и ломаные потоков — для оверлея токена.
+  // Координаты элементов и ломаные потоков — для оверлея токена. Точки сразу
+  // в пикселях относительно холста: viewBox переводится матрицей вьюпорта,
+  // поэтому токен не отстаёт после зума, панорамы, перетаскивания и этапов.
   const simulationPoints = useMemo(() => {
     const nodes: Record<string, TokenPoint> = {};
     const flows: Record<string, TokenPoint[]> = {};
     const modeler = modelerRef.current;
-    if (!modeler || !ready || !simulation) {
+    const canvasEl = canvasRef.current;
+    if (!modeler || !ready || !simulation || !canvasEl) {
       return { nodes, flows };
     }
+    const viewport = canvasEl.querySelector<SVGGElement>('.viewport');
+    const matrix = viewport?.getScreenCTM();
+    if (!viewport || !matrix) {
+      return { nodes, flows };
+    }
+    const origin = canvasEl.getBoundingClientRect();
+    const toCanvas = (x: number, y: number): TokenPoint => {
+      const point = new DOMPoint(x, y).matrixTransform(matrix);
+      return { x: point.x - origin.left, y: point.y - origin.top };
+    };
     const registry = modeler.get<ElementRegistryLike>('elementRegistry');
-    for (const element of registry.getAll()) {
+    const elements = registry.getAll();
+    // Свёрнутый этап или пул прячет фигуру: токену там не место.
+    const hidden = hiddenStageElementIds(stages, elements);
+    for (const element of elements) {
+      const gfx = registry.getGraphics(element);
+      if (hidden.has(element.id)) {
+        continue;
+      }
+      if (gfx && (gfx as unknown as HTMLElement).style.display === 'none') {
+        continue;
+      }
       const waypoints = Array.isArray(element.waypoints) ? element.waypoints : null;
       if (waypoints) {
         const points = waypoints
@@ -2075,17 +2099,18 @@ export function DiagramEditor({
               typeof point.x === 'number' && typeof point.y === 'number',
           );
         if (points.length > 1) {
-          flows[element.id] = points;
+          flows[element.id] = points.map((point) => toCanvas(point.x, point.y));
         }
         continue;
       }
       const center = centerOf(element);
       if (center) {
-        nodes[element.id] = center;
+        nodes[element.id] = toCanvas(center.x, center.y);
       }
     }
     return { nodes, flows };
-  }, [simulation, ready]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- геометрия снимается с DOM, эти три — ключи пересчёта
+  }, [simulation, ready, viewbox, revision, stages]);
 
   // Подсветка: пройденный путь — visited, текущий шаг — active.
   useEffect(() => {
@@ -4436,7 +4461,7 @@ export function DiagramEditor({
           </div>
         ) : null}
 
-        <div className="canvas">
+        <div className="canvas" ref={canvasRef}>
           <div
             ref={hostRef}
             className="canvas__host"
@@ -4453,7 +4478,6 @@ export function DiagramEditor({
               speed={simulationSpeed}
               nodes={simulationPoints.nodes}
               flows={simulationPoints.flows}
-              viewbox={viewbox}
             />
           ) : null}
           <StageBands
