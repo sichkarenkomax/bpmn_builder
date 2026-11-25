@@ -5,6 +5,7 @@ export function DiagramResizeSettings({
   open,
   resizeTasks,
   resizeOthers,
+  compactBoundaryEvents,
   onResizeChange,
   onSavePortalDefaults,
   onClose,
@@ -12,7 +13,12 @@ export function DiagramResizeSettings({
   open: boolean;
   resizeTasks: boolean;
   resizeOthers: boolean;
-  onResizeChange: (patch: { tasks?: boolean; others?: boolean }) => void;
+  compactBoundaryEvents: boolean;
+  onResizeChange: (patch: {
+    tasks?: boolean;
+    others?: boolean;
+    compactBoundaryEvents?: boolean;
+  }) => void;
   onSavePortalDefaults: () => void;
   onClose: () => void;
 }) {
@@ -72,6 +78,17 @@ export function DiagramResizeSettings({
               onChange={(event) => onResizeChange({ others: event.target.checked })}
             />
             <span>Разрешить менять размеры событий, шлюзов и данных</span>
+          </label>
+          <label className="theme-editor__toggle">
+            <input
+              type="checkbox"
+              checked={compactBoundaryEvents}
+              onChange={(event) => onResizeChange({ compactBoundaryEvents: event.target.checked })}
+            />
+            <span>
+              Компактные граничные события (18×18 вместо 36×36). Уже нарисованные события не
+              меняются.
+            </span>
           </label>
         </fieldset>
 
