@@ -209,3 +209,34 @@ test('симуляция: таймер ждёт свою длительност�
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }
 });
+
+test('симуляция: токен едет за перетащенным элементом', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E token drag ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    await expect(page.locator('[data-element-id="Task_Review"]').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Симуляция процесса' }).click();
+    const panel = page.getByRole('complementary', { name: 'Симуляция процесса' });
+    await panel.getByRole('button', { name: 'Следующий шаг' }).click();
+    await expectTokenAt(page, 'Task_Review');
+
+    // После перетаскивания фигуры токен снимает новую геометрию, а не старую.
+    const task = page.locator('[data-element-id="Task_Review"]').first();
+    const box = await task.boundingBox();
+    expect(box).toBeTruthy();
+    if (box) {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2 + 70, box.y + box.height / 2 + 50, { steps: 10 });
+      await page.mouse.up();
+    }
+    await expectTokenAt(page, 'Task_Review');
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
