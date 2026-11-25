@@ -10,6 +10,11 @@ export function SimulationPanel({
   speed,
   busy,
   error,
+  variablesText,
+  variablesError,
+  onVariablesChange,
+  heatmap,
+  onHeatmapChange,
   onRun,
   onChooseBranch,
   onStep,
@@ -23,6 +28,11 @@ export function SimulationPanel({
   speed: number;
   busy: boolean;
   error: string | null;
+  variablesText: string;
+  variablesError: string | null;
+  onVariablesChange: (text: string) => void;
+  heatmap: boolean;
+  onHeatmapChange: (value: boolean) => void;
   onRun: () => void;
   onChooseBranch: (flowId: string) => void;
   onStep: (index: number) => void;
@@ -51,7 +61,7 @@ export function SimulationPanel({
         <button
           type="button"
           className="ghost-button ghost-button--small ghost-button--primary"
-          disabled={busy}
+          disabled={busy || Boolean(variablesError)}
           onClick={onRun}
         >
           {report ? 'Перезапустить' : 'Запустить'}
@@ -86,6 +96,14 @@ export function SimulationPanel({
         >
           ›
         </button>
+        <label className="simulation-panel__heatmap">
+          <input
+            type="checkbox"
+            checked={heatmap}
+            onChange={(event) => onHeatmapChange(event.currentTarget.checked)}
+          />
+          <span>Тепловая карта</span>
+        </label>
         <label className="simulation-panel__speed">
           <span>Скорость</span>
           <select value={speed} onChange={(event) => onSpeedChange(Number(event.target.value))}>
@@ -97,6 +115,28 @@ export function SimulationPanel({
           </select>
         </label>
       </div>
+
+      <details className="simulation-panel__variables">
+        <summary>Переменные</summary>
+        <textarea
+          value={variablesText}
+          rows={3}
+          spellCheck={false}
+          aria-label="Переменные симуляции"
+          placeholder={'approved = true\namount = 1200'}
+          onChange={(event) => onVariablesChange(event.currentTarget.value)}
+        />
+        {variablesError ? (
+          <p className="simulation-panel__error" role="alert">
+            {variablesError}
+          </p>
+        ) : (
+          <p className="simulation-panel__hint">
+            По строке на переменную: <code>имя = значение</code>. Числа, <code>true</code>/
+            <code>false</code> и строки; условия веток считаются по ним при запуске.
+          </p>
+        )}
+      </details>
 
       {busy ? <p className="simulation-panel__hint">Считаем прогон…</p> : null}
       {error ? (

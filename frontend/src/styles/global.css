@@ -2928,3 +2928,128 @@ code {
   stroke-width: 3;
   filter: drop-shadow(0 0 4px rgb(37 99 235 / 55%));
 }
+
+/* --- Оверлей токена симуляции (этап 3) --- */
+
+.sim-tokens {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sim-token {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+}
+
+.sim-token__dot {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 8px rgb(15 23 42 / 35%);
+}
+
+.sim-token__dot::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 2px solid rgb(37 99 235 / 45%);
+  border-radius: 50%;
+  animation: sim-token-pulse 1.6s ease-out infinite;
+}
+
+@keyframes sim-token-pulse {
+  from {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(1.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sim-token__dot::after {
+    animation: none;
+  }
+}
+
+.simulation-panel__variables summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.simulation-panel__variables textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 58px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.simulation-panel__variables code {
+  font-size: 11px;
+}
+
+.simulation-panel__heatmap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.sim-heat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid #fff;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 30%);
+}
+
+.sim-heat--1 {
+  background: #f59e0b;
+}
+
+.sim-heat--2 {
+  background: #ea580c;
+}
+
+.sim-heat--3 {
+  background: #dc2626;
+}

@@ -17,6 +17,7 @@ import minimapModule from 'diagram-js-minimap';
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -44,6 +45,7 @@ import {
   type ExportJobSummary,
   type ServerExportFormat,
   type SimulationReport,
+  type SimulationVariable,
   type ValidationFinding,
   type ValidationReport,
 } from '../lib/api';
@@ -154,11 +156,14 @@ import {
   type ShortcutAction,
   type ShortcutMap,
 } from '../lib/shortcuts';
+import { centerOf, type TokenPoint } from '../lib/simulation-token';
+import { parseSimulationVariables } from '../lib/simulation-variables';
 import { ContextMenu, type ContextMenuItem, type ContextMenuState } from './ContextMenu';
 import { ReplaceMenu, type ReplaceEntry, type ReplaceMenuState } from './ReplaceMenu';
 import { StageBands } from './StageBands';
 import { StageDocumentationDialog } from './StageDocumentationDialog';
 import { SimulationPanel } from './SimulationPanel';
+import { SimulationTokens } from './SimulationTokens';
 import {
   collectStagePools,
   createStage,
@@ -1562,6 +1567,8 @@ export function DiagramEditor({
   const [simulationSpeed, setSimulationSpeed] = useState(1);
   const [simulationBusy, setSimulationBusy] = useState(false);
   const [simulationError, setSimulationError] = useState<string | null>(null);
+  const [simulationVariablesText, setSimulationVariablesText] = useState('');
+  const [simulationHeatmap, setSimulationHeatmap] = useState(false);
   const simulationAbortRef = useRef<AbortController | null>(null);
   const [viewbox, setViewbox] = useState({ x: 0, y: 0, width: 0, height: 0, scale: 1 });
   const stageDragRef = useRef<StageDragState | null>(null);
@@ -1952,7 +1959,10 @@ export function DiagramEditor({
   };
 
   const runSimulation = useCallback(
-    async (choices: Record<string, string> = {}) => {
+    async (
+      choices: Record<string, string> = {},
+      variables: Record<string, SimulationVariable> = {},
+    ) => {
       simulationAbortRef.current?.abort();
       const controller = new AbortController();
       simulationAbortRef.current = controller;
@@ -1961,7 +1971,7 @@ export function DiagramEditor({
       setSimulationPlaying(false);
       setSimulationChoices(choices);
       try {
-        const report = await simulateDiagram(diagramId, {}, choices, controller.signal);
+        const report = await simulateDiagram(diagramId, variables, choices, controller.signal);
         setSimulation(report);
         setSimulationIndex(0);
       } catch (error) {
@@ -1986,13 +1996,22 @@ export function DiagramEditor({
     [diagramId],
   );
 
+  // Переменные процесса задаются по строке «имя = значение» перед прогоном.
+  const simulationVariables = useMemo(
+    () => parseSimulationVariables(simulationVariablesText),
+    [simulationVariablesText],
+  );
+
   // Ветка, которую не определить по условию, выбирается вручную в панели.
   const chooseSimulationBranch = (flowId: string) => {
     const decision = simulation?.decision;
     if (!decision) {
       return;
     }
-    void runSimulation({ ...simulationChoices, [decision.node_id]: flowId });
+    void runSimulation(
+      { ...simulationChoices, [decision.node_id]: flowId },
+      simulationVariables.variables,
+    );
   };
 
   // Автопроигрывание журнала: один шаг раз в 900 мс, скорость — множитель.
@@ -2010,6 +2029,60 @@ export function DiagramEditor({
     );
     return () => window.clearTimeout(timer);
   }, [simulationPlaying, simulation, simulationIndex, simulationSpeed]);
+
+  // Тепловая карта: бейдж с числом прохождений поверх узла, цвет — по нагрузке.
+  useEffect(() => {
+    const modeler = modelerRef.current;
+    if (!modeler || !ready) {
+      return;
+    }
+    const overlays = modeler.get<OverlaysLike>('overlays');
+    if (simulationOpen && simulation && simulationHeatmap) {
+      const counts = Object.entries(simulation.counts);
+      const busiest = Math.max(1, ...counts.map(([, count]) => count));
+      for (const [nodeId, count] of counts) {
+        const level = count / busiest >= 0.66 ? 3 : count / busiest >= 0.33 ? 2 : 1;
+        overlays.add(nodeId, 'sim-heat', {
+          position: { top: -10, right: -10 },
+          html: `<span class="sim-heat sim-heat--${level}" title="Прохождений: ${count}">${count}</span>`,
+        });
+      }
+    }
+    return () => {
+      overlays.remove({ type: 'sim-heat' });
+    };
+  }, [simulationOpen, simulation, simulationHeatmap, ready]);
+
+  // Координаты элементов и ломаные потоков — для оверлея токена.
+  const simulationPoints = useMemo(() => {
+    const nodes: Record<string, TokenPoint> = {};
+    const flows: Record<string, TokenPoint[]> = {};
+    const modeler = modelerRef.current;
+    if (!modeler || !ready || !simulation) {
+      return { nodes, flows };
+    }
+    const registry = modeler.get<ElementRegistryLike>('elementRegistry');
+    for (const element of registry.getAll()) {
+      const waypoints = Array.isArray(element.waypoints) ? element.waypoints : null;
+      if (waypoints) {
+        const points = waypoints
+          .map((point) => point as { x?: number; y?: number })
+          .filter(
+            (point): point is { x: number; y: number } =>
+              typeof point.x === 'number' && typeof point.y === 'number',
+          );
+        if (points.length > 1) {
+          flows[element.id] = points;
+        }
+        continue;
+      }
+      const center = centerOf(element);
+      if (center) {
+        nodes[element.id] = center;
+      }
+    }
+    return { nodes, flows };
+  }, [simulation, ready]);
 
   // Подсветка: пройденный путь — visited, текущий шаг — active.
   useEffect(() => {
@@ -4370,6 +4443,16 @@ export function DiagramEditor({
             data-viewbox={`${viewbox.x} ${viewbox.y} ${viewbox.width} ${viewbox.height} ${viewbox.scale}`}
             onContextMenu={openContextMenu}
           />
+          {simulationOpen && simulation ? (
+            <SimulationTokens
+              steps={simulation.steps}
+              index={simulationIndex}
+              speed={simulationSpeed}
+              nodes={simulationPoints.nodes}
+              flows={simulationPoints.flows}
+              viewbox={viewbox}
+            />
+          ) : null}
           <StageBands
             stages={stages}
             pools={stagePools}
@@ -4419,7 +4502,12 @@ export function DiagramEditor({
               speed={simulationSpeed}
               busy={simulationBusy}
               error={simulationError}
-              onRun={() => void runSimulation()}
+              variablesText={simulationVariablesText}
+              variablesError={simulationVariables.error}
+              onVariablesChange={setSimulationVariablesText}
+              heatmap={simulationHeatmap}
+              onHeatmapChange={setSimulationHeatmap}
+              onRun={() => void runSimulation({}, simulationVariables.variables)}
               onChooseBranch={chooseSimulationBranch}
               onStep={(next) => {
                 if (!simulation) {

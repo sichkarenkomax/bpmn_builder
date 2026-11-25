@@ -2,11 +2,34 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sampleXml = readFileSync(resolve(here, 'fixtures/pool.bpmn'), 'utf8');
 const API = '/api/v1';
+
+/** Токен должен стоять по центру элемента, а не на конце входящего потока. */
+async function expectTokenAt(page: Page, elementId: string) {
+  const token = page.getByTestId('sim-tokens').locator('.sim-token').first();
+  await expect
+    .poll(
+      async () => {
+        const tokenBox = await token.boundingBox();
+        const elementBox = await page
+          .locator(`[data-element-id="${elementId}"]`)
+          .first()
+          .boundingBox();
+        if (!tokenBox || !elementBox) {
+          return Number.POSITIVE_INFINITY;
+        }
+        const dx = tokenBox.x + tokenBox.width / 2 - (elementBox.x + elementBox.width / 2);
+        const dy = tokenBox.y + tokenBox.height / 2 - (elementBox.y + elementBox.height / 2);
+        return Math.max(Math.abs(dx), Math.abs(dy));
+      },
+      { timeout: 3000 },
+    )
+    .toBeLessThan(8);
+}
 
 // Шлюз с условием на неизвестной переменной: ветку выбирает пользователь.
 const decisionXml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -56,11 +79,21 @@ test('симуляция: прогон линейного процесса, ша
     await expect(steps.nth(0)).toHaveText(/Заявка получена/);
     await expect(steps.nth(1)).toHaveText(/Проверить заявку/);
 
-    // Текущий шаг подсвечен, следующий открывается кнопкой.
+    // Текущий шаг подсвечен, токен виден поверх холста.
     await expect(page.locator('[data-element-id="StartEvent_1"]').first()).toHaveClass(
       /bpmn-sim-active/,
     );
+    const token = page.getByTestId('sim-tokens').locator('.sim-token');
+    await expect(token).toHaveCount(1);
+    await expect(token).toHaveText('1');
+    // Токен стоит по центру элемента, а не в углу холста.
+    await expectTokenAt(page, 'StartEvent_1');
+    const startPosition = await token.getAttribute('style');
+
     await panel.getByRole('button', { name: 'Следующий шаг' }).click();
+    // Токен уезжает по потоку и приезжает в центр следующего элемента.
+    await expect(token).not.toHaveAttribute('style', startPosition ?? '');
+    await expectTokenAt(page, 'Task_Review');
     await expect(panel.locator('.simulation-panel__current')).toContainText('Проверить заявку');
     await expect(page.locator('[data-element-id="Task_Review"]').first()).toHaveClass(
       /bpmn-sim-active/,
@@ -69,13 +102,46 @@ test('симуляция: прогон линейного процесса, ша
       /bpmn-sim-visited/,
     );
 
-    // Счётчики прохождений и закрытие панели убирают подсветку.
+    // Счётчики прохождений и тепловая карта: бейджи с числом визитов.
     await expect(panel.locator('.simulation-panel__counts')).toContainText('Прохождения');
+    const heatmap = panel.getByRole('checkbox', { name: 'Тепловая карта' });
+    await heatmap.check();
+    await expect(page.locator('.sim-heat').first()).toBeVisible();
+    await expect(page.locator('.sim-heat').first()).toHaveText('1');
+    await heatmap.uncheck();
+    await expect(page.locator('.sim-heat')).toHaveCount(0);
     await panel.getByRole('button', { name: 'Закрыть' }).click();
     await expect(panel).toBeHidden();
     await expect(page.locator('[data-element-id="Task_Review"]').first()).not.toHaveClass(
       /bpmn-sim-active/,
     );
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('симуляция: переменные из панели выбирают ветку автоматически', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E simulation variables ${Date.now()}`, bpmn_xml: decisionXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    await expect(page.locator('[data-element-id="Split"]').first()).toBeVisible();
+
+    await page.getByRole('button', { name: 'Симуляция процесса' }).click();
+    const panel = page.getByRole('complementary', { name: 'Симуляция процесса' });
+    // Без переменной прогон спрашивает ветку, с `ok = true` — идёт сам.
+    await expect(panel.getByRole('group', { name: 'Выбор ветки симуляции' })).toBeVisible();
+    await panel.locator('.simulation-panel__variables summary').click();
+    await panel.getByLabel('Переменные симуляции').fill('ok = true');
+    await panel.getByRole('button', { name: 'Перезапустить' }).click();
+
+    await expect(panel.getByRole('status')).toContainText('Завершено: 3 шагов');
+    await expect(panel.locator('.simulation-panel__log')).toContainText('Отказано');
+    await expect(panel.getByRole('group', { name: 'Выбор ветки симуляции' })).toHaveCount(0);
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }
