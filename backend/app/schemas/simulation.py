@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -93,6 +94,77 @@ class SimulationReport(BaseModel):
     decision: SimulationDecision | None = None
 
 
+class SimulationRunCreate(SimulationRequest):
+    """Прогон, который нужно сохранить: входные данные без отчёта."""
+
+
+class SimulationRunRead(BaseModel):
+    """Сохранённый прогон вместе с полученным отчётом."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    diagram_id: str
+    version_id: str | None = None
+    variables: dict[str, VariableValue] = Field(default_factory=dict)
+    choices: dict[str, str] = Field(default_factory=dict)
+    report: SimulationReport
+    created_at: datetime
+
+
+class TestCaseCreate(BaseModel):
+    """Тест-кейс: имя, входные данные и ожидаемый результат."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    variables: dict[str, VariableValue] = Field(default_factory=dict)
+    choices: dict[str, str] = Field(default_factory=dict)
+    expected_steps: list[str] = Field(default_factory=list, max_length=5000)
+    expected_variables: dict[str, VariableValue] = Field(default_factory=dict)
+
+
+class TestCaseRead(BaseModel):
+    """Сохранённый тест-кейс."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    diagram_id: str
+    name: str
+    variables: dict[str, VariableValue] = Field(default_factory=dict)
+    choices: dict[str, str] = Field(default_factory=dict)
+    expected_steps: list[str] = Field(default_factory=list)
+    expected_variables: dict[str, VariableValue] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class StepDiff(BaseModel):
+    """Расхождение шага: какой элемент ожидали и какой прошёл."""
+
+    index: int = Field(ge=0)
+    expected: str | None = None
+    actual: str | None = None
+
+
+class VariableDiff(BaseModel):
+    """Расхождение значения переменной после прогона."""
+
+    name: str
+    expected: VariableValue | None = None
+    actual: VariableValue | None = None
+
+
+class TestCaseResult(BaseModel):
+    """Результат запуска тест-кейса: pass/fail и различия."""
+
+    passed: bool
+    report: SimulationReport
+    step_diffs: list[StepDiff] = Field(default_factory=list)
+    variable_diffs: list[VariableDiff] = Field(default_factory=list)
+
+
 __all__ = [
     "SIMULATION_SCHEMA_VERSION",
     "SimulationBranch",
@@ -100,7 +172,14 @@ __all__ = [
     "SimulationDecisionReason",
     "SimulationReport",
     "SimulationRequest",
+    "SimulationRunCreate",
+    "SimulationRunRead",
     "SimulationStep",
     "SimulationStepAction",
+    "StepDiff",
+    "TestCaseCreate",
+    "TestCaseRead",
+    "TestCaseResult",
+    "VariableDiff",
     "VariableValue",
 ]

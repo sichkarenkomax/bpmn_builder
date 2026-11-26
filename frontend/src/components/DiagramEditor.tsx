@@ -4597,6 +4597,8 @@ export function DiagramEditor({
                 }}
                 scope={diagramId}
                 autoLayout={autoLayout}
+                variables={simulationVariables.variables}
+                choices={simulationChoices}
               />
             ) : null}
             {commentsOpen ? (

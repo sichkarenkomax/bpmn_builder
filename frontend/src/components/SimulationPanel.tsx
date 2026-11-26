@@ -1,5 +1,21 @@
+import { useCallback, useEffect, useState } from 'react';
+
 import { usePanelDrag } from '../hooks/usePanelDrag';
-import type { SimulationReport, SimulationStep } from '../lib/api';
+import {
+  createSimulationTestCase,
+  deleteSimulationRun,
+  deleteSimulationTestCase,
+  fetchSimulationRuns,
+  fetchSimulationTestCases,
+  runSimulationTestCase,
+  saveSimulationRun,
+  type SimulationReport,
+  type SimulationRun,
+  type SimulationStep,
+  type SimulationTestCase,
+  type SimulationTestCaseResult,
+  type SimulationVariable,
+} from '../lib/api';
 import { formatSimulationVariable } from '../lib/simulation-variables';
 
 const SPEEDS = [0.5, 1, 1.5, 2] as const;
@@ -25,6 +41,8 @@ export function SimulationPanel({
   onClose,
   scope,
   autoLayout,
+  variables,
+  choices,
 }: {
   report: SimulationReport | null;
   index: number;
@@ -45,6 +63,8 @@ export function SimulationPanel({
   onClose: () => void;
   scope: string;
   autoLayout: boolean;
+  variables: Record<string, SimulationVariable>;
+  choices: Record<string, string>;
 }) {
   const steps = report?.steps ?? [];
   const total = steps.length;
@@ -298,6 +318,13 @@ export function SimulationPanel({
         </p>
       )}
 
+      <SimulationLibrary
+        diagramId={scope}
+        report={report}
+        variables={variables}
+        choices={choices}
+      />
+
       {autoLayout ? null : (
         <span
           className="comments-panel__resize"
@@ -307,5 +334,223 @@ export function SimulationPanel({
         />
       )}
     </aside>
+  );
+}
+
+function formatRunTime(value: string): string {
+  return new Date(value).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+/** Сохранённые прогоны и тест-кейсы диаграммы (этап 3.4). */
+function SimulationLibrary({
+  diagramId,
+  report,
+  variables,
+  choices,
+}: {
+  diagramId: string;
+  report: SimulationReport | null;
+  variables: Record<string, SimulationVariable>;
+  choices: Record<string, string>;
+}) {
+  const [runs, setRuns] = useState<SimulationRun[]>([]);
+  const [cases, setCases] = useState<SimulationTestCase[]>([]);
+  const [caseName, setCaseName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    caseId: string;
+    value: SimulationTestCaseResult;
+  } | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [nextRuns, nextCases] = await Promise.all([
+        fetchSimulationRuns(diagramId),
+        fetchSimulationTestCases(diagramId),
+      ]);
+      setRuns(nextRuns);
+      setCases(nextCases);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'не удалось загрузить прогоны');
+    }
+  }, [diagramId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const perform = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'операция не удалась');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveRun = () =>
+    perform(async () => {
+      if (!report) {
+        return;
+      }
+      await saveSimulationRun(diagramId, variables, choices);
+      await refresh();
+    });
+
+  const saveCase = () =>
+    perform(async () => {
+      if (!report) {
+        return;
+      }
+      const lastStep = report.steps[report.steps.length - 1];
+      const finalVariables = lastStep?.variables ?? {};
+      await createSimulationTestCase(diagramId, {
+        name: caseName.trim() || 'Тест-кейс',
+        variables,
+        choices,
+        expected_steps: report.steps.map((step) => step.node_id),
+        expected_variables: finalVariables,
+      });
+      setCaseName('');
+      await refresh();
+    });
+
+  const runCase = (caseId: string) =>
+    perform(async () => {
+      const value = await runSimulationTestCase(diagramId, caseId);
+      setResult({ caseId, value });
+    });
+
+  const removeCase = (caseId: string) =>
+    perform(async () => {
+      await deleteSimulationTestCase(diagramId, caseId);
+      setResult((current) => (current?.caseId === caseId ? null : current));
+      await refresh();
+    });
+
+  return (
+    <section className="simulation-panel__library" aria-label="Сохранённые прогоны и тест-кейсы">
+      <div className="simulation-panel__library-actions">
+        <button
+          type="button"
+          className="ghost-button ghost-button--small"
+          disabled={busy || !report}
+          onClick={() => void saveRun()}
+        >
+          Сохранить прогон
+        </button>
+        <input
+          className="simulation-panel__case-name"
+          aria-label="Название тест-кейса"
+          placeholder="Название тест-кейса"
+          value={caseName}
+          maxLength={255}
+          onChange={(event) => setCaseName(event.currentTarget.value)}
+        />
+        <button
+          type="button"
+          className="ghost-button ghost-button--small"
+          disabled={busy || !report}
+          onClick={() => void saveCase()}
+        >
+          Сохранить как тест-кейс
+        </button>
+      </div>
+
+      {error ? (
+        <p className="simulation-panel__error" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <h3 className="simulation-panel__subtitle">Сохранённые прогоны</h3>
+      {runs.length === 0 ? (
+        <p className="simulation-panel__hint">Прогонов пока нет.</p>
+      ) : (
+        <ul className="simulation-panel__library-list">
+          {runs.map((run) => (
+            <li key={run.id} data-testid="sim-run">
+              <span>{formatRunTime(run.created_at)}</span>
+              <span className="simulation-panel__hint">
+                {' '}
+                · {run.report.steps.length} шагов
+                {run.report.completed ? '' : ' · не завершён'}
+              </span>
+              <button
+                type="button"
+                className="ghost-button ghost-button--small"
+                aria-label="Удалить прогон"
+                disabled={busy}
+                onClick={() =>
+                  void perform(async () => {
+                    await deleteSimulationRun(diagramId, run.id);
+                    await refresh();
+                  })
+                }
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h3 className="simulation-panel__subtitle">Тест-кейсы</h3>
+      {cases.length === 0 ? (
+        <p className="simulation-panel__hint">Тест-кейсов пока нет.</p>
+      ) : (
+        <ul className="simulation-panel__library-list">
+          {cases.map((item) => (
+            <li key={item.id} data-testid="sim-case">
+              <span>{item.name}</span>
+              <button
+                type="button"
+                className="ghost-button ghost-button--small"
+                aria-label={`Запустить тест-кейс ${item.name}`}
+                disabled={busy}
+                onClick={() => void runCase(item.id)}
+              >
+                Запустить
+              </button>
+              <button
+                type="button"
+                className="ghost-button ghost-button--small"
+                aria-label={`Удалить тест-кейс ${item.name}`}
+                disabled={busy}
+                onClick={() => void removeCase(item.id)}
+              >
+                ×
+              </button>
+              {result?.caseId === item.id ? (
+                <div
+                  className="simulation-panel__case-result"
+                  role="status"
+                  data-testid="sim-case-result"
+                >
+                  <strong>{result.value.passed ? 'Пройден' : 'Не пройден'}</strong>
+                  {result.value.step_diffs.map((diff) => (
+                    <span key={`step-${diff.index}`}>
+                      шаг {diff.index + 1}: ожидалось {diff.expected ?? '—'}, получено{' '}
+                      {diff.actual ?? '—'}
+                    </span>
+                  ))}
+                  {result.value.variable_diffs.map((diff) => (
+                    <span key={`variable-${diff.name}`}>
+                      {diff.name}: ожидалось{' '}
+                      {diff.expected === null ? '—' : formatSimulationVariable(diff.expected)},
+                      получено {diff.actual === null ? '—' : formatSimulationVariable(diff.actual)}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

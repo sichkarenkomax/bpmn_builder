@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -80,6 +80,43 @@ class Comment(Base):
     author_id: Mapped[str | None] = mapped_column(String(64), default=None)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class SimulationRun(Base):
+    """Сохранённый прогон токена: входные данные и полученный отчёт."""
+
+    __tablename__ = "simulation_run"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    diagram_id: Mapped[str] = mapped_column(
+        ForeignKey("diagram.id", ondelete="CASCADE"), index=True
+    )
+    #: Версия XML, по которой шёл прогон (без FK: версия может исчезнуть).
+    version_id: Mapped[str | None] = mapped_column(String(36), default=None)
+    variables: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    choices: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    report: Mapped[dict[str, object]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class TestCase(Base):
+    """Тест-кейс симуляции: входные переменные и ожидаемый результат."""
+
+    __tablename__ = "test_case"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    diagram_id: Mapped[str] = mapped_column(
+        ForeignKey("diagram.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    variables: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    choices: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    expected_steps: Mapped[list[str]] = mapped_column(JSON, default=list)
+    expected_variables: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
 
 
 class Attachment(Base):

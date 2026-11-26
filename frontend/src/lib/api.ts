@@ -77,6 +77,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
+  const response = await fetch(`${API_BASE}${path}`, init);
+  if (!response.ok) {
+    let detail: unknown;
+    try {
+      detail = await response.json();
+    } catch {
+      detail = await response.text();
+    }
+    throw new ApiError(response.status, `Запрос ${path} вернул ${response.status}`, detail);
+  }
+}
+
 export function fetchHealth(signal?: AbortSignal): Promise<HealthResponse> {
   return request<HealthResponse>('/health', { signal });
 }
@@ -161,6 +174,101 @@ export function simulateDiagram(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ variables, choices }),
     signal,
+  });
+}
+
+export interface SimulationRun {
+  id: string;
+  diagram_id: string;
+  version_id: string | null;
+  variables: Record<string, SimulationVariable>;
+  choices: Record<string, string>;
+  report: SimulationReport;
+  created_at: string;
+}
+
+export interface SimulationTestCase {
+  id: string;
+  diagram_id: string;
+  name: string;
+  variables: Record<string, SimulationVariable>;
+  choices: Record<string, string>;
+  expected_steps: string[];
+  expected_variables: Record<string, SimulationVariable>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SimulationStepDiff {
+  index: number;
+  expected: string | null;
+  actual: string | null;
+}
+
+export interface SimulationVariableDiff {
+  name: string;
+  expected: SimulationVariable | null;
+  actual: SimulationVariable | null;
+}
+
+export interface SimulationTestCaseResult {
+  passed: boolean;
+  report: SimulationReport;
+  step_diffs: SimulationStepDiff[];
+  variable_diffs: SimulationVariableDiff[];
+}
+
+export function saveSimulationRun(
+  id: string,
+  variables: Record<string, SimulationVariable> = {},
+  choices: Record<string, string> = {},
+): Promise<SimulationRun> {
+  return request<SimulationRun>(`/diagrams/${id}/simulation-runs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ variables, choices }),
+  });
+}
+
+export function fetchSimulationRuns(id: string): Promise<SimulationRun[]> {
+  return request<SimulationRun[]>(`/diagrams/${id}/simulation-runs`);
+}
+
+export function deleteSimulationRun(id: string, runId: string): Promise<void> {
+  return requestNoContent(`/diagrams/${id}/simulation-runs/${runId}`, { method: 'DELETE' });
+}
+
+export function fetchSimulationTestCases(id: string): Promise<SimulationTestCase[]> {
+  return request<SimulationTestCase[]>(`/diagrams/${id}/test-cases`);
+}
+
+export function createSimulationTestCase(
+  id: string,
+  payload: {
+    name: string;
+    variables: Record<string, SimulationVariable>;
+    choices: Record<string, string>;
+    expected_steps: string[];
+    expected_variables: Record<string, SimulationVariable>;
+  },
+): Promise<SimulationTestCase> {
+  return request<SimulationTestCase>(`/diagrams/${id}/test-cases`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteSimulationTestCase(id: string, caseId: string): Promise<void> {
+  return requestNoContent(`/diagrams/${id}/test-cases/${caseId}`, { method: 'DELETE' });
+}
+
+export function runSimulationTestCase(
+  id: string,
+  caseId: string,
+): Promise<SimulationTestCaseResult> {
+  return request<SimulationTestCaseResult>(`/diagrams/${id}/test-cases/${caseId}/run`, {
+    method: 'POST',
   });
 }
 

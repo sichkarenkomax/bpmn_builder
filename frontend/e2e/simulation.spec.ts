@@ -279,6 +279,42 @@ test('симуляция: раскрытый подпроцесс проходи
   }
 });
 
+test('симуляция: прогон и тест-кейс переживают перезагрузку', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E simulation library ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    await expect(page.locator('[data-element-id="StartEvent_1"]').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Симуляция процесса' }).click();
+    const panel = page.getByRole('complementary', { name: 'Симуляция процесса' });
+    await expect(panel.getByRole('status').first()).toContainText('Завершено');
+
+    await panel.getByRole('button', { name: 'Сохранить прогон' }).click();
+    await expect(panel.getByTestId('sim-run')).toHaveCount(1);
+
+    await panel.getByLabel('Название тест-кейса').fill('Линейный');
+    await panel.getByRole('button', { name: 'Сохранить как тест-кейс' }).click();
+    const testCase = panel.getByTestId('sim-case').filter({ hasText: 'Линейный' });
+    await expect(testCase).toBeVisible();
+    await testCase.getByRole('button', { name: 'Запустить тест-кейс Линейный' }).click();
+    await expect(panel.getByTestId('sim-case-result')).toContainText('Пройден');
+
+    // Прогон и тест-кейс хранятся в БД: после перезагрузки они на месте.
+    await page.reload();
+    await expect(page.locator('[data-element-id="StartEvent_1"]').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Симуляция процесса' }).click();
+    const reopened = page.getByRole('complementary', { name: 'Симуляция процесса' });
+    await expect(reopened.getByTestId('sim-run')).toHaveCount(1);
+    await expect(reopened.getByTestId('sim-case').filter({ hasText: 'Линейный' })).toBeVisible();
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
 async function panelBoxes(page: Page) {
   const simulation = page.locator('.simulation-panel');
   const comments = page.locator('.comments-panel:not(.simulation-panel)');
