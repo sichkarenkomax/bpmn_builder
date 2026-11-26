@@ -47,6 +47,26 @@ describe('этапы схемы', () => {
     expect(serializeStages([])).toBeUndefined();
   });
 
+  it('хранит Markdown-документацию этапа и не пишет пустую (1.5.7)', () => {
+    const stages: DiagramStage[] = [
+      {
+        id: 's1',
+        name: 'Согласование',
+        poolId: 'Pool_1',
+        x: POOL_LABEL_WIDTH,
+        collapsed: false,
+        description: '## Условия\n\nМинимум **два** согласующих.',
+      },
+      { id: 's2', name: 'Запуск', poolId: 'Pool_1', x: 300, collapsed: false, description: '  ' },
+    ];
+    const raw = serializeStages(stages)!;
+
+    expect(raw).toContain('Минимум');
+    expect(raw).not.toContain('"description":""');
+    expect(parseStages(raw)?.[0]?.description).toContain('**два**');
+    expect(parseStages(raw)?.[1]?.description).toBeUndefined();
+  });
+
   it('битый атрибут не ломает открытие, а неверные записи отбрасываются', () => {
     expect(parseStages('{')).toBeNull();
     expect(parseStages('{"a":1}')).toBeNull();

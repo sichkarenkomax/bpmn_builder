@@ -354,6 +354,25 @@ code {
   pointer-events: auto;
 }
 
+.stage-band__docs {
+  flex: none;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.45;
+  pointer-events: auto;
+}
+
+.stage-band__docs:hover,
+.stage-band__docs:focus-visible {
+  color: var(--accent);
+  opacity: 1;
+}
+
 .stage-band__toggle:hover,
 .stage-band__toggle:focus-visible {
   opacity: 1;
@@ -1067,10 +1086,26 @@ code {
 
 /* --- Контекстное меню --- */
 
-.context-menu {
+.context-menu-layer {
   position: fixed;
   /* bpmn-js держит палитру и context pad на z-index 1000 внутри холста. */
   z-index: 1100;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-height: calc(100vh - 16px);
+  /* Слой может лежать внутри контейнера с pointer-events: none. */
+  pointer-events: auto;
+}
+
+.context-menu-layer__aside {
+  display: flex;
+  align-items: flex-start;
+  min-height: 0;
+}
+
+.context-menu {
+  position: relative;
   min-width: 220px;
   padding: 5px;
   background: var(--surface);
@@ -1143,7 +1178,7 @@ code {
   position: fixed;
   z-index: 1150;
   display: grid;
-  grid-template-columns: repeat(4, 34px);
+  grid-template-columns: repeat(2, 34px);
   gap: 3px;
   max-height: min(320px, calc(100vh - 16px));
   overflow-y: auto;
@@ -1154,6 +1189,12 @@ code {
   box-shadow:
     0 1px 2px rgb(16 24 40 / 8%),
     0 12px 32px rgb(16 24 40 / 18%);
+}
+
+.replace-menu--inline {
+  position: static;
+  min-height: 0;
+  align-self: flex-start;
 }
 
 .replace-menu__item {
@@ -2683,4 +2724,332 @@ code {
   .ghost-button__label {
     display: none;
   }
+}
+
+/* --- Симуляция токена (этап 3) --- */
+
+.simulation-panel {
+  z-index: 132;
+  width: min(400px, calc(100% - 24px));
+  overflow: hidden;
+}
+
+.simulation-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.simulation-panel__title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 620;
+}
+
+.simulation-panel__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.simulation-panel__speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.simulation-panel__speed select {
+  font: inherit;
+  color: var(--text);
+}
+
+.simulation-panel__summary,
+.simulation-panel__current,
+.simulation-panel__hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.simulation-panel__current strong {
+  color: var(--text);
+}
+
+.simulation-panel__decision {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.simulation-panel__branches {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.simulation-panel__branches .ghost-button {
+  justify-content: flex-start;
+  white-space: normal;
+  text-align: left;
+}
+
+.simulation-panel__branches small {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.simulation-panel__error {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 11.5px;
+}
+
+.simulation-panel__log {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.simulation-panel__step {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 6px;
+  align-items: baseline;
+  width: 100%;
+  padding: 3px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.simulation-panel__step:hover,
+.simulation-panel__step:focus-visible {
+  background: var(--surface-muted);
+}
+
+.simulation-panel__step--past {
+  color: var(--text);
+}
+
+.simulation-panel__step--active {
+  background: color-mix(in srgb, #2563eb 14%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.simulation-panel__step-index {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.simulation-panel__step-meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.simulation-panel__counts {
+  min-height: 0;
+}
+
+.simulation-panel__subtitle {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.simulation-panel__counts ul {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.simulation-panel__counts li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 60px 24px;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+}
+
+.simulation-panel__count-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.simulation-panel__count-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: #2563eb;
+  opacity: 0.55;
+}
+
+.simulation-panel__count-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* bpmn-js добавляет маркеры на группу элемента, поэтому стилизуем визуал. */
+.djs-element.bpmn-sim-visited .djs-visual > :first-child {
+  stroke: #2563eb;
+  stroke-width: 2;
+}
+
+.djs-element.bpmn-sim-active .djs-visual > :first-child {
+  stroke: #1d4ed8;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px rgb(37 99 235 / 55%));
+}
+
+/* --- Оверлей токена симуляции (этап 3) --- */
+
+.sim-tokens {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.sim-token {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+}
+
+.sim-token__dot {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 8px rgb(15 23 42 / 35%);
+}
+
+.sim-token__dot::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 2px solid rgb(37 99 235 / 45%);
+  border-radius: 50%;
+  animation: sim-token-pulse 1.6s ease-out infinite;
+}
+
+@keyframes sim-token-pulse {
+  from {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(1.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sim-token__dot::after {
+    animation: none;
+  }
+}
+
+.simulation-panel__variables summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.simulation-panel__variables textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 58px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.simulation-panel__variables code {
+  font-size: 11px;
+}
+
+.simulation-panel__heatmap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.sim-heat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid #fff;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 30%);
+}
+
+.sim-heat--1 {
+  background: #f59e0b;
+}
+
+.sim-heat--2 {
+  background: #ea580c;
+}
+
+.sim-heat--3 {
+  background: #dc2626;
 }

@@ -311,7 +311,7 @@ test('связи документа и БД тоже идут ортогонал
   }
 });
 
-test('ПКМ: смена типа открывается компактным меню только с иконками', async ({ page, request }) => {
+test('ПКМ: палитра смены типа открывается сразу и только с иконками', async ({ page, request }) => {
   const created = await request.post(`${API}/diagrams`, {
     data: { title: `E2E replace menu ${Date.now()}`, bpmn_xml: sampleXml },
   });
@@ -323,18 +323,53 @@ test('ПКМ: смена типа открывается компактным м
     const task = page.locator('[data-element-id="Task_Review"]').first();
     await expect(task).toBeVisible();
     await task.click({ button: 'right' });
-    await page.getByRole('menuitem', { name: 'Сменить тип' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Сменить тип' })).toHaveCount(0);
 
     const items = page.locator('.replace-menu__item');
     await expect(items.first()).toBeVisible();
     expect(await items.count()).toBeGreaterThan(1);
     expect((await items.allTextContents()).every((text) => text.trim() === '')).toBe(true);
 
+    // Палитра стоит слева от меню, не выше него и не больше чем в две колонки.
+    const paletteBox = (await page.locator('.replace-menu').boundingBox())!;
+    const menuBox = (await page.locator('.context-menu').boundingBox())!;
+    expect(paletteBox.x + paletteBox.width).toBeLessThanOrEqual(menuBox.x + 1);
+    expect(paletteBox.height).toBeLessThanOrEqual(menuBox.height + 1);
+    const columns = await page
+      .locator('.replace-menu')
+      .evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(' ').length);
+    expect(columns).toBe(2);
+
     await page.locator('.replace-menu__item[title="Service task"]').click();
     await saveDiagram(page, diagram.id);
     const xml = await (await request.get(`${API}/diagrams/${diagram.id}/bpmn`)).text();
     expect(xml).toContain('<bpmn:serviceTask id="Task_Review"');
     await expect(page.locator('.replace-menu')).toHaveCount(0);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
+test('настройка: выключенная палитра прячется, но остаётся в меню', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E replace setting ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.addInitScript(() =>
+      window.localStorage.setItem('bpmn-studio.type-palette', 'false'),
+    );
+    await page.goto(`/d/${diagram.id}`);
+    const task = page.locator('[data-element-id="Task_Review"]').first();
+    await expect(task).toBeVisible();
+    await task.click({ button: 'right' });
+    await expect(page.locator('.replace-menu')).toHaveCount(0);
+
+    await page.getByRole('menuitem', { name: 'Сменить тип' }).click();
+    await expect(page.locator('.replace-menu__item').first()).toBeVisible();
+    await expect(page.locator('.context-menu')).toHaveCount(0);
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }
@@ -755,10 +790,7 @@ test('длинная подпись связи центрируется и не 
   }
 });
 
-test('вынесенная подпись события сохраняет строки после перемещения', async ({
-  page,
-  request,
-}) => {
+test('вынесенная подпись события сохраняет строки после перемещения', async ({ page, request }) => {
   const created = await request.post(`${API}/diagrams`, {
     data: { title: `E2E shape label ${Date.now()}`, bpmn_xml: longShapeLabelXml },
   });
