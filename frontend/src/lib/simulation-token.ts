@@ -18,6 +18,33 @@ export function latestTokenSteps<T extends { token: number }>(steps: T[], index:
   return [...latest.values()];
 }
 
+/**
+ * Маршрут токена до шага: ломаная входящего потока полезна только в прямом
+ * направлении. При шаге назад путь начинается у следующего элемента, и если
+ * вести его через начало потока, токен сначала пролетает мимо цели. Поэтому
+ * назад едем по прямой от текущего места к цели.
+ */
+export function tokenRoute(
+  from: TokenPoint,
+  to: TokenPoint,
+  flowPath: TokenPoint[] | null | undefined,
+): TokenPoint[] | null {
+  if (!flowPath || flowPath.length < 2) {
+    return null;
+  }
+  const start = flowPath[0];
+  const end = flowPath[flowPath.length - 1];
+  if (!start || !end) {
+    return null;
+  }
+  const toStart = Math.hypot(from.x - start.x, from.y - start.y);
+  const toEnd = Math.hypot(from.x - end.x, from.y - end.y);
+  if (toEnd < toStart) {
+    return null;
+  }
+  return [from, ...flowPath, to];
+}
+
 /** Точка на ломаной по доле пройденного пути 0..1. */
 export function pointAlong(points: TokenPoint[], progress: number): TokenPoint | null {
   const first = points[0];

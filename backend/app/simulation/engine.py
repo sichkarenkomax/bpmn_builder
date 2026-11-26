@@ -133,15 +133,9 @@ class _Runner:
             raise SimulationError(f"поток ведёт в неизвестный элемент {token.node_id!r}")
 
         incoming = self._incoming.get(node.id, [])
-        is_join = (
-            node.type
-            in {
-                NodeType.PARALLEL_GATEWAY,
-                NodeType.INCLUSIVE_GATEWAY,
-            }
-            and len(incoming) > 1
-        )
-        if is_join:
+        is_parallel_join = node.type is NodeType.PARALLEL_GATEWAY and len(incoming) > 1
+        is_inclusive_join = node.type is NodeType.INCLUSIVE_GATEWAY and len(incoming) > 1
+        if is_parallel_join:
             arrived = self._arrivals[node.id]
             arrived.add(token.from_flow or "")
             expected = {flow.id for flow in incoming}
@@ -150,6 +144,14 @@ class _Runner:
                 return
             self._arrivals[node.id] = set()
             self._log(token, node, "completed", message="ветки синхронизированы")
+        elif is_inclusive_join:
+            # Инклюзивное слияние ждёт не все входы, а только те ветки, которые
+            # реально запущены и ещё могут дойти: невыбранные условия и ветки,
+            # ушедшие в другой конец процесса, не должны блокировать токен.
+            if self._queued_tokens_can_reach(node.id):
+                self._log(token, node, "waiting", message="ждёт активные ветки")
+                return
+            self._log(token, node, "completed", message="активные ветки сошлись")
         elif node.timer is not None:
             self._log(
                 token,
@@ -173,6 +175,20 @@ class _Runner:
         chosen = self._choose_flows(node, outgoing)
         for flow in chosen:
             self._queue.append(_Token(flow.target_ref, token.token, flow.id))
+
+    def _queued_tokens_can_reach(self, target_id: str) -> bool:
+        """Есть ли в очереди токен, которому ещё предстоит дойти до слияния."""
+        seen: set[str] = set()
+
+        def reaches(node_id: str) -> bool:
+            if node_id == target_id:
+                return True
+            if node_id in seen:
+                return False
+            seen.add(node_id)
+            return any(reaches(flow.target_ref) for flow in self._outgoing.get(node_id, []))
+
+        return any(reaches(token.node_id) for token in self._queue)
 
     # --- выбор веток ------------------------------------------------------
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { centerOf, latestTokenSteps, pointAlong } from './simulation-token';
+import { centerOf, latestTokenSteps, pointAlong, tokenRoute } from './simulation-token';
 
 describe('simulation-token', () => {
   it('оставляет последний шаг для каждого токена', () => {
@@ -42,6 +42,25 @@ describe('simulation-token', () => {
         0.5,
       ),
     ).toEqual({ x: 1, y: 1 });
+  });
+
+  it('ведёт токен по потоку вперёд и по прямой назад', () => {
+    const path = [
+      { x: 0, y: 0 },
+      { x: 50, y: 0 },
+      { x: 100, y: 0 },
+    ];
+    expect(tokenRoute({ x: 0, y: 0 }, { x: 100, y: 0 }, path)).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      { x: 50, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 0 },
+    ]);
+    // Назад от конца потока: ломаная увела бы токен через начало.
+    expect(tokenRoute({ x: 100, y: 0 }, { x: 200, y: 0 }, path)).toBeNull();
+    expect(tokenRoute({ x: 0, y: 0 }, { x: 1, y: 1 }, null)).toBeNull();
+    expect(tokenRoute({ x: 0, y: 0 }, { x: 1, y: 1 }, [{ x: 0, y: 0 }])).toBeNull();
   });
 
   it('находит центр фигуры или null без размеров', () => {

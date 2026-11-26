@@ -577,10 +577,15 @@ code {
   display: inline-flex;
   flex: none;
   align-items: center;
+  justify-content: flex-start;
   gap: 5px;
+  /* Фиксированная ширина: смена статуса не перестраивает панель инструментов. */
+  width: 112px;
+  overflow: hidden;
   color: var(--text-muted);
   font-size: 11px;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .validation-status::before {
@@ -622,6 +627,21 @@ code {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.editor-toolbar__auto {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.editor-toolbar__auto input {
+  margin: 0;
 }
 
 .editor-toolbar__size {
@@ -1875,16 +1895,35 @@ code {
   background: #2563eb;
 }
 
-.comments-panel {
+/* Колонка оверлеев холста: панели стоят друг под другом и не наезжают
+   одна на другую; перетаскивание за заголовок даёт смещение через transform.
+   Обёртка занимает весь холст, иначе сдвинутая влево панель обрезается её
+   невидимой границей. */
+.canvas-panels {
   position: absolute;
   z-index: 130;
-  top: 12px;
-  right: 12px;
+  inset: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  overflow-y: auto;
+  pointer-events: none;
+}
+
+.canvas-panels > * {
+  position: relative;
+  flex: none;
+  pointer-events: auto;
+}
+
+.comments-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: min(320px, calc(100% - 24px));
-  max-height: calc(100% - 24px);
+  max-height: 100%;
   padding: 10px 12px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1898,6 +1937,37 @@ code {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.comments-panel__header:active {
+  cursor: grabbing;
+}
+
+/* Уголок изменения размера: размер панели тоже запоминается. */
+.comments-panel__resize {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  background: linear-gradient(
+    135deg,
+    transparent 0 40%,
+    var(--text-muted) 40% 48%,
+    transparent 48% 60%,
+    var(--text-muted) 60% 68%,
+    transparent 68%
+  );
+  opacity: 0.55;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.comments-panel__resize:hover {
+  opacity: 1;
 }
 
 .comments-panel__title {
@@ -2101,6 +2171,12 @@ code {
 
 .problem:hover:not(:disabled) {
   border-color: var(--accent);
+}
+
+.problem--highlighted {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-muted));
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .problem:disabled {
@@ -2739,6 +2815,13 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.simulation-panel__header:active {
+  cursor: grabbing;
 }
 
 .simulation-panel__title {

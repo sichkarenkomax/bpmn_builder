@@ -131,6 +131,34 @@ def test_linear_process_runs_to_end() -> None:
     assert report.tokens_started == report.tokens_completed == 1
 
 
+def inclusive_body() -> str:
+    return """
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:inclusiveGateway id="Split"><bpmn:incoming>F1</bpmn:incoming>
+      <bpmn:outgoing>FA</bpmn:outgoing>
+      <bpmn:outgoing>FB</bpmn:outgoing></bpmn:inclusiveGateway>
+    <bpmn:task id="A"><bpmn:incoming>FA</bpmn:incoming>
+      <bpmn:outgoing>FA2</bpmn:outgoing></bpmn:task>
+    <bpmn:task id="B"><bpmn:incoming>FB</bpmn:incoming>
+      <bpmn:outgoing>FB2</bpmn:outgoing></bpmn:task>
+    <bpmn:inclusiveGateway id="Join"><bpmn:incoming>FA2</bpmn:incoming>
+      <bpmn:incoming>FB2</bpmn:incoming>
+      <bpmn:outgoing>F2</bpmn:outgoing></bpmn:inclusiveGateway>
+    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="FA" sourceRef="Split" targetRef="A">
+      <bpmn:conditionExpression>ok == true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="FB" sourceRef="Split" targetRef="B">
+      <bpmn:conditionExpression>vip == true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="FA2" sourceRef="A" targetRef="Join" />
+    <bpmn:sequenceFlow id="FB2" sourceRef="B" targetRef="Join" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Join" targetRef="End" />
+  </bpmn:process>"""
+
+
 def test_exclusive_gateway_uses_condition_and_default() -> None:
     low = simulate(document(exclusive_body()), variables={"amount": 10})
     assert low.completed
@@ -148,6 +176,22 @@ def test_parallel_split_waits_for_both_branches() -> None:
     assert report.counts["Join"] == 1
     assert report.tokens_completed == 1
     assert any(step.action == "waiting" for step in report.steps)
+
+
+def test_inclusive_join_waits_only_for_started_branches() -> None:
+    both = simulate(document(inclusive_body()), variables={"ok": True, "vip": True})
+    assert both.completed
+    assert both.counts["A"] == 1 and both.counts["B"] == 1
+    assert both.counts["Join"] == 1
+    assert both.tokens_completed == 1
+    assert any(step.action == "waiting" for step in both.steps)
+
+    # Вторая ветка не выбрана условием: слияние не должно её ждать.
+    single = simulate(document(inclusive_body()), variables={"ok": True, "vip": False})
+    assert single.completed
+    assert single.counts["A"] == 1 and "B" not in single.counts
+    assert single.counts["Join"] == 1
+    assert not any(step.action == "waiting" for step in single.steps)
 
 
 def test_process_without_start_or_with_dead_end_fails() -> None:

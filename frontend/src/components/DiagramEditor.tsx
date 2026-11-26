@@ -67,6 +67,7 @@ import {
   validationFindingsCount,
   VALIDATION_OVERLAY_TYPE,
 } from '../lib/validation';
+import { clearAllPanelLayouts } from '../lib/panel-layout';
 import { loadAutosaveSeconds, saveAutosaveSeconds } from '../lib/autosave';
 import { loadMarkdownToolbarEnabled, saveMarkdownToolbarEnabled } from '../lib/markdown-settings';
 import {
@@ -1511,6 +1512,8 @@ export function DiagramEditor({
   const [commentsError, setCommentsError] = useState<string | null>(null);
   const [warningsOpen, setWarningsOpen] = useState(true);
   const [problemsOpen, setProblemsOpen] = useState(false);
+  const [highlightedFinding, setHighlightedFinding] = useState<ValidationFinding | null>(null);
+  const [autoLayout, setAutoLayout] = useState(false);
   const [validation, setValidation] = useState<ValidationReport | null>(null);
   const [validationBusy, setValidationBusy] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -1537,7 +1540,7 @@ export function DiagramEditor({
         : validationState === 'error'
           ? 'Ошибка проверки'
           : validationState === 'current'
-            ? `Актуально · ${validationCount === 0 ? 'проблем нет' : `находок: ${validationCount}`}`
+            ? 'Актуально'
             : 'Не проверялось';
   const validationSummaryTitle = validation
     ? `Ошибки: ${validation.summary.errors}; предупреждения: ${validation.summary.warnings}; информация: ${validation.summary.infos}`
@@ -1563,6 +1566,7 @@ export function DiagramEditor({
   const [simulationOpen, setSimulationOpen] = useState(false);
   const [simulation, setSimulation] = useState<SimulationReport | null>(null);
   const [simulationChoices, setSimulationChoices] = useState<Record<string, string>>({});
+  const [simulationRunId, setSimulationRunId] = useState(0);
   const [simulationIndex, setSimulationIndex] = useState(0);
   const [simulationPlaying, setSimulationPlaying] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1);
@@ -1963,18 +1967,28 @@ export function DiagramEditor({
     async (
       choices: Record<string, string> = {},
       variables: Record<string, SimulationVariable> = {},
+      options: { keepPosition?: boolean } = {},
     ) => {
+      const keepPosition = options.keepPosition === true;
       simulationAbortRef.current?.abort();
       const controller = new AbortController();
       simulationAbortRef.current = controller;
       setSimulationBusy(true);
       setSimulationError(null);
-      setSimulationPlaying(false);
       setSimulationChoices(choices);
+      if (!keepPosition) {
+        setSimulationPlaying(false);
+      }
       try {
         const report = await simulateDiagram(diagramId, variables, choices, controller.signal);
         setSimulation(report);
-        setSimulationIndex(0);
+        if (keepPosition) {
+          // Ручной выбор ветки дописывает прогон с того же шага: токен не прыгает в начало.
+          setSimulationIndex((current) => Math.min(current, Math.max(0, report.steps.length - 1)));
+        } else {
+          setSimulationIndex(0);
+          setSimulationRunId((value) => value + 1);
+        }
       } catch (error) {
         if (controller.signal.aborted) {
           return;
@@ -2012,6 +2026,7 @@ export function DiagramEditor({
     void runSimulation(
       { ...simulationChoices, [decision.node_id]: flowId },
       simulationVariables.variables,
+      { keepPosition: true },
     );
   };
 
@@ -3045,10 +3060,16 @@ export function DiagramEditor({
       badge.title = validationBadgeTitle(summary);
       badge.setAttribute('aria-label', badge.title);
       badge.dataset['validationElement'] = elementId;
+      const badgeFinding =
+        validation.findings.find(
+          (finding) => finding.element_id === elementId && finding.severity === summary.severity,
+        ) ?? validation.findings.find((finding) => finding.element_id === elementId);
       badge.addEventListener('click', (event) => {
         event.stopPropagation();
         selection.select([element]);
         setInspectorOpen(true);
+        setProblemsOpen(true);
+        setHighlightedFinding(badgeFinding ?? null);
       });
       overlays.add(elementId, VALIDATION_OVERLAY_TYPE, {
         position: { top: -12, left: -12 },
@@ -3074,6 +3095,8 @@ export function DiagramEditor({
     modeler.get<SelectionLike>('selection').select([element]);
     modeler.get<CanvasLike>('canvas').scrollToElement(element, 80);
     setInspectorOpen(true);
+    setProblemsOpen(true);
+    setHighlightedFinding(finding);
   };
 
   const checkValidation = useCallback(() => {
@@ -4160,6 +4183,24 @@ export function DiagramEditor({
                 </span>
               ) : null}
             </button>
+            <label
+              className="editor-toolbar__auto"
+              title="Вернуть панели на холст и расположить их автоматически"
+            >
+              <input
+                type="checkbox"
+                checked={autoLayout}
+                aria-label="Автоположение окон"
+                onChange={(event) => {
+                  const next = event.currentTarget.checked;
+                  if (next) {
+                    clearAllPanelLayouts(diagramId);
+                  }
+                  setAutoLayout(next);
+                }}
+              />
+              <span>Автоположение</span>
+            </label>
             <button
               type="button"
               className={
@@ -4478,6 +4519,7 @@ export function DiagramEditor({
               speed={simulationSpeed}
               nodes={simulationPoints.nodes}
               flows={simulationPoints.flows}
+              runId={simulationRunId}
             />
           ) : null}
           <StageBands
@@ -4509,61 +4551,70 @@ export function DiagramEditor({
           <p className="canvas-hint" aria-hidden="true">
             ПКМ — меню элемента · {formatCombo(shortcuts.editLabel)} — переименовать
           </p>
-          {problemsOpen ? (
-            <ProblemsPanel
-              report={validation}
-              stale={save.kind !== 'saved'}
-              busy={validationBusy}
-              error={validationError}
-              onSelect={openFinding}
-              onDownload={() => void downloadReport()}
-              downloading={reportDownloading}
-              onClose={() => setProblemsOpen(false)}
-            />
-          ) : null}
-          {simulationOpen ? (
-            <SimulationPanel
-              report={simulation}
-              index={simulationIndex}
-              playing={simulationPlaying}
-              speed={simulationSpeed}
-              busy={simulationBusy}
-              error={simulationError}
-              variablesText={simulationVariablesText}
-              variablesError={simulationVariables.error}
-              onVariablesChange={setSimulationVariablesText}
-              heatmap={simulationHeatmap}
-              onHeatmapChange={setSimulationHeatmap}
-              onRun={() => void runSimulation({}, simulationVariables.variables)}
-              onChooseBranch={chooseSimulationBranch}
-              onStep={(next) => {
-                if (!simulation) {
-                  return;
-                }
-                setSimulationPlaying(false);
-                setSimulationIndex(Math.max(0, Math.min(next, simulation.steps.length - 1)));
-              }}
-              onTogglePlay={() => setSimulationPlaying((value) => !value)}
-              onSpeedChange={setSimulationSpeed}
-              onClose={() => {
-                setSimulationOpen(false);
-                setSimulationPlaying(false);
-              }}
-            />
-          ) : null}
-          {commentsOpen ? (
-            <CommentsPanel
-              key={selected?.id ?? 'none'}
-              elementName={selected ? selected.businessObject.name || selected.id : null}
-              comments={commentsForElement(comments, selected?.id ?? null)}
-              busy={commentsBusy}
-              error={commentsError}
-              onCreate={(body) => void addComment(body)}
-              onToggleResolved={(comment) => void toggleCommentResolved(comment)}
-              onDelete={(comment) => void removeComment(comment)}
-              onClose={() => setCommentsOpen(false)}
-            />
-          ) : null}
+          <div className="canvas-panels">
+            {problemsOpen ? (
+              <ProblemsPanel
+                report={validation}
+                stale={save.kind !== 'saved'}
+                busy={validationBusy}
+                error={validationError}
+                onSelect={openFinding}
+                onDownload={() => void downloadReport()}
+                downloading={reportDownloading}
+                onClose={() => setProblemsOpen(false)}
+                highlighted={highlightedFinding}
+                scope={diagramId}
+                autoLayout={autoLayout}
+              />
+            ) : null}
+            {simulationOpen ? (
+              <SimulationPanel
+                report={simulation}
+                index={simulationIndex}
+                playing={simulationPlaying}
+                speed={simulationSpeed}
+                busy={simulationBusy}
+                error={simulationError}
+                variablesText={simulationVariablesText}
+                variablesError={simulationVariables.error}
+                onVariablesChange={setSimulationVariablesText}
+                heatmap={simulationHeatmap}
+                onHeatmapChange={setSimulationHeatmap}
+                onRun={() => void runSimulation({}, simulationVariables.variables)}
+                onChooseBranch={chooseSimulationBranch}
+                onStep={(next) => {
+                  if (!simulation) {
+                    return;
+                  }
+                  setSimulationPlaying(false);
+                  setSimulationIndex(Math.max(0, Math.min(next, simulation.steps.length - 1)));
+                }}
+                onTogglePlay={() => setSimulationPlaying((value) => !value)}
+                onSpeedChange={setSimulationSpeed}
+                onClose={() => {
+                  setSimulationOpen(false);
+                  setSimulationPlaying(false);
+                }}
+                scope={diagramId}
+                autoLayout={autoLayout}
+              />
+            ) : null}
+            {commentsOpen ? (
+              <CommentsPanel
+                key={selected?.id ?? 'none'}
+                elementName={selected ? selected.businessObject.name || selected.id : null}
+                comments={commentsForElement(comments, selected?.id ?? null)}
+                busy={commentsBusy}
+                error={commentsError}
+                onCreate={(body) => void addComment(body)}
+                onToggleResolved={(comment) => void toggleCommentResolved(comment)}
+                onDelete={(comment) => void removeComment(comment)}
+                onClose={() => setCommentsOpen(false)}
+                scope={diagramId}
+                autoLayout={autoLayout}
+              />
+            ) : null}
+          </div>
           {legendOpen ? (
             <DiagramLegend
               items={legendItems}

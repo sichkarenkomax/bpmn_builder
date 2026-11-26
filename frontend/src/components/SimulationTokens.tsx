@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { SimulationStep } from '../lib/api';
-import { latestTokenSteps, pointAlong, type TokenPoint } from '../lib/simulation-token';
+import { latestTokenSteps, pointAlong, tokenRoute, type TokenPoint } from '../lib/simulation-token';
 
 /** Длительность перехода токена к следующему шагу, мс (делится на скорость). */
 const TRAVEL_MS = 520;
@@ -36,27 +36,42 @@ export function SimulationTokens({
   speed,
   nodes,
   flows,
+  runId,
 }: {
   steps: SimulationStep[];
   index: number;
   speed: number;
   nodes: Record<string, TokenPoint>;
   flows: Record<string, TokenPoint[]>;
+  /** Меняется только у нового прогона: выбор ветки продолжает текущий. */
+  runId: number;
 }) {
   const [positions, setPositions] = useState<Record<number, TokenPoint>>({});
   const positionsRef = useRef<Record<number, TokenPoint>>({});
+  const previousStepRef = useRef<{ steps: SimulationStep[]; index: number } | null>(null);
 
   // Новый прогон — токены появляются заново, без прыжка со старого места.
+  // Пересчёт после выбора ветки приходит с тем же runId: токен остаётся на шаге.
   useEffect(() => {
     positionsRef.current = {};
+    previousStepRef.current = null;
     setPositions({});
-  }, [steps]);
+  }, [runId]);
 
   useEffect(() => {
     const targets = latestTokenSteps(steps, index);
     if (targets.length === 0) {
       return;
     }
+
+    // При панораме/зуме меняются только координаты nodes/flows, а шаг остаётся
+    // тем же. В этом случае нельзя анимировать от старой позиции: токен бы
+    // «прилипал» к экрану и догонял схему. Смена шага — наоборот, анимируется.
+    const previousStep = previousStepRef.current;
+    const geometryOnly = previousStep?.steps === steps && previousStep.index === index;
+    const hasPositions = Object.keys(positionsRef.current).length > 0;
+    previousStepRef.current = { steps, index };
+
     const duration = TRAVEL_MS / Math.max(speed, 0.25);
     const resting: Record<number, TokenPoint> = {};
     const travels: Travel[] = [];
@@ -67,6 +82,10 @@ export function SimulationTokens({
         continue;
       }
       const flowPath = step.flow_id ? (flows[step.flow_id] ?? null) : null;
+      if (geometryOnly && hasPositions) {
+        resting[step.token] = to;
+        continue;
+      }
       const previous = positionsRef.current[step.token];
       const from = previous ?? flowPath?.[0] ?? to;
       if (Math.hypot(from.x - to.x, from.y - to.y) < 0.5) {
@@ -75,11 +94,13 @@ export function SimulationTokens({
       }
       // Ломаная потока начинается и кончается на границах фигур, поэтому
       // добавляем центры: токен должен приехать в элемент, а не в стрелку.
-      const route = flowPath && flowPath.length > 1 ? [from, ...flowPath, to] : null;
+      // Назад по потоку не едем: путь начинается у следующего элемента и увёл бы
+      // токен через начало потока, мимо цели.
+      const route = tokenRoute(from, to, flowPath);
       travels.push({ token: step.token, from, to, path: route });
     }
 
-    if (travels.length === 0) {
+    if (travels.length === 0 || (geometryOnly && hasPositions)) {
       positionsRef.current = resting;
       setPositions(resting);
       return;

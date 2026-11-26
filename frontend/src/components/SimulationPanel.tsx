@@ -1,3 +1,4 @@
+import { usePanelDrag } from '../hooks/usePanelDrag';
 import type { SimulationReport, SimulationStep } from '../lib/api';
 
 const SPEEDS = [0.5, 1, 1.5, 2] as const;
@@ -21,6 +22,8 @@ export function SimulationPanel({
   onTogglePlay,
   onSpeedChange,
   onClose,
+  scope,
+  autoLayout,
 }: {
   report: SimulationReport | null;
   index: number;
@@ -39,6 +42,8 @@ export function SimulationPanel({
   onTogglePlay: () => void;
   onSpeedChange: (speed: number) => void;
   onClose: () => void;
+  scope: string;
+  autoLayout: boolean;
 }) {
   const steps = report?.steps ?? [];
   const total = steps.length;
@@ -47,13 +52,25 @@ export function SimulationPanel({
   const atEnd = total > 0 && current >= total - 1;
 
   const counts = report ? Object.entries(report.counts) : [];
+  const drag = usePanelDrag('simulation', scope, autoLayout);
 
   return (
-    <aside className="comments-panel simulation-panel" aria-label="Симуляция процесса">
-      <header className="simulation-panel__header">
+    <aside
+      ref={drag.panelRef}
+      className="comments-panel simulation-panel"
+      style={drag.panelStyle}
+      aria-label="Симуляция процесса"
+    >
+      <header className="simulation-panel__header" {...drag.handleProps}>
         <h2 className="simulation-panel__title">Симуляция</h2>
-        <button type="button" className="ghost-button ghost-button--small" onClick={onClose}>
-          Закрыть
+        <button
+          type="button"
+          className="ghost-button ghost-button--small"
+          title="Закрыть"
+          aria-label="Закрыть"
+          onClick={onClose}
+        >
+          <span aria-hidden="true">×</span>
         </button>
       </header>
 
@@ -250,6 +267,15 @@ export function SimulationPanel({
           Запустите прогон: токен пройдёт по сохранённой версии схемы. Подсветка покажет путь и
           текущий элемент, журнал — шаги и ожидания шлюзов.
         </p>
+      )}
+
+      {autoLayout ? null : (
+        <span
+          className="comments-panel__resize"
+          aria-hidden="true"
+          title="Изменить размер"
+          {...drag.resizeHandleProps}
+        />
       )}
     </aside>
   );

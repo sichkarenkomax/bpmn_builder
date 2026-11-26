@@ -39,7 +39,7 @@ UI на `http://127.0.0.1:8080`; наружу его публикует ваш r
 
 ## Без Docker
 
-Нужны Python 3.12+, Node 20.19+, запущенные Postgres и Redis.
+Нужны Python 3.12+, Node 22.12+ (CI и Docker используют Node 24), запущенные Postgres и Redis.
 
 ```bash
 cd backend && uv sync
