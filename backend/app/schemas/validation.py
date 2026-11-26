@@ -54,6 +54,8 @@ class ValidationReport(BaseModel):
     findings: list[Finding]
     duration_ms: float = Field(ge=0)
     schema_version: str = Field(default=VALIDATION_SCHEMA_VERSION, min_length=1, max_length=20)
+    #: Ошибки конфига правил: показываются отдельно и не влияют на `valid`.
+    config_errors: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _summary_matches_findings(self) -> Self:
@@ -69,7 +71,13 @@ class ValidationReport(BaseModel):
         return self
 
     @classmethod
-    def from_findings(cls, findings: Iterable[Finding], *, duration_ms: float) -> Self:
+    def from_findings(
+        cls,
+        findings: Iterable[Finding],
+        *,
+        duration_ms: float,
+        config_errors: Iterable[str] = (),
+    ) -> Self:
         """Собирает согласованный отчёт: счётчики и `valid` считаются здесь."""
         items = list(findings)
         summary = ValidationSummary(
@@ -82,6 +90,7 @@ class ValidationReport(BaseModel):
             summary=summary,
             findings=items,
             duration_ms=duration_ms,
+            config_errors=list(config_errors),
         )
 
 

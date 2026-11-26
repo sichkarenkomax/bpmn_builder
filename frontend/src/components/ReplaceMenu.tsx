@@ -19,15 +19,18 @@ export interface ReplaceMenuState {
 export function ReplaceMenu({
   menu,
   onClose,
+  inline = false,
 }: {
   menu: ReplaceMenuState | null;
   onClose: () => void;
+  /** Режим палитры слева от ПКМ-меню: позицию и закрытие ведёт ContextMenu. */
+  inline?: boolean;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
 
   useLayoutEffect(() => {
-    if (!menu) {
+    if (!menu || inline) {
       setPosition(null);
       return;
     }
@@ -38,10 +41,10 @@ export function ReplaceMenu({
       x: Math.max(8, Math.min(menu.x, window.innerWidth - width - 8)),
       y: Math.max(8, Math.min(menu.y, window.innerHeight - height - 8)),
     });
-  }, [menu]);
+  }, [menu, inline]);
 
   useEffect(() => {
-    if (!menu) {
+    if (!menu || inline) {
       return;
     }
     const onPointerDown = (event: MouseEvent) => {
@@ -64,7 +67,7 @@ export function ReplaceMenu({
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('scroll', onClose, true);
     };
-  }, [menu, onClose]);
+  }, [menu, onClose, inline]);
 
   if (!menu) {
     return null;
@@ -73,10 +76,10 @@ export function ReplaceMenu({
   return (
     <div
       ref={ref}
-      className="replace-menu"
+      className={inline ? 'replace-menu replace-menu--inline' : 'replace-menu'}
       role="menu"
       aria-label="Сменить тип элемента"
-      style={{ left: position?.x ?? menu.x, top: position?.y ?? menu.y }}
+      style={inline ? undefined : { left: position?.x ?? menu.x, top: position?.y ?? menu.y }}
     >
       {menu.entries.map((entry, index) => {
         const label = entry.label || 'Элемент';

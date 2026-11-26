@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import hashlib
+from typing import Any, cast
+from urllib.parse import quote
 
 from app.api.deps import get_session
 from app.bpmn import (
+    BpmnDocument,
     BpmnError,
     create_empty_document,
     parse_and_validate_bpmn,
     serialize_bpmn,
 )
+from app.core.config import get_settings
 from app.db.models import Diagram, DiagramVersion
 from app.schemas.diagram import (
     BpmnSaved,
@@ -20,11 +24,18 @@ from app.schemas.diagram import (
     DiagramUpdate,
     VersionRead,
 )
-from app.schemas.validation import ValidationReport
-from app.validation import ValidationEngine
+from app.schemas.validation import Finding, ValidationReport
+from app.validation import (
+    RuleCategory,
+    ValidationEngine,
+    build_engine,
+    load_rule_config,
+)
+from app.validation.report import build_validation_docx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 router = APIRouter(prefix="/diagrams", tags=["diagrams"])
 
@@ -35,13 +46,19 @@ def _etag(xml: str) -> str:
     return hashlib.sha256(xml.encode("utf-8")).hexdigest()[:32]
 
 
-def _validated(xml: str) -> None:
+_RULE_CATEGORIES = {"structure", "gateway", "event", "lane"}
+_REPORT_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _validated(xml: str) -> BpmnDocument:
     """XML должен быть валиден по XSD и разбираться в модель.
 
     Оба шага используют одно дерево `lxml`: большой документ не разбирается дважды.
+    Модель возвращается, чтобы сохранение не разбирало XML ещё раз для валидации.
     """
     try:
-        parse_and_validate_bpmn(xml)
+        document, _ = parse_and_validate_bpmn(xml)
+        return document
     except BpmnError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -220,6 +237,7 @@ async def get_bpmn(diagram_id: str, session: AsyncSession = Depends(get_session)
 async def put_bpmn(
     diagram_id: str,
     request: Request,
+    response: Response,
     if_match: str | None = Header(default=None, alias="If-Match"),
     session: AsyncSession = Depends(get_session),
 ) -> BpmnSaved:
@@ -237,8 +255,13 @@ async def put_bpmn(
             "column": None,
         }
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from exc
-    _validated(xml)
+    document = _validated(xml)
     etag = _etag(xml)
+
+    # 2.2.3: предупреждаем о проблемах заголовками, но не блокируем сохранение.
+    report = _report(document)
+    response.headers["X-Validation-Errors"] = str(report.summary.errors)
+    response.headers["X-Validation-Warnings"] = str(report.summary.warnings)
 
     if diagram.etag and etag == diagram.etag:
         return BpmnSaved(etag=diagram.etag, version_id=diagram.current_version_id or "")
@@ -253,21 +276,157 @@ async def put_bpmn(
     return BpmnSaved(etag=diagram.etag, version_id=version.id)
 
 
-@router.get("/{diagram_id}/validation", response_model=ValidationReport)
-async def validate_diagram(
-    diagram_id: str, session: AsyncSession = Depends(get_session)
+def _categories(include: str | None) -> frozenset[RuleCategory] | None:
+    """`?include=xsd,structure,gateway` — пустое значение проверяет всё."""
+    if include is None or not include.strip():
+        return None
+    parts = {part.strip().lower() for part in include.split(",") if part.strip()}
+    unknown = parts - _RULE_CATEGORIES - {"xsd"}
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "UnknownValidationCategory",
+                "message": "неизвестная категория: " + ", ".join(sorted(unknown)),
+                "allowed": sorted(_RULE_CATEGORIES | {"xsd"}),
+            },
+        )
+    categories = frozenset(cast(RuleCategory, part) for part in parts & _RULE_CATEGORIES)
+    return categories
+
+
+def _parse_engine(include: str | None) -> tuple[ValidationEngine, list[str]]:
+    config = load_rule_config(get_settings().validation_rules_file)
+    return build_engine(config, categories=_categories(include)), list(config.errors)
+
+
+def _with_config(report: ValidationReport, config_errors: list[str]) -> ValidationReport:
+    if not config_errors:
+        return report
+    return report.model_copy(update={"config_errors": config_errors})
+
+
+def _report(document: BpmnDocument, include: str | None = None) -> ValidationReport:
+    engine, config_errors = _parse_engine(include)
+    return _with_config(engine.validate(document), config_errors)
+
+
+def _xsd_report(exc: BpmnError, config_errors: list[str]) -> ValidationReport:
+    """Битый сохранённый XML — это отчёт, а не 500: CI должен получить JSON."""
+    finding = Finding(
+        rule_id="BPMN-XSD-001",
+        severity="error",
+        message=exc.message,
+        # lxml отдаёт 0 для неизвестной позиции, а контракт — 1-based или null.
+        line=exc.line if exc.line and exc.line >= 1 else None,
+        column=exc.column if exc.column and exc.column >= 1 else None,
+        hint="исправьте XML и сохраните диаграмму заново",
+    )
+    return ValidationReport.from_findings([finding], duration_ms=0.0, config_errors=config_errors)
+
+
+async def _validate_saved(
+    session: AsyncSession, diagram: Diagram, include: str | None
 ) -> ValidationReport:
-    """Структурная проверка сохранённой версии диаграммы."""
-    diagram = await _load(session, diagram_id)
     xml = await _current_xml(session, diagram)
+    _check_size(xml)
+    engine, config_errors = _parse_engine(include)
     try:
         document, _ = parse_and_validate_bpmn(xml)
     except BpmnError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": type(exc).__name__, **exc.as_detail()},
-        ) from exc
-    return ValidationEngine().validate(document)
+        return _xsd_report(exc, config_errors)
+    return _with_config(engine.validate(document), config_errors)
+
+
+_VALIDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    200: {
+        "description": "Отчёт валидации; 200 возвращается и для схемы с ошибками (valid=false)",
+        "content": {
+            "application/json": {
+                "example": {
+                    "valid": False,
+                    "summary": {"errors": 1, "warnings": 0, "infos": 0},
+                    "findings": [
+                        {
+                            "rule_id": "BPMN-GATEWAY-001",
+                            "severity": "error",
+                            "message": "ветка «Разветвление» без условия",
+                            "element_id": "Flow_1",
+                            "element_name": None,
+                            "line": None,
+                            "column": None,
+                            "hint": "добавьте conditionExpression",
+                        }
+                    ],
+                    "duration_ms": 3.2,
+                    "schema_version": "1.0",
+                    "config_errors": [],
+                }
+            }
+        },
+    },
+    400: {"description": "Неизвестная категория в include"},
+    404: {"description": "Диаграмма не найдена"},
+    413: {"description": "Сохранённый XML больше 5 МиБ"},
+    429: {"description": "Превышен лимит запросов"},
+    504: {"description": "Проверка не уложилась в таймаут"},
+}
+
+
+@router.post(
+    "/{diagram_id}/validate",
+    response_model=ValidationReport,
+    responses=_VALIDATE_RESPONSES,
+)
+async def validate_diagram_post(
+    diagram_id: str,
+    include: str | None = Query(
+        default=None,
+        description="Категории правил: xsd,structure,gateway,event,lane",
+        examples=["structure,gateway"],
+    ),
+    session: AsyncSession = Depends(get_session),
+) -> ValidationReport:
+    """Проверяет сохранённый XML; не создаёт версию и не меняет диаграмму (2.2.1)."""
+    diagram = await _load(session, diagram_id)
+    return await _validate_saved(session, diagram, include)
+
+
+@router.get(
+    "/{diagram_id}/validation",
+    response_model=ValidationReport,
+    responses=_VALIDATE_RESPONSES,
+    deprecated=True,
+)
+async def validate_diagram(
+    diagram_id: str,
+    include: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+) -> ValidationReport:
+    """Совместимый GET для UI; контракт для CI — `POST /validate`."""
+    diagram = await _load(session, diagram_id)
+    return await _validate_saved(session, diagram, include)
+
+
+@router.get("/{diagram_id}/validation/report.docx")
+async def validation_report_docx(
+    diagram_id: str, session: AsyncSession = Depends(get_session)
+) -> Response:
+    """DOCX-отчёт по сохранённой версии (2.4.2)."""
+    diagram = await _load(session, diagram_id)
+    report = await _validate_saved(session, diagram, None)
+    payload = await run_in_threadpool(
+        build_validation_docx,
+        report,
+        diagram_title=diagram.title,
+        diagram_id=diagram.id,
+    )
+    filename = quote(f"validation-{diagram.id}.docx")
+    return Response(
+        content=payload,
+        media_type=_REPORT_MEDIA_TYPE,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
 
 
 @router.get("/{diagram_id}/versions", response_model=list[VersionRead])

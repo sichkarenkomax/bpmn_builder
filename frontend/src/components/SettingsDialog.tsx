@@ -33,6 +33,8 @@ export function SettingsDialog({
   onMarkdownToolbarChange,
   mouseMode,
   onMouseModeChange,
+  typePalette,
+  onTypePaletteChange,
   onClose,
 }: {
   open: boolean;
@@ -46,6 +48,8 @@ export function SettingsDialog({
   onMarkdownToolbarChange: (enabled: boolean) => void;
   mouseMode: CanvasMouseMode;
   onMouseModeChange: (mode: CanvasMouseMode) => void;
+  typePalette: boolean;
+  onTypePaletteChange: (enabled: boolean) => void;
   onClose: () => void;
 }) {
   const [capturing, setCapturing] = useState<ShortcutAction | null>(null);
@@ -203,6 +207,18 @@ export function SettingsDialog({
           <p className="dialog__hint">
             Включает панель форматирования (заголовки, списки, ссылки) и предпросмотр в инспекторе.
             Выключите, чтобы вернуться к простому текстовому полю.
+          </p>
+          <label className="settings-field settings-field--checkbox">
+            <input
+              type="checkbox"
+              checked={typePalette}
+              onChange={(event) => onTypePaletteChange(event.target.checked)}
+            />
+            <span>Палитра смены типа сразу в ПКМ-меню</span>
+          </label>
+          <p className="dialog__hint">
+            Показывает палитру значков слева от ПКМ-меню сразу после правого клика по элементу.
+            Выключенная настройка прячет палитру, но оставляет пункт «Сменить тип» в меню.
           </p>
           <label className="settings-field">
             <span>Левая кнопка на пустом холсте</span>

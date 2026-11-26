@@ -14,6 +14,8 @@ export interface DiagramStage {
   /** Левая граница этапа относительно левой границы пула. */
   x: number;
   collapsed: boolean;
+  /** Markdown-описание этапа (1.5.7); пустая строка не сохраняется. */
+  description?: string;
 }
 
 export interface StagePool {
@@ -187,6 +189,9 @@ export function parseStages(raw: string | undefined): DiagramStage[] | null {
           ? Math.max(0, Math.round(candidate['x']))
           : POOL_LABEL_WIDTH,
       collapsed: candidate['collapsed'] === true,
+      ...(typeof candidate['description'] === 'string' && candidate['description'].trim()
+        ? { description: candidate['description'] }
+        : {}),
     });
   }
   return stages;
@@ -198,13 +203,18 @@ export function serializeStages(stages: DiagramStage[]): string | undefined {
     return undefined;
   }
   return JSON.stringify(
-    stages.map((stage) => ({
-      id: stage.id,
-      name: stage.name,
-      poolId: stage.poolId,
-      x: stage.x,
-      collapsed: stage.collapsed,
-    })),
+    stages.map((stage) => {
+      const description = stage.description?.trim();
+      return {
+        id: stage.id,
+        name: stage.name,
+        poolId: stage.poolId,
+        x: stage.x,
+        collapsed: stage.collapsed,
+        // Пустое описание не пишем: XML не должен копить пустые поля.
+        ...(description ? { description } : {}),
+      };
+    }),
   );
 }
 

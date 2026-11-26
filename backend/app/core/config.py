@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "bpmn-studio"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
     environment: Literal["local", "test", "staging", "production"] = "local"
     debug: bool = False
     api_prefix: str = "/api/v1"
@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     rate_limit_write_per_minute: int = 120
     request_timeout_seconds: float = 20.0
     max_request_body_bytes: int = 12 * 1024 * 1024
+    #: JSON-файл настроек правил валидации (2.1.5); пусто — только встроенные.
+    validation_rules_file: str | None = None
 
     database_url: str = "postgresql+asyncpg://bpmn:bpmn@localhost:5432/bpmn"
     database_pool_size: int = 5
