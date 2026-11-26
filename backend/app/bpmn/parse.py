@@ -240,12 +240,25 @@ def _parse_lane(element: etree._Element, di: _DiIndex) -> Lane:
     )
 
 
+def _parse_inner(element: etree._Element, di: _DiIndex) -> tuple[list[Node], list[Flow]]:
+    """Вложенные элементы подпроцесса: узлы и потоки последовательности."""
+    nodes: list[Node] = []
+    flows: list[Flow] = []
+    for child in element:
+        local = etree.QName(child).localname
+        if local in _NODE_TYPES:
+            nodes.append(_parse_node(child, _NODE_TYPES[local], di))
+        elif local == "sequenceFlow":
+            flows.append(_parse_flow(child, FlowType.SEQUENCE, di))
+    return nodes, flows
+
+
 def _parse_node(element: etree._Element, node_type: NodeType, di: _DiIndex) -> Node:
     node_id = element.get("id")
     if not node_id:
         raise BpmnModelError(f"у элемента {node_type.value} нет id", line=_line(element))
     script = element.find(q(BPMN, "script"))
-    return Node(
+    node = Node(
         id=node_id,
         type=node_type,
         name=element.get("name"),
@@ -260,6 +273,9 @@ def _parse_node(element: etree._Element, node_type: NodeType, di: _DiIndex) -> N
         default_flow=element.get("default"),
         timer=_parse_timer(element),
     )
+    if node_type is NodeType.SUB_PROCESS:
+        node.nodes, node.flows = _parse_inner(element, di)
+    return node
 
 
 def _parse_timer(element: etree._Element) -> TimerDefinition | None:

@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
+
 from lxml import etree
 
 from app.bpmn.layout import fallback_waypoints, plane_ids, sorted_artifacts
@@ -197,6 +199,11 @@ def _emit_node(parent: etree._Element, node: Node) -> None:
     if node.timer is not None:
         definition = _sub(element, "timerEventDefinition")
         _sub(definition, node.timer.kind.value).text = node.timer.expression
+    if node.type is NodeType.SUB_PROCESS:
+        for child in node.nodes:
+            _emit_node(element, child)
+        for flow in node.flows:
+            _emit_flow(element, flow)
 
 
 def _emit_flow(parent: etree._Element, flow: Flow) -> None:
@@ -226,6 +233,20 @@ def _emit_artifact(parent: etree._Element, artifact: Artifact) -> None:
         _sub(element, "text").text = artifact.text
 
 
+def _walk_nodes(nodes: Iterable[Node]) -> Iterator[Node]:
+    """Узлы на любую глубину: сначала родитель, затем его вложенные элементы."""
+    for node in nodes:
+        yield node
+        yield from _walk_nodes(node.nodes)
+
+
+def _walk_flows(nodes: Iterable[Node], flows: Iterable[Flow]) -> Iterator[Flow]:
+    """Потоки подпроцессов вместе с потоками верхнего уровня."""
+    yield from flows
+    for node in nodes:
+        yield from _walk_flows(node.nodes, node.flows)
+
+
 def _has_pools(document: BpmnDocument) -> bool:
     collaboration = document.collaboration
     return collaboration is not None and any(
@@ -247,12 +268,13 @@ def _emit_plane(parent: etree._Element, process: Process) -> None:
 def _emit_process_content(plane: etree._Element, process: Process) -> None:
     for lane in _flatten(process.lanes):
         _emit_shape(plane, lane.id, lane.bounds, is_horizontal=True)
-    for node in process.nodes:
+    nodes = list(_walk_nodes(process.nodes))
+    for node in nodes:
         _emit_shape(plane, node.id, node.bounds, is_expanded=node.is_expanded)
     for artifact in process.artifacts:
         _emit_shape(plane, artifact.id, artifact.bounds)
-    bounds = {node.id: node.bounds for node in process.nodes}
-    for flow in [*process.flows, *process.associations]:
+    bounds = {node.id: node.bounds for node in nodes}
+    for flow in [*_walk_flows(process.nodes, process.flows), *process.associations]:
         _emit_edge(plane, flow, bounds)
 
 

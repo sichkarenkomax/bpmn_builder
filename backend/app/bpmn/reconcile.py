@@ -28,7 +28,15 @@ from app.bpmn.model import (
     Process,
 )
 from app.bpmn.namespaces import BPMN, BPMNDI, DC, q
-from app.bpmn.serialize import _emit_artifact, _emit_flow, _emit_lane, _emit_node, _sub
+from app.bpmn.serialize import (
+    _emit_artifact,
+    _emit_flow,
+    _emit_lane,
+    _emit_node,
+    _sub,
+    _walk_flows,
+    _walk_nodes,
+)
 
 _ARTIFACT_TAGS = {artifact_type.value for artifact_type in ArtifactType}
 _FLOW_TAGS = {flow_type.value for flow_type in FlowType}
@@ -189,6 +197,43 @@ def _sync_node(element: etree._Element, node: Node) -> None:
     else:
         _set_or_remove(element, "scriptFormat", None)
         _sync_text_child(element, "script", None)
+
+    if node.type is NodeType.SUB_PROCESS:
+        _sync_inner_children(element, node)
+
+
+def _sync_inner_children(parent: etree._Element, node: Node) -> None:
+    """Вложенные узлы и потоки подпроцесса: обновить, добавить, убрать лишние."""
+    by_id: dict[str, etree._Element] = {}
+    for child in parent:
+        element_id = child.get("id")
+        if element_id:
+            by_id[element_id] = child
+
+    model_ids: set[str] = set()
+
+    for child_node in node.nodes:
+        model_ids.add(child_node.id)
+        element = by_id.get(child_node.id)
+        if element is None:
+            _insert_before_trailing(parent, _build_node(child_node))
+        else:
+            _sync_node(element, child_node)
+
+    for flow in node.flows:
+        model_ids.add(flow.id)
+        element = by_id.get(flow.id)
+        if element is None:
+            _insert_before_trailing(parent, _build_flow(flow))
+        else:
+            _sync_flow(element, flow)
+
+    for element_id, element in by_id.items():
+        if element_id in model_ids:
+            continue
+        local = etree.QName(element).localname
+        if local in _node_types() or local in _FLOW_TAGS:
+            parent.remove(element)
 
 
 def _sync_flow(element: etree._Element, flow: Flow) -> None:
@@ -374,12 +419,13 @@ def _sync_plane(
 def _upsert_process_shapes(plane: etree._Element, process: Process) -> None:
     for lane in _flatten(process.lanes):
         _upsert_shape(plane, lane.id, lane.bounds, is_horizontal=True)
-    for node in process.nodes:
+    nodes = list(_walk_nodes(process.nodes))
+    for node in nodes:
         _upsert_shape(plane, node.id, node.bounds, is_expanded=node.is_expanded)
     for artifact in process.artifacts:
         _upsert_shape(plane, artifact.id, artifact.bounds)
-    bounds = {node.id: node.bounds for node in process.nodes}
-    for flow in [*process.flows, *process.associations]:
+    bounds = {node.id: node.bounds for node in nodes}
+    for flow in [*_walk_flows(process.nodes, process.flows), *process.associations]:
         _upsert_edge(plane, flow, bounds)
 
 

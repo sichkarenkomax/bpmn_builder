@@ -119,6 +119,9 @@ class Node(DiagramElement):
     default_flow: str | None = None
     #: Таймер стартового, промежуточного ловящего или граничного события.
     timer: TimerDefinition | None = None
+    #: Вложенные элементы раскрытого подпроцесса; у остальных типов пусто.
+    nodes: list[Node] = Field(default_factory=list)
+    flows: list[Flow] = Field(default_factory=list)
 
     @field_validator("script")
     @classmethod
@@ -281,10 +284,33 @@ class BpmnDocument(BaseModel):
         return BpmnDocument.model_validate(self.model_dump())
 
     def nodes(self) -> list[Node]:
+        """Узлы верхнего уровня: элементы внутри подпроцессов сюда не входят."""
         return [node for process in self.processes for node in process.nodes]
 
     def flows(self) -> list[Flow]:
+        """Потоки верхнего уровня: внутренние потоки подпроцессов не входят."""
         return [flow for process in self.processes for flow in process.flows]
+
+    def all_nodes(self) -> list[Node]:
+        """Все узлы, включая вложенные в подпроцессы на любую глубину."""
+        result: list[Node] = []
+        for process in self.processes:
+            stack = list(reversed(process.nodes))
+            while stack:
+                node = stack.pop()
+                result.append(node)
+                stack.extend(reversed(node.nodes))
+        return result
+
+    def all_flows(self) -> list[Flow]:
+        """Все потоки, включая внутренние потоки подпроцессов."""
+        result: list[Flow] = [flow for process in self.processes for flow in process.flows]
+        stack = list(reversed(self.nodes()))
+        while stack:
+            node = stack.pop()
+            result.extend(node.flows)
+            stack.extend(reversed(node.nodes))
+        return result
 
     def plane_for(self, element_ref: str) -> tuple[str, str] | None:
         for process in self.processes:
@@ -299,3 +325,7 @@ class BpmnDocument(BaseModel):
         ):
             return collaboration.diagram_id, collaboration.plane_id
         return None
+
+
+# `Node.flows` ссылается на `Flow`, объявленный ниже, — собираем модель после него.
+Node.model_rebuild()
