@@ -10,6 +10,7 @@ from app.bpmn import BpmnDocument, parse_bpmn, serialize_bpmn
 from app.bpmn.model import TimerDefinition, TimerKind
 from app.simulation import ExpressionError, SimulationError, evaluate_condition, simulate
 from app.simulation.expressions import ExpressionError as ExpressionErrorDirect
+from app.simulation.expressions import evaluate_value
 from app.simulation.timers import parse_duration_ms, timer_wait_ms
 from httpx import AsyncClient
 
@@ -109,6 +110,12 @@ def test_expression_precedence_and_variables() -> None:
     assert evaluate_condition("rate / 2 > 0.4", {"rate": 1})
 
 
+def test_evaluate_value_returns_typed_result() -> None:
+    assert evaluate_value("amount + 500", {"amount": 1000}) == 1500
+    assert evaluate_value("amount > 1000", {"amount": 1000}) is False
+    assert evaluate_value("status == 'new' && !vip", {"status": "new", "vip": False}) is True
+
+
 def test_expression_rejects_code_and_missing_variables() -> None:
     with pytest.raises(ExpressionError):
         evaluate_condition("__import__('os')", {})
@@ -167,6 +174,77 @@ def test_exclusive_gateway_uses_condition_and_default() -> None:
     high = simulate(document(exclusive_body()), variables={"amount": 5000})
     assert high.completed
     assert "High" in high.counts and "Low" not in high.counts
+
+
+def script_body(script: str) -> str:
+    return f"""
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:scriptTask id="Prepare" name="Подготовить" scriptFormat="python">
+      <bpmn:incoming>F1</bpmn:incoming>
+      <bpmn:outgoing>F2</bpmn:outgoing>
+      <bpmn:script>{script}</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Prepare" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Prepare" targetRef="End" />
+  </bpmn:process>"""
+
+
+def test_script_task_updates_variables_and_snapshots_steps() -> None:
+    body = script_body(
+        "amount = amount + 500\n# комментарий\napproved = amount &gt; 1000\nnote = 'готово'"
+    )
+    report = simulate(document(body), variables={"amount": 700})
+
+    assert report.completed
+    start, prepare, end = report.steps
+    assert start.variables == {"amount": 700}
+    assert prepare.changed == ["amount", "approved", "note"]
+    assert prepare.variables == {"amount": 1200, "approved": True, "note": "готово"}
+    assert end.variables == prepare.variables
+    assert end.changed == []
+
+
+def test_script_task_condition_sees_updated_variable() -> None:
+    body = script_body("approved = amount &gt; 1000").replace(
+        '<bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>',
+        '<bpmn:exclusiveGateway id="Check" default="FNo">'
+        "<bpmn:incoming>F2</bpmn:incoming>"
+        "<bpmn:outgoing>FYes</bpmn:outgoing>"
+        "<bpmn:outgoing>FNo</bpmn:outgoing></bpmn:exclusiveGateway>"
+        '<bpmn:task id="Yes"><bpmn:incoming>FYes</bpmn:incoming>'
+        "<bpmn:outgoing>F3</bpmn:outgoing></bpmn:task>"
+        '<bpmn:task id="No"><bpmn:incoming>FNo</bpmn:incoming>'
+        "<bpmn:outgoing>F4</bpmn:outgoing></bpmn:task>"
+        '<bpmn:endEvent id="End"><bpmn:incoming>F3</bpmn:incoming>'
+        "<bpmn:incoming>F4</bpmn:incoming></bpmn:endEvent>",
+    )
+    body = body.replace(
+        '<bpmn:sequenceFlow id="F2" sourceRef="Prepare" targetRef="End" />',
+        '<bpmn:sequenceFlow id="F2" sourceRef="Prepare" targetRef="Check" />'
+        '<bpmn:sequenceFlow id="FYes" sourceRef="Check" targetRef="Yes">'
+        "<bpmn:conditionExpression>approved == true</bpmn:conditionExpression>"
+        "</bpmn:sequenceFlow>"
+        '<bpmn:sequenceFlow id="FNo" sourceRef="Check" targetRef="No" />'
+        '<bpmn:sequenceFlow id="F3" sourceRef="Yes" targetRef="End" />'
+        '<bpmn:sequenceFlow id="F4" sourceRef="No" targetRef="End" />',
+    )
+
+    big = simulate(document(body), variables={"amount": 5000})
+    assert big.completed
+    assert "Yes" in big.counts and "No" not in big.counts
+
+    small = simulate(document(body), variables={"amount": 10})
+    assert small.completed
+    assert "No" in small.counts and "Yes" not in small.counts
+
+
+def test_script_task_rejects_unsupported_code() -> None:
+    with pytest.raises(SimulationError, match="строка 2.*присваивания"):
+        simulate(document(script_body("ok = true\nimport os")))
+    with pytest.raises(SimulationError, match="строка 1.*не задана"):
+        simulate(document(script_body("amount = missing + 1")))
 
 
 def test_parallel_split_waits_for_both_branches() -> None:

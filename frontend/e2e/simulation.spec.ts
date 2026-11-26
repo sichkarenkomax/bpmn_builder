@@ -541,3 +541,50 @@ test('симуляция: токен едет за перетащенным эл
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }
 });
+
+test('симуляция: скрипт-задача меняет переменные, значения видны на шаге', async ({
+  page,
+  request,
+}) => {
+  const scriptXml = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="D" targetNamespace="http://bpmn-studio.dev/test">
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" name="Старт"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:scriptTask id="Prepare" name="Подготовить" scriptFormat="python"><bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing><bpmn:script>approved = 2 * 3 &gt; 5
+note = 'готово'</bpmn:script></bpmn:scriptTask>
+    <bpmn:endEvent id="End" name="Конец"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Prepare" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Prepare" targetRef="End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Dia"><bpmndi:BPMNPlane id="Plane" bpmnElement="P">
+    <bpmndi:BPMNShape id="Start_di" bpmnElement="Start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Prepare_di" bpmnElement="Prepare"><dc:Bounds x="190" y="78" width="100" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="End_di" bpmnElement="End"><dc:Bounds x="350" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNEdge id="F1_di" bpmnElement="F1"><di:waypoint x="136" y="118" /><di:waypoint x="190" y="118" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="F2_di" bpmnElement="F2"><di:waypoint x="290" y="118" /><di:waypoint x="350" y="118" /></bpmndi:BPMNEdge>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E script ${Date.now()}`, bpmn_xml: scriptXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    await expect(page.locator('[data-element-id="Prepare"]').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Симуляция процесса' }).click();
+    const panel = page.getByRole('complementary', { name: 'Симуляция процесса' });
+    await expect(panel.getByRole('status')).toContainText('Завершено: 3 шагов');
+
+    await panel.getByRole('button', { name: 'Следующий шаг' }).click();
+    await expect(panel.locator('.simulation-panel__current')).toContainText('Подготовить');
+    const state = panel.getByRole('list', { name: 'Переменные на шаге' });
+    await expect(state).toContainText('approved');
+    await expect(state).toContainText('true');
+    await expect(state).toContainText('"готово"');
+    await expect(panel.locator('.simulation-panel__state-item--changed')).toHaveCount(2);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});

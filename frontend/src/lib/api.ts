@@ -117,6 +117,10 @@ export interface SimulationStep {
   flow_id: string | null;
   message: string | null;
   wait_ms: number | null;
+  /** Значения переменных после шага. */
+  variables: Record<string, SimulationVariable>;
+  /** Переменные, которые изменил этот шаг. */
+  changed: string[];
 }
 
 export interface SimulationBranch {

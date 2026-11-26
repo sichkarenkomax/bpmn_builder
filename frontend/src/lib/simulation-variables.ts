@@ -25,6 +25,11 @@ function parseValue(raw: string): boolean | number | string {
   return text;
 }
 
+/** Показывает значение переменной так же, как его вводят: строки в кавычках. */
+export function formatSimulationVariable(value: boolean | number | string): string {
+  return typeof value === 'string' ? JSON.stringify(value) : String(value);
+}
+
 /**
  * Переменные задаются по строке на запись: `имя = значение`.
  * Пустые строки и строки, начинающиеся с `#`, пропускаются.

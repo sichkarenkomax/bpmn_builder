@@ -7,12 +7,15 @@
 ветка не подошла, прогон останавливается с `decision`: ветку выбирает
 пользователь, а повторный запуск получает выбор в `choices`. Таймер события
 даёт шаг `waiting` с `wait_ms` (для `timeDuration`), остальные промежуточные
-события считаются «ручным шагом» — токен проходит дальше; подпроцессы не
-раскрываются. Эти ограничения — граница первого среза `v0.3`.
+события считаются «ручным шагом» — токен проходит дальше; скрипт-задача
+исполняет безопасные присваивания `имя = выражение`, а каждый шаг несёт снимок
+переменных после себя; подпроцессы не раскрываются. Эти ограничения — граница
+первого среза `v0.3`.
 """
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -32,6 +35,7 @@ from app.simulation.expressions import (
     ExpressionError,
     MissingVariableError,
     evaluate_condition,
+    evaluate_value,
 )
 from app.simulation.timers import timer_wait_ms
 
@@ -61,6 +65,10 @@ def _labelled(node: Node) -> str:
 
 def _flow_list(flows: list[Flow]) -> str:
     return ", ".join(flow.id for flow in flows)
+
+
+#: Присваивание в скрипт-задаче: `имя = выражение` из безопасного вычислителя.
+_ASSIGNMENT_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$")
 
 
 class _Runner:
@@ -132,6 +140,10 @@ class _Runner:
         if node is None:
             raise SimulationError(f"поток ведёт в неизвестный элемент {token.node_id!r}")
 
+        changed: tuple[str, ...] = ()
+        if node.type is NodeType.SCRIPT_TASK and node.script:
+            changed = self._run_script(node)
+
         incoming = self._incoming.get(node.id, [])
         is_parallel_join = node.type is NodeType.PARALLEL_GATEWAY and len(incoming) > 1
         is_inclusive_join = node.type is NodeType.INCLUSIVE_GATEWAY and len(incoming) > 1
@@ -140,18 +152,36 @@ class _Runner:
             arrived.add(token.from_flow or "")
             expected = {flow.id for flow in incoming}
             if not expected.issubset(arrived):
-                self._log(token, node, "waiting", message=f"ждёт ветки: {_flow_list(incoming)}")
+                self._log(
+                    token,
+                    node,
+                    "waiting",
+                    message=f"ждёт ветки: {_flow_list(incoming)}",
+                    changed=changed,
+                )
                 return
             self._arrivals[node.id] = set()
-            self._log(token, node, "completed", message="ветки синхронизированы")
+            self._log(token, node, "completed", message="ветки синхронизированы", changed=changed)
         elif is_inclusive_join:
             # Инклюзивное слияние ждёт не все входы, а только те ветки, которые
             # реально запущены и ещё могут дойти: невыбранные условия и ветки,
             # ушедшие в другой конец процесса, не должны блокировать токен.
             if self._queued_tokens_can_reach(node.id):
-                self._log(token, node, "waiting", message="ждёт активные ветки")
+                self._log(
+                    token,
+                    node,
+                    "waiting",
+                    message="ждёт активные ветки",
+                    changed=changed,
+                )
                 return
-            self._log(token, node, "completed", message="активные ветки сошлись")
+            self._log(
+                token,
+                node,
+                "completed",
+                message="активные ветки сошлись",
+                changed=changed,
+            )
         elif node.timer is not None:
             self._log(
                 token,
@@ -159,9 +189,10 @@ class _Runner:
                 "waiting",
                 message=f"ожидание таймера: {node.timer.expression}",
                 wait_ms=timer_wait_ms(node.timer),
+                changed=changed,
             )
         else:
-            self._log(token, node, "completed")
+            self._log(token, node, "completed", changed=changed)
 
         self._counts[node.id] += 1
         if node.type is NodeType.END_EVENT:
@@ -175,6 +206,37 @@ class _Runner:
         chosen = self._choose_flows(node, outgoing)
         for flow in chosen:
             self._queue.append(_Token(flow.target_ref, token.token, flow.id))
+
+    def _run_script(self, node: Node) -> tuple[str, ...]:
+        """Исполняет присваивания скрипт-задачи и возвращает изменённые имена.
+
+        Это не JS/Groovy-рантайм: поддерживаются только строки `имя = выражение`,
+        вычисляемые тем же безопасным парсером, что и условия потоков. Такой
+        скрипт может изменить переменные прогона, и состояние видно на каждом шаге.
+        """
+        if not node.script:
+            return ()
+        changed: list[str] = []
+        for number, raw in enumerate(node.script.splitlines(), start=1):
+            line = raw.strip()
+            if line == "" or line.startswith("#") or line.startswith("//"):
+                continue
+            match = _ASSIGNMENT_RE.match(line)
+            if match is None:
+                raise SimulationError(
+                    f"скрипт у {_labelled(node)}, строка {number}: "
+                    "поддерживаются только присваивания «имя = выражение»"
+                )
+            name, expression = match.group(1), match.group(2)
+            try:
+                self._variables[name] = evaluate_value(expression, self._variables)
+            except ExpressionError as exc:
+                raise SimulationError(
+                    f"скрипт у {_labelled(node)}, строка {number}: {exc}"
+                ) from exc
+            if name not in changed:
+                changed.append(name)
+        return tuple(changed)
 
     def _queued_tokens_can_reach(self, target_id: str) -> bool:
         """Есть ли в очереди токен, которому ещё предстоит дойти до слияния."""
@@ -324,6 +386,7 @@ class _Runner:
         action: SimulationStepAction,
         message: str | None = None,
         wait_ms: int | None = None,
+        changed: tuple[str, ...] = (),
     ) -> None:
         self._steps.append(
             SimulationStep(
@@ -336,6 +399,8 @@ class _Runner:
                 flow_id=token.from_flow,
                 message=message,
                 wait_ms=wait_ms,
+                variables=dict(self._variables),
+                changed=list(changed),
             )
         )
 

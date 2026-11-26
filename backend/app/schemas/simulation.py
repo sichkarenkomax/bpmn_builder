@@ -44,6 +44,10 @@ class SimulationStep(BaseModel):
     message: str | None = None
     #: Сколько симуляция ждёт на таймере (`timeDuration`), мс.
     wait_ms: int | None = Field(default=None, ge=0)
+    #: Значения переменных после шага — состояние на этом шаге.
+    variables: dict[str, VariableValue] = Field(default_factory=dict)
+    #: Имена переменных, которые изменил этот шаг (скрипт-задача).
+    changed: list[str] = Field(default_factory=list)
 
 
 class SimulationBranch(BaseModel):

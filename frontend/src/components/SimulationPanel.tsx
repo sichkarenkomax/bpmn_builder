@@ -1,5 +1,6 @@
 import { usePanelDrag } from '../hooks/usePanelDrag';
 import type { SimulationReport, SimulationStep } from '../lib/api';
+import { formatSimulationVariable } from '../lib/simulation-variables';
 
 const SPEEDS = [0.5, 1, 1.5, 2] as const;
 
@@ -50,6 +51,8 @@ export function SimulationPanel({
   const current = total === 0 ? 0 : Math.min(index, total - 1);
   const currentStep: SimulationStep | undefined = steps[current];
   const atEnd = total > 0 && current >= total - 1;
+  const stepVariables = Object.entries(currentStep?.variables ?? {});
+  const changedNames = new Set(currentStep?.changed ?? []);
 
   const counts = report ? Object.entries(report.counts) : [];
   const drag = usePanelDrag('simulation', scope, autoLayout);
@@ -208,6 +211,32 @@ export function SimulationPanel({
                 : ''}
             </p>
           ) : null}
+
+          <div className="simulation-panel__state">
+            <h3 className="simulation-panel__subtitle">Переменные на шаге</h3>
+            {stepVariables.length === 0 ? (
+              <p className="simulation-panel__hint">На этом шаге переменных нет.</p>
+            ) : (
+              <ul aria-label="Переменные на шаге">
+                {stepVariables.map(([name, value]) => (
+                  <li
+                    key={name}
+                    className={
+                      changedNames.has(name)
+                        ? 'simulation-panel__state-item simulation-panel__state-item--changed'
+                        : 'simulation-panel__state-item'
+                    }
+                    title={changedNames.has(name) ? 'Изменено на этом шаге' : undefined}
+                  >
+                    <span className="simulation-panel__state-name">{name}</span>
+                    <span className="simulation-panel__state-value">
+                      {formatSimulationVariable(value)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           <ol className="simulation-panel__log" aria-label="Журнал симуляции">
             {steps.map((step, stepIndex) => (
