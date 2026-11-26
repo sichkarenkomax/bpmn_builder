@@ -1,6 +1,7 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { stageBounds, stageForPool, type DiagramStage, type StagePool } from '../lib/stages';
+import { ContextMenu, type ContextMenuState } from './ContextMenu';
 
 /** Этапы внутри пулов: границы, названия, изменение ширины и сворачивание. */
 export function StageBands({
@@ -10,6 +11,7 @@ export function StageBands({
   onToggle,
   onAdd,
   onRename,
+  onDocumentation,
   onResizePreview,
   onResizeCommit,
   onResizeCancel,
@@ -20,6 +22,7 @@ export function StageBands({
   onToggle: (stage: DiagramStage) => void;
   onAdd: (stage: DiagramStage) => void;
   onRename: (stage: DiagramStage, name: string) => void;
+  onDocumentation: (stage: DiagramStage) => void;
   onResizePreview: (stage: DiagramStage, delta: number) => number;
   onResizeCommit: (stage: DiagramStage, delta: number) => void;
   onResizeCancel: () => void;
@@ -27,6 +30,7 @@ export function StageBands({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
   const [drag, setDrag] = useState<{ stageId: string; delta: number } | null>(null);
+  const [stageMenu, setStageMenu] = useState<ContextMenuState | null>(null);
   const dragRef = useRef<{ stageId: string; startX: number; delta: number } | null>(null);
 
   if (stages.length === 0) {
@@ -182,10 +186,56 @@ export function StageBands({
                     setDraftName(stage.name);
                     setEditingId(stage.id);
                   }}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setStageMenu({
+                      x: event.clientX,
+                      y: event.clientY,
+                      items: [
+                        {
+                          id: 'stage-docs',
+                          label: 'Документация этапа…',
+                          icon: 'ⓘ',
+                          onSelect: () => onDocumentation(stage),
+                        },
+                        {
+                          id: 'stage-rename',
+                          label: 'Переименовать',
+                          icon: '✎',
+                          onSelect: () => {
+                            setDraftName(stage.name);
+                            setEditingId(stage.id);
+                          },
+                        },
+                        { id: 'stage-sep', label: '', separator: true },
+                        {
+                          id: 'stage-toggle',
+                          label: stage.collapsed ? 'Развернуть этап' : 'Свернуть этап',
+                          icon: stage.collapsed ? '▸' : '▾',
+                          onSelect: () => onToggle(stage),
+                        },
+                      ],
+                    });
+                  }}
                 >
                   {stage.name || 'Без названия'}
                 </button>
               )}
+              <button
+                type="button"
+                className="stage-band__docs"
+                aria-label={`Документация этапа «${stage.name}»`}
+                aria-haspopup="dialog"
+                title={
+                  stage.description
+                    ? `${stage.description.slice(0, 400)}${stage.description.length > 400 ? '…' : ''}`
+                    : 'Документация этапа'
+                }
+                onClick={() => onDocumentation(stage)}
+              >
+                ⓘ
+              </button>
               {stage.collapsed ? (
                 <span className="stage-band__collapsed-note">· свёрнут</span>
               ) : null}
@@ -217,6 +267,7 @@ export function StageBands({
           </section>
         );
       })}
+      <ContextMenu menu={stageMenu} onClose={() => setStageMenu(null)} />
     </div>
   );
 }

@@ -33,7 +33,25 @@ class NodeType(StrEnum):
     EXCLUSIVE_GATEWAY = "exclusiveGateway"
     PARALLEL_GATEWAY = "parallelGateway"
     INCLUSIVE_GATEWAY = "inclusiveGateway"
+    EVENT_BASED_GATEWAY = "eventBasedGateway"
     SUB_PROCESS = "subProcess"
+
+
+class TimerKind(StrEnum):
+    """Вид определения таймера по BPMN."""
+
+    DURATION = "timeDuration"
+    DATE = "timeDate"
+    CYCLE = "timeCycle"
+
+
+class TimerDefinition(BaseModel):
+    """Определение таймера события: длительность, дата или цикл."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
+
+    kind: TimerKind
+    expression: str = Field(min_length=1, max_length=255)
 
 
 class FlowType(StrEnum):
@@ -97,6 +115,10 @@ class Node(DiagramElement):
     )
     script_format: str | None = None
     script: str | None = None
+    #: id исходящего потока по умолчанию (`default` у шлюза или активности).
+    default_flow: str | None = None
+    #: Таймер стартового, промежуточного ловящего или граничного события.
+    timer: TimerDefinition | None = None
 
     @field_validator("script")
     @classmethod
@@ -122,6 +144,14 @@ class Node(DiagramElement):
             raise ValueError(msg)
         if self.cancel_activity is not None and self.type is not NodeType.BOUNDARY_EVENT:
             msg = "cancelActivity допустим только для граничного события"
+            raise ValueError(msg)
+        timer_events = {
+            NodeType.START_EVENT,
+            NodeType.INTERMEDIATE_CATCH_EVENT,
+            NodeType.BOUNDARY_EVENT,
+        }
+        if self.timer is not None and self.type not in timer_events:
+            msg = "таймер допустим только для стартового, промежуточного или граничного события"
             raise ValueError(msg)
         return self
 

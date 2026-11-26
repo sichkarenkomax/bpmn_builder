@@ -29,7 +29,7 @@ export function Layout() {
             ⌁
           </span>
           <span className="brand__name">BPMN Studio</span>
-          <span className="brand__stage">v0.1 · экспорт</span>
+          <span className="brand__stage">v0.2 · валидация</span>
         </Link>
         <div className="shell__header-actions">
           <BackendBadge />

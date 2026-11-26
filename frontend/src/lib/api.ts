@@ -46,6 +46,7 @@ export interface ValidationReport {
   findings: ValidationFinding[];
   duration_ms: number;
   schema_version: string;
+  config_errors?: string[];
 }
 
 export const API_BASE: string =
@@ -101,7 +102,70 @@ export function fetchVersions(id: string, signal?: AbortSignal): Promise<Version
 }
 
 export function fetchValidation(id: string, signal?: AbortSignal): Promise<ValidationReport> {
-  return request<ValidationReport>(`/diagrams/${id}/validation`, { signal });
+  return request<ValidationReport>(`/diagrams/${id}/validate`, { method: 'POST', signal });
+}
+
+export type SimulationVariable = boolean | number | string;
+
+export interface SimulationStep {
+  index: number;
+  token: number;
+  node_id: string;
+  node_name: string | null;
+  node_type: string;
+  action: 'completed' | 'waiting';
+  flow_id: string | null;
+  message: string | null;
+  wait_ms: number | null;
+}
+
+export interface SimulationBranch {
+  flow_id: string;
+  flow_name: string | null;
+  target_id: string;
+  target_name: string | null;
+  condition: string | null;
+}
+
+export interface SimulationDecision {
+  node_id: string;
+  node_name: string | null;
+  node_type: string;
+  reason: 'no_conditions' | 'variables_missing' | 'no_match';
+  branches: SimulationBranch[];
+}
+
+export interface SimulationReport {
+  schema_version: string;
+  completed: boolean;
+  steps: SimulationStep[];
+  counts: Record<string, number>;
+  tokens_started: number;
+  tokens_completed: number;
+  max_steps: number;
+  decision: SimulationDecision | null;
+}
+
+export function simulateDiagram(
+  id: string,
+  variables: Record<string, SimulationVariable> = {},
+  choices: Record<string, string> = {},
+  signal?: AbortSignal,
+): Promise<SimulationReport> {
+  return request<SimulationReport>(`/diagrams/${id}/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ variables, choices }),
+    signal,
+  });
+}
+
+export async function downloadValidationReport(id: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/diagrams/${id}/validation/report.docx`);
+  if (!response.ok) {
+    throw new ApiError(response.status, `Отчёт вернул ${response.status}`);
+  }
+  return response.blob();
 }
 
 export async function saveDiagramXml(

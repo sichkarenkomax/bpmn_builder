@@ -164,6 +164,7 @@ def _sync_node(element: etree._Element, node: Node) -> None:
             copy_vendor_attributes=True,
         )
     _set_or_remove(element, "name", node.name)
+    _set_or_remove(element, "default", node.default_flow)
     _sync_documentation(element, node.documentation)
 
     if node.type is NodeType.BOUNDARY_EVENT:
