@@ -247,6 +247,140 @@ def test_script_task_rejects_unsupported_code() -> None:
         simulate(document(script_body("amount = missing + 1")))
 
 
+def subprocess_body(
+    *,
+    expanded: bool = True,
+    boundary: bool = False,
+    nested_script: str | None = None,
+) -> str:
+    inner = """
+      <bpmn:startEvent id="SubStart"><bpmn:outgoing>SF1</bpmn:outgoing></bpmn:startEvent>
+      <bpmn:task id="SubTask" name="Сверить">
+        <bpmn:incoming>SF1</bpmn:incoming>
+        <bpmn:outgoing>SF2</bpmn:outgoing></bpmn:task>
+      <bpmn:endEvent id="SubEnd"><bpmn:incoming>SF2</bpmn:incoming></bpmn:endEvent>
+      <bpmn:sequenceFlow id="SF1" sourceRef="SubStart" targetRef="SubTask" />
+      <bpmn:sequenceFlow id="SF2" sourceRef="SubTask" targetRef="SubEnd" />"""
+    if nested_script is not None:
+        inner = f"""
+      <bpmn:startEvent id="SubStart"><bpmn:outgoing>SF1</bpmn:outgoing></bpmn:startEvent>
+      <bpmn:subProcess id="Inner" name="Глубже">
+        <bpmn:incoming>SF1</bpmn:incoming>
+        <bpmn:outgoing>SF2</bpmn:outgoing>
+        <bpmn:startEvent id="DeepStart"><bpmn:outgoing>DF1</bpmn:outgoing></bpmn:startEvent>
+        <bpmn:scriptTask id="DeepTask" name="Посчитать" scriptFormat="python">
+          <bpmn:incoming>DF1</bpmn:incoming>
+          <bpmn:outgoing>DF2</bpmn:outgoing>
+          <bpmn:script>{nested_script}</bpmn:script>
+        </bpmn:scriptTask>
+        <bpmn:endEvent id="DeepEnd"><bpmn:incoming>DF2</bpmn:incoming></bpmn:endEvent>
+        <bpmn:sequenceFlow id="DF1" sourceRef="DeepStart" targetRef="DeepTask" />
+        <bpmn:sequenceFlow id="DF2" sourceRef="DeepTask" targetRef="DeepEnd" />
+      </bpmn:subProcess>
+      <bpmn:endEvent id="SubEnd"><bpmn:incoming>SF2</bpmn:incoming></bpmn:endEvent>
+      <bpmn:sequenceFlow id="SF1" sourceRef="SubStart" targetRef="Inner" />
+      <bpmn:sequenceFlow id="SF2" sourceRef="Inner" targetRef="SubEnd" />"""
+    boundary_xml = (
+        """
+      <bpmn:boundaryEvent id="Timeout" name="Просрочено" attachedToRef="Sub">
+        <bpmn:outgoing>BF</bpmn:outgoing>
+        <bpmn:timerEventDefinition><bpmn:timeDuration>PT5M</bpmn:timeDuration>
+        </bpmn:timerEventDefinition>
+      </bpmn:boundaryEvent>
+      <bpmn:task id="Late" name="Эскалация">
+        <bpmn:incoming>BF</bpmn:incoming>
+        <bpmn:outgoing>BF2</bpmn:outgoing></bpmn:task>
+      <bpmn:sequenceFlow id="BF" sourceRef="Timeout" targetRef="Late" />
+      <bpmn:sequenceFlow id="BF2" sourceRef="Late" targetRef="End" />"""
+        if boundary
+        else ""
+    )
+    shape = ""
+    if expanded:
+        shape += (
+            '<bpmndi:BPMNShape id="Sub_di" bpmnElement="Sub" isExpanded="true">'
+            '<dc:Bounds x="200" y="80" width="400" height="200" />'
+            "</bpmndi:BPMNShape>"
+        )
+    if nested_script is not None:
+        shape += (
+            '<bpmndi:BPMNShape id="Inner_di" bpmnElement="Inner" isExpanded="true">'
+            '<dc:Bounds x="240" y="120" width="240" height="120" />'
+            "</bpmndi:BPMNShape>"
+        )
+    return f"""
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:subProcess id="Sub" name="Проверка">
+      <bpmn:incoming>F1</bpmn:incoming>
+      <bpmn:outgoing>F2</bpmn:outgoing>{inner}
+    </bpmn:subProcess>{boundary_xml}
+    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Sub" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Sub" targetRef="End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_1">
+    <bpmndi:BPMNPlane id="Plane_1" bpmnElement="P">{shape}</bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>"""
+
+
+def test_expanded_subprocess_runs_inner_nodes() -> None:
+    report = simulate(document(subprocess_body(expanded=True)))
+
+    assert report.completed
+    assert [step.node_id for step in report.steps] == [
+        "Start",
+        "Sub",
+        "SubStart",
+        "SubTask",
+        "SubEnd",
+        "End",
+    ]
+    assert report.counts == {
+        "Start": 1,
+        "Sub": 1,
+        "SubStart": 1,
+        "SubTask": 1,
+        "SubEnd": 1,
+        "End": 1,
+    }
+    assert report.tokens_started == report.tokens_completed == 1
+
+
+def test_collapsed_subprocess_is_a_single_step() -> None:
+    report = simulate(document(subprocess_body(expanded=False)))
+
+    assert report.completed
+    assert [step.node_id for step in report.steps] == ["Start", "Sub", "End"]
+    assert "SubTask" not in report.counts and "SubEnd" not in report.counts
+
+
+def test_boundary_timer_interrupts_subprocess() -> None:
+    report = simulate(document(subprocess_body(expanded=True, boundary=True)))
+
+    assert report.completed
+    assert [step.node_id for step in report.steps] == ["Start", "Sub", "Timeout", "Late", "End"]
+    assert "SubTask" not in report.counts
+    timeout = next(step for step in report.steps if step.node_id == "Timeout")
+    assert timeout.action == "waiting"
+    assert timeout.wait_ms == 300_000
+    assert "прерван" in (report.steps[1].message or "")
+
+
+def test_nested_script_task_changes_shared_variables() -> None:
+    report = simulate(
+        document(subprocess_body(expanded=True, nested_script="total = total + 1")),
+        variables={"total": 41},
+    )
+
+    assert report.completed
+    deep = next(step for step in report.steps if step.node_id == "DeepTask")
+    assert deep.changed == ["total"]
+    assert deep.variables == {"total": 42}
+    assert report.steps[-1].variables == {"total": 42}
+    assert report.counts["DeepTask"] == 1
+
+
 def test_parallel_split_waits_for_both_branches() -> None:
     report = simulate(document(parallel_body()))
     assert report.completed

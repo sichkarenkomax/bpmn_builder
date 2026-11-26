@@ -9,8 +9,14 @@
 даёт шаг `waiting` с `wait_ms` (для `timeDuration`), остальные промежуточные
 события считаются «ручным шагом» — токен проходит дальше; скрипт-задача
 исполняет безопасные присваивания `имя = выражение`, а каждый шаг несёт снимок
-переменных после себя; подпроцессы не раскрываются. Эти ограничения — граница
-первого среза `v0.3`.
+переменных после себя.
+
+Подпроцессы: свёрнутый проходит одним шагом и не раскрывается в журнале,
+раскрытый (`isExpanded`) входит через внутренние стартовые события и выходит
+через внутренние концы на исходящие потоки подпроцесса; вложенность любой
+глубины, внутренние узлы видны в журнале и счётчиках, переменные общие.
+Граничное событие с таймером прерывает подпроцесс и уводит токен по своему
+потоку (`cancelActivity="false"` и компенсация пока не моделируются).
 """
 
 from __future__ import annotations
@@ -57,6 +63,8 @@ class _Token:
     node_id: str
     token: int
     from_flow: str | None = None
+    #: id подпроцесса, внутри которого сейчас токен; `None` — верхний уровень.
+    scope: str | None = None
 
 
 def _labelled(node: Node) -> str:
@@ -83,14 +91,26 @@ class _Runner:
         self._variables = dict(variables)
         self._choices = dict(choices)
         self._max_steps = max_steps
-        self._nodes: dict[str, Node] = {node.id: node for node in document.nodes()}
-        self._flows: dict[str, Flow] = {flow.id: flow for flow in document.flows()}
+        self._nodes: dict[str, Node] = {node.id: node for node in document.all_nodes()}
+        self._flows: dict[str, Flow] = {flow.id: flow for flow in document.all_flows()}
+        #: вложенный узел → id подпроцесса, в котором он лежит.
+        self._parents: dict[str, str] = {}
+        for process in document.processes:
+            stack: list[tuple[Node, str | None]] = [(node, None) for node in process.nodes]
+            while stack:
+                node, parent = stack.pop()
+                if parent is not None:
+                    self._parents[node.id] = parent
+                stack.extend((child, node.id) for child in node.nodes)
+        self._boundary: dict[str, list[Node]] = defaultdict(list)
+        for node in self._nodes.values():
+            if node.type is NodeType.BOUNDARY_EVENT and node.attached_to:
+                self._boundary[node.attached_to].append(node)
         self._outgoing: dict[str, list[Flow]] = defaultdict(list)
         self._incoming: dict[str, list[Flow]] = defaultdict(list)
-        for process in document.processes:
-            for flow in process.flows:
-                self._outgoing[flow.source_ref].append(flow)
-                self._incoming[flow.target_ref].append(flow)
+        for flow in self._flows.values():
+            self._outgoing[flow.source_ref].append(flow)
+            self._incoming[flow.target_ref].append(flow)
         self._queue: deque[_Token] = deque()
         self._steps: list[SimulationStep] = []
         self._counts: dict[str, int] = defaultdict(int)
@@ -144,6 +164,10 @@ class _Runner:
         if node.type is NodeType.SCRIPT_TASK and node.script:
             changed = self._run_script(node)
 
+        if node.type is NodeType.SUB_PROCESS:
+            self._enter_subprocess(token, node, changed)
+            return
+
         incoming = self._incoming.get(node.id, [])
         is_parallel_join = node.type is NodeType.PARALLEL_GATEWAY and len(incoming) > 1
         is_inclusive_join = node.type is NodeType.INCLUSIVE_GATEWAY and len(incoming) > 1
@@ -196,7 +220,10 @@ class _Runner:
 
         self._counts[node.id] += 1
         if node.type is NodeType.END_EVENT:
-            self._completed += 1
+            if token.scope is None:
+                self._completed += 1
+            else:
+                self._exit_subprocess(token, node)
             return
 
         outgoing = self._outgoing.get(node.id, [])
@@ -205,7 +232,96 @@ class _Runner:
 
         chosen = self._choose_flows(node, outgoing)
         for flow in chosen:
-            self._queue.append(_Token(flow.target_ref, token.token, flow.id))
+            self._queue.append(_Token(flow.target_ref, token.token, flow.id, token.scope))
+
+    # --- подпроцессы ------------------------------------------------------
+
+    def _enter_subprocess(
+        self, token: _Token, node: Node, changed: tuple[str, ...]
+    ) -> None:
+        boundary = self._interrupting_boundary(node)
+        if boundary is not None:
+            self._log(
+                token,
+                node,
+                "completed",
+                message=f"прерван граничным событием {_labelled(boundary)}",
+                changed=changed,
+            )
+            self._counts[node.id] += 1
+            self._trigger_boundary(token, boundary)
+            return
+
+        if not node.is_expanded:
+            # Свёрнутый подпроцесс — «чёрный ящик»: один шаг без внутренностей.
+            self._log(token, node, "completed", changed=changed)
+            self._counts[node.id] += 1
+            self._leave_subprocess(token, node, "подпроцесса")
+            return
+
+        self._log(token, node, "completed", message="вход в подпроцесс", changed=changed)
+        self._counts[node.id] += 1
+        starts = [
+            inner
+            for inner in node.nodes
+            if inner.type is NodeType.START_EVENT and not self._incoming.get(inner.id)
+        ]
+        if not starts:
+            # Пустой раскрытый подпроцесс завершается сразу.
+            self._leave_subprocess(token, node, "подпроцесса")
+            return
+        for start in starts:
+            self._queue.append(_Token(start.id, token.token, None, node.id))
+
+    def _exit_subprocess(self, token: _Token, end: Node) -> None:
+        """Внутренний конец возвращает токен на исходящие потоки подпроцесса."""
+        owner_id = token.scope
+        if owner_id is None:
+            raise SimulationError(f"внутренний конец {_labelled(end)} вне подпроцесса")
+        owner = self._nodes[owner_id]
+        self._leave_subprocess(token, owner, "подпроцесса")
+
+    def _leave_subprocess(self, token: _Token, node: Node, what: str) -> None:
+        outgoing = self._outgoing.get(node.id, [])
+        if not outgoing:
+            raise SimulationError(f"тупик: у {what} {_labelled(node)} нет исходящего потока")
+        scope = self._parents.get(node.id)
+        for flow in outgoing:
+            self._queue.append(_Token(flow.target_ref, token.token, flow.id, scope))
+
+    def _interrupting_boundary(self, node: Node) -> Node | None:
+        """Граничное событие с таймером, которое прерывает подпроцесс."""
+        for boundary in self._boundary.get(node.id, []):
+            if boundary.timer is None or boundary.cancel_activity is False:
+                continue
+            return boundary
+        return None
+
+    def _trigger_boundary(self, token: _Token, boundary: Node) -> None:
+        self._steps.append(
+            SimulationStep(
+                index=len(self._steps) + 1,
+                token=token.token,
+                node_id=boundary.id,
+                node_name=boundary.name,
+                node_type=boundary.type,
+                action="waiting",
+                message=f"ожидание таймера: {boundary.timer.expression}"
+                if boundary.timer
+                else None,
+                wait_ms=timer_wait_ms(boundary.timer),
+                variables=dict(self._variables),
+            )
+        )
+        self._counts[boundary.id] += 1
+        outgoing = self._outgoing.get(boundary.id, [])
+        if not outgoing:
+            raise SimulationError(
+                f"тупик: у граничного события {_labelled(boundary)} нет исходящего потока"
+            )
+        scope = self._parents.get(boundary.attached_to or "")
+        for flow in outgoing:
+            self._queue.append(_Token(flow.target_ref, token.token, flow.id, scope))
 
     def _run_script(self, node: Node) -> tuple[str, ...]:
         """Исполняет присваивания скрипт-задачи и возвращает изменённые имена.

@@ -216,6 +216,69 @@ test('симуляция: выбор ветки не сбрасывает ток
   }
 });
 
+// Раскрытый подпроцесс: внутренние старт, задача и конец идут в журнал.
+const subprocessXml = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="D" targetNamespace="http://bpmn-studio.dev/test">
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start" name="Старт"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:subProcess id="Sub" name="Проверка">
+      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+      <bpmn:startEvent id="SubStart" name="Начало проверки"><bpmn:outgoing>SF1</bpmn:outgoing></bpmn:startEvent>
+      <bpmn:task id="SubTask" name="Сверить"><bpmn:incoming>SF1</bpmn:incoming><bpmn:outgoing>SF2</bpmn:outgoing></bpmn:task>
+      <bpmn:endEvent id="SubEnd" name="Конец проверки"><bpmn:incoming>SF2</bpmn:incoming></bpmn:endEvent>
+      <bpmn:sequenceFlow id="SF1" sourceRef="SubStart" targetRef="SubTask" />
+      <bpmn:sequenceFlow id="SF2" sourceRef="SubTask" targetRef="SubEnd" />
+    </bpmn:subProcess>
+    <bpmn:endEvent id="End" name="Готово"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Sub" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Sub" targetRef="End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Dia"><bpmndi:BPMNPlane id="Plane" bpmnElement="P">
+    <bpmndi:BPMNShape id="Start_di" bpmnElement="Start"><dc:Bounds x="100" y="140" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="Sub_di" bpmnElement="Sub" isExpanded="true"><dc:Bounds x="200" y="100" width="420" height="220" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="SubStart_di" bpmnElement="SubStart"><dc:Bounds x="220" y="140" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="SubTask_di" bpmnElement="SubTask"><dc:Bounds x="300" y="118" width="100" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="SubEnd_di" bpmnElement="SubEnd"><dc:Bounds x="460" y="140" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="End_di" bpmnElement="End"><dc:Bounds x="700" y="140" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNEdge id="F1_di" bpmnElement="F1"><di:waypoint x="136" y="158" /><di:waypoint x="200" y="158" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="SF1_di" bpmnElement="SF1"><di:waypoint x="256" y="158" /><di:waypoint x="300" y="158" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="SF2_di" bpmnElement="SF2"><di:waypoint x="400" y="158" /><di:waypoint x="460" y="158" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="F2_di" bpmnElement="F2"><di:waypoint x="620" y="158" /><di:waypoint x="700" y="158" /></bpmndi:BPMNEdge>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+
+test('симуляция: раскрытый подпроцесс проходит внутренние шаги', async ({ page, request }) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E simulation subprocess ${Date.now()}`, bpmn_xml: subprocessXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    await expect(page.locator('[data-element-id="Sub"]').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Симуляция процесса' }).click();
+    const panel = page.getByRole('complementary', { name: 'Симуляция процесса' });
+
+    // Старт → подпроцесс → внутренний старт → задача → конец → конец процесса.
+    await expect(panel.getByRole('status')).toContainText('Завершено: 6 шагов');
+    const steps = panel.locator('.simulation-panel__step');
+    await expect(steps).toHaveCount(6);
+    await expect(steps.nth(2)).toHaveText(/Начало проверки/);
+    await expect(steps.nth(3)).toHaveText(/Сверить/);
+    await expect(steps.nth(4)).toHaveText(/Конец проверки/);
+
+    // Токен доходит до внутренней задачи и стоит на её геометрии.
+    await panel.getByRole('button', { name: 'Следующий шаг' }).click();
+    await panel.getByRole('button', { name: 'Следующий шаг' }).click();
+    await panel.getByRole('button', { name: 'Следующий шаг' }).click();
+    await expect(panel.locator('.simulation-panel__current')).toContainText('Сверить');
+    await expectTokenAt(page, 'SubTask');
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
 async function panelBoxes(page: Page) {
   const simulation = page.locator('.simulation-panel');
   const comments = page.locator('.comments-panel:not(.simulation-panel)');
