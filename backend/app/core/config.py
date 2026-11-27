@@ -38,6 +38,10 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
     redis_timeout_seconds: float = 1.0
+    #: Поток событий ядра для модулей (4.0.3); consumer-группа общая.
+    events_stream: str = "bpmn:studio:events"
+    events_consumer_group: str = "modules"
+    events_maxlen: int = 10_000
 
     s3_endpoint_url: str = "http://localhost:9000"
     s3_bucket: str = "bpmn-studio"
