@@ -10,6 +10,7 @@ from app.bpmn import BpmnDocument, parse_bpmn, serialize_bpmn
 from app.bpmn.model import TimerDefinition, TimerKind
 from app.simulation import ExpressionError, SimulationError, evaluate_condition, simulate
 from app.simulation.expressions import ExpressionError as ExpressionErrorDirect
+from app.simulation.expressions import evaluate_value
 from app.simulation.timers import parse_duration_ms, timer_wait_ms
 from httpx import AsyncClient
 
@@ -109,6 +110,12 @@ def test_expression_precedence_and_variables() -> None:
     assert evaluate_condition("rate / 2 > 0.4", {"rate": 1})
 
 
+def test_evaluate_value_returns_typed_result() -> None:
+    assert evaluate_value("amount + 500", {"amount": 1000}) == 1500
+    assert evaluate_value("amount > 1000", {"amount": 1000}) is False
+    assert evaluate_value("status == 'new' && !vip", {"status": "new", "vip": False}) is True
+
+
 def test_expression_rejects_code_and_missing_variables() -> None:
     with pytest.raises(ExpressionError):
         evaluate_condition("__import__('os')", {})
@@ -131,6 +138,34 @@ def test_linear_process_runs_to_end() -> None:
     assert report.tokens_started == report.tokens_completed == 1
 
 
+def inclusive_body() -> str:
+    return """
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:inclusiveGateway id="Split"><bpmn:incoming>F1</bpmn:incoming>
+      <bpmn:outgoing>FA</bpmn:outgoing>
+      <bpmn:outgoing>FB</bpmn:outgoing></bpmn:inclusiveGateway>
+    <bpmn:task id="A"><bpmn:incoming>FA</bpmn:incoming>
+      <bpmn:outgoing>FA2</bpmn:outgoing></bpmn:task>
+    <bpmn:task id="B"><bpmn:incoming>FB</bpmn:incoming>
+      <bpmn:outgoing>FB2</bpmn:outgoing></bpmn:task>
+    <bpmn:inclusiveGateway id="Join"><bpmn:incoming>FA2</bpmn:incoming>
+      <bpmn:incoming>FB2</bpmn:incoming>
+      <bpmn:outgoing>F2</bpmn:outgoing></bpmn:inclusiveGateway>
+    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Split" />
+    <bpmn:sequenceFlow id="FA" sourceRef="Split" targetRef="A">
+      <bpmn:conditionExpression>ok == true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="FB" sourceRef="Split" targetRef="B">
+      <bpmn:conditionExpression>vip == true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="FA2" sourceRef="A" targetRef="Join" />
+    <bpmn:sequenceFlow id="FB2" sourceRef="B" targetRef="Join" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Join" targetRef="End" />
+  </bpmn:process>"""
+
+
 def test_exclusive_gateway_uses_condition_and_default() -> None:
     low = simulate(document(exclusive_body()), variables={"amount": 10})
     assert low.completed
@@ -141,6 +176,297 @@ def test_exclusive_gateway_uses_condition_and_default() -> None:
     assert "High" in high.counts and "Low" not in high.counts
 
 
+def script_body(script: str) -> str:
+    return f"""
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:scriptTask id="Prepare" name="Подготовить" scriptFormat="python">
+      <bpmn:incoming>F1</bpmn:incoming>
+      <bpmn:outgoing>F2</bpmn:outgoing>
+      <bpmn:script>{script}</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Prepare" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Prepare" targetRef="End" />
+  </bpmn:process>"""
+
+
+def test_script_task_updates_variables_and_snapshots_steps() -> None:
+    body = script_body(
+        "amount = amount + 500\n# комментарий\napproved = amount &gt; 1000\nnote = 'готово'"
+    )
+    report = simulate(document(body), variables={"amount": 700})
+
+    assert report.completed
+    start, prepare, end = report.steps
+    assert start.variables == {"amount": 700}
+    assert prepare.changed == ["amount", "approved", "note"]
+    assert prepare.variables == {"amount": 1200, "approved": True, "note": "готово"}
+    assert end.variables == prepare.variables
+    assert end.changed == []
+
+
+def test_script_task_condition_sees_updated_variable() -> None:
+    body = script_body("approved = amount &gt; 1000").replace(
+        '<bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>',
+        '<bpmn:exclusiveGateway id="Check" default="FNo">'
+        "<bpmn:incoming>F2</bpmn:incoming>"
+        "<bpmn:outgoing>FYes</bpmn:outgoing>"
+        "<bpmn:outgoing>FNo</bpmn:outgoing></bpmn:exclusiveGateway>"
+        '<bpmn:task id="Yes"><bpmn:incoming>FYes</bpmn:incoming>'
+        "<bpmn:outgoing>F3</bpmn:outgoing></bpmn:task>"
+        '<bpmn:task id="No"><bpmn:incoming>FNo</bpmn:incoming>'
+        "<bpmn:outgoing>F4</bpmn:outgoing></bpmn:task>"
+        '<bpmn:endEvent id="End"><bpmn:incoming>F3</bpmn:incoming>'
+        "<bpmn:incoming>F4</bpmn:incoming></bpmn:endEvent>",
+    )
+    body = body.replace(
+        '<bpmn:sequenceFlow id="F2" sourceRef="Prepare" targetRef="End" />',
+        '<bpmn:sequenceFlow id="F2" sourceRef="Prepare" targetRef="Check" />'
+        '<bpmn:sequenceFlow id="FYes" sourceRef="Check" targetRef="Yes">'
+        "<bpmn:conditionExpression>approved == true</bpmn:conditionExpression>"
+        "</bpmn:sequenceFlow>"
+        '<bpmn:sequenceFlow id="FNo" sourceRef="Check" targetRef="No" />'
+        '<bpmn:sequenceFlow id="F3" sourceRef="Yes" targetRef="End" />'
+        '<bpmn:sequenceFlow id="F4" sourceRef="No" targetRef="End" />',
+    )
+
+    big = simulate(document(body), variables={"amount": 5000})
+    assert big.completed
+    assert "Yes" in big.counts and "No" not in big.counts
+
+    small = simulate(document(body), variables={"amount": 10})
+    assert small.completed
+    assert "No" in small.counts and "Yes" not in small.counts
+
+
+def test_script_task_rejects_unsupported_code() -> None:
+    with pytest.raises(SimulationError, match="строка 2.*присваивания"):
+        simulate(document(script_body("ok = true\nimport os")))
+    with pytest.raises(SimulationError, match="строка 1.*не задана"):
+        simulate(document(script_body("amount = missing + 1")))
+
+
+def subprocess_body(
+    *,
+    expanded: bool = True,
+    boundary: bool = False,
+    nested_script: str | None = None,
+) -> str:
+    inner = """
+      <bpmn:startEvent id="SubStart"><bpmn:outgoing>SF1</bpmn:outgoing></bpmn:startEvent>
+      <bpmn:task id="SubTask" name="Сверить">
+        <bpmn:incoming>SF1</bpmn:incoming>
+        <bpmn:outgoing>SF2</bpmn:outgoing></bpmn:task>
+      <bpmn:endEvent id="SubEnd"><bpmn:incoming>SF2</bpmn:incoming></bpmn:endEvent>
+      <bpmn:sequenceFlow id="SF1" sourceRef="SubStart" targetRef="SubTask" />
+      <bpmn:sequenceFlow id="SF2" sourceRef="SubTask" targetRef="SubEnd" />"""
+    if nested_script is not None:
+        inner = f"""
+      <bpmn:startEvent id="SubStart"><bpmn:outgoing>SF1</bpmn:outgoing></bpmn:startEvent>
+      <bpmn:subProcess id="Inner" name="Глубже">
+        <bpmn:incoming>SF1</bpmn:incoming>
+        <bpmn:outgoing>SF2</bpmn:outgoing>
+        <bpmn:startEvent id="DeepStart"><bpmn:outgoing>DF1</bpmn:outgoing></bpmn:startEvent>
+        <bpmn:scriptTask id="DeepTask" name="Посчитать" scriptFormat="python">
+          <bpmn:incoming>DF1</bpmn:incoming>
+          <bpmn:outgoing>DF2</bpmn:outgoing>
+          <bpmn:script>{nested_script}</bpmn:script>
+        </bpmn:scriptTask>
+        <bpmn:endEvent id="DeepEnd"><bpmn:incoming>DF2</bpmn:incoming></bpmn:endEvent>
+        <bpmn:sequenceFlow id="DF1" sourceRef="DeepStart" targetRef="DeepTask" />
+        <bpmn:sequenceFlow id="DF2" sourceRef="DeepTask" targetRef="DeepEnd" />
+      </bpmn:subProcess>
+      <bpmn:endEvent id="SubEnd"><bpmn:incoming>SF2</bpmn:incoming></bpmn:endEvent>
+      <bpmn:sequenceFlow id="SF1" sourceRef="SubStart" targetRef="Inner" />
+      <bpmn:sequenceFlow id="SF2" sourceRef="Inner" targetRef="SubEnd" />"""
+    boundary_xml = (
+        """
+      <bpmn:boundaryEvent id="Timeout" name="Просрочено" attachedToRef="Sub">
+        <bpmn:outgoing>BF</bpmn:outgoing>
+        <bpmn:timerEventDefinition><bpmn:timeDuration>PT5M</bpmn:timeDuration>
+        </bpmn:timerEventDefinition>
+      </bpmn:boundaryEvent>
+      <bpmn:task id="Late" name="Эскалация">
+        <bpmn:incoming>BF</bpmn:incoming>
+        <bpmn:outgoing>BF2</bpmn:outgoing></bpmn:task>
+      <bpmn:sequenceFlow id="BF" sourceRef="Timeout" targetRef="Late" />
+      <bpmn:sequenceFlow id="BF2" sourceRef="Late" targetRef="End" />"""
+        if boundary
+        else ""
+    )
+    shape = ""
+    if expanded:
+        shape += (
+            '<bpmndi:BPMNShape id="Sub_di" bpmnElement="Sub" isExpanded="true">'
+            '<dc:Bounds x="200" y="80" width="400" height="200" />'
+            "</bpmndi:BPMNShape>"
+        )
+    if nested_script is not None:
+        shape += (
+            '<bpmndi:BPMNShape id="Inner_di" bpmnElement="Inner" isExpanded="true">'
+            '<dc:Bounds x="240" y="120" width="240" height="120" />'
+            "</bpmndi:BPMNShape>"
+        )
+    return f"""
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:subProcess id="Sub" name="Проверка">
+      <bpmn:incoming>F1</bpmn:incoming>
+      <bpmn:outgoing>F2</bpmn:outgoing>{inner}
+    </bpmn:subProcess>{boundary_xml}
+    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Sub" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Sub" targetRef="End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_1">
+    <bpmndi:BPMNPlane id="Plane_1" bpmnElement="P">{shape}</bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>"""
+
+
+def test_expanded_subprocess_runs_inner_nodes() -> None:
+    report = simulate(document(subprocess_body(expanded=True)))
+
+    assert report.completed
+    assert [step.node_id for step in report.steps] == [
+        "Start",
+        "Sub",
+        "SubStart",
+        "SubTask",
+        "SubEnd",
+        "End",
+    ]
+    assert report.counts == {
+        "Start": 1,
+        "Sub": 1,
+        "SubStart": 1,
+        "SubTask": 1,
+        "SubEnd": 1,
+        "End": 1,
+    }
+    assert report.tokens_started == report.tokens_completed == 1
+
+
+def test_collapsed_subprocess_is_a_single_step() -> None:
+    report = simulate(document(subprocess_body(expanded=False)))
+
+    assert report.completed
+    assert [step.node_id for step in report.steps] == ["Start", "Sub", "End"]
+    assert "SubTask" not in report.counts and "SubEnd" not in report.counts
+
+
+def test_boundary_timer_interrupts_subprocess() -> None:
+    report = simulate(document(subprocess_body(expanded=True, boundary=True)))
+
+    assert report.completed
+    assert [step.node_id for step in report.steps] == ["Start", "Sub", "Timeout", "Late", "End"]
+    assert "SubTask" not in report.counts
+    timeout = next(step for step in report.steps if step.node_id == "Timeout")
+    assert timeout.action == "waiting"
+    assert timeout.wait_ms == 300_000
+    assert "прерван" in (report.steps[1].message or "")
+
+
+def test_non_interrupting_boundary_timer_runs_in_parallel() -> None:
+    body = subprocess_body(expanded=True, boundary=True).replace(
+        'attachedToRef="Sub">', 'attachedToRef="Sub" cancelActivity="false">'
+    )
+    report = simulate(document(body))
+
+    assert report.completed
+    ids = [step.node_id for step in report.steps]
+    assert "SubTask" in ids and "Late" in ids
+    assert report.counts["SubTask"] == 1
+    assert report.counts["Late"] == 1
+    assert report.tokens_completed == 2
+    timeout = next(step for step in report.steps if step.node_id == "Timeout")
+    assert timeout.wait_ms == 300_000
+
+
+def error_boundary_body(*, boundary: bool = True) -> str:
+    boundary_xml = (
+        """
+      <bpmn:boundaryEvent id="Catch" name="Сбой" attachedToRef="Sub">
+        <bpmn:outgoing>BF</bpmn:outgoing>
+        <bpmn:errorEventDefinition errorRef="Err" />
+      </bpmn:boundaryEvent>
+      <bpmn:task id="Recover" name="Восстановить">
+        <bpmn:incoming>BF</bpmn:incoming><bpmn:outgoing>BF2</bpmn:outgoing></bpmn:task>
+      <bpmn:sequenceFlow id="BF" sourceRef="Catch" targetRef="Recover" />
+      <bpmn:sequenceFlow id="BF2" sourceRef="Recover" targetRef="End" />"""
+        if boundary
+        else ""
+    )
+    shape = (
+        '<bpmndi:BPMNShape id="Sub_di" bpmnElement="Sub" isExpanded="true">'
+        '<dc:Bounds x="200" y="80" width="400" height="200" />'
+        "</bpmndi:BPMNShape>"
+    )
+    return f"""
+  <bpmn:error id="Err" name="Сбой" errorCode="FAIL" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:subProcess id="Sub" name="Проверка">
+      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+      <bpmn:startEvent id="SubStart"><bpmn:outgoing>SF1</bpmn:outgoing></bpmn:startEvent>
+      <bpmn:scriptTask id="Prepare" name="Считать" scriptFormat="python">
+        <bpmn:incoming>SF1</bpmn:incoming><bpmn:outgoing>SF2</bpmn:outgoing>
+        <bpmn:script>total = missing + 1</bpmn:script>
+      </bpmn:scriptTask>
+      <bpmn:endEvent id="SubEnd"><bpmn:incoming>SF2</bpmn:incoming></bpmn:endEvent>
+      <bpmn:sequenceFlow id="SF1" sourceRef="SubStart" targetRef="Prepare" />
+      <bpmn:sequenceFlow id="SF2" sourceRef="Prepare" targetRef="SubEnd" />
+    </bpmn:subProcess>{boundary_xml}
+    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Sub" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Sub" targetRef="End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_1">
+    <bpmndi:BPMNPlane id="Plane_1" bpmnElement="P">{shape}</bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>"""
+
+
+def test_error_boundary_catches_script_failure() -> None:
+    parsed = document(error_boundary_body())
+    catch = next(node for node in parsed.nodes() if node.id == "Catch")
+    assert catch.attached_to == "Sub"
+    assert catch.error_ref == "Err"
+    assert [error.error_code for error in parsed.errors] == ["FAIL"]
+
+    report = simulate(parsed, variables={"total": 1})
+    assert report.completed
+    ids = [step.node_id for step in report.steps]
+    assert "Prepare" not in ids and "Recover" in ids
+    caught = next(step for step in report.steps if step.node_id == "Catch")
+    assert caught.action == "completed"
+    assert "missing" in (caught.message or "")
+    assert "Sub" in report.counts
+
+    with pytest.raises(SimulationError, match="строка 1.*не задана"):
+        simulate(document(error_boundary_body(boundary=False)), variables={"total": 1})
+
+
+def test_error_definitions_survive_detached_round_trip() -> None:
+    restored = parse_bpmn(serialize_bpmn(document(error_boundary_body()).detached()))
+    assert [error.id for error in restored.errors] == ["Err"]
+    catch = next(node for node in restored.nodes() if node.id == "Catch")
+    assert catch.error_ref == "Err"
+
+
+def test_nested_script_task_changes_shared_variables() -> None:
+    report = simulate(
+        document(subprocess_body(expanded=True, nested_script="total = total + 1")),
+        variables={"total": 41},
+    )
+
+    assert report.completed
+    deep = next(step for step in report.steps if step.node_id == "DeepTask")
+    assert deep.changed == ["total"]
+    assert deep.variables == {"total": 42}
+    assert report.steps[-1].variables == {"total": 42}
+    assert report.counts["DeepTask"] == 1
+
+
 def test_parallel_split_waits_for_both_branches() -> None:
     report = simulate(document(parallel_body()))
     assert report.completed
@@ -148,6 +474,22 @@ def test_parallel_split_waits_for_both_branches() -> None:
     assert report.counts["Join"] == 1
     assert report.tokens_completed == 1
     assert any(step.action == "waiting" for step in report.steps)
+
+
+def test_inclusive_join_waits_only_for_started_branches() -> None:
+    both = simulate(document(inclusive_body()), variables={"ok": True, "vip": True})
+    assert both.completed
+    assert both.counts["A"] == 1 and both.counts["B"] == 1
+    assert both.counts["Join"] == 1
+    assert both.tokens_completed == 1
+    assert any(step.action == "waiting" for step in both.steps)
+
+    # Вторая ветка не выбрана условием: слияние не должно её ждать.
+    single = simulate(document(inclusive_body()), variables={"ok": True, "vip": False})
+    assert single.completed
+    assert single.counts["A"] == 1 and "B" not in single.counts
+    assert single.counts["Join"] == 1
+    assert not any(step.action == "waiting" for step in single.steps)
 
 
 def test_process_without_start_or_with_dead_end_fails() -> None:

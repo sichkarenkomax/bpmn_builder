@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseSimulationVariables } from './simulation-variables';
+import { formatSimulationVariable, parseSimulationVariables } from './simulation-variables';
+
+describe('formatSimulationVariable', () => {
+  it('показывает строки в кавычках, числа и boolean — как есть', () => {
+    expect(formatSimulationVariable('Иван')).toBe('"Иван"');
+    expect(formatSimulationVariable(1200)).toBe('1200');
+    expect(formatSimulationVariable(false)).toBe('false');
+  });
+});
 
 describe('parseSimulationVariables', () => {
   it('разбирает типы: число, boolean, строку и голый текст', () => {

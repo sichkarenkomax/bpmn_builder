@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { usePanelDrag } from '../hooks/usePanelDrag';
 import type { DiagramComment } from '../lib/api';
 import { commentAuthorLabel, formatCommentTime } from '../lib/comments';
 import { applyFormat, type FormatKind, type TextSelection } from '../lib/markdown-toolbar';
@@ -16,6 +17,8 @@ export function CommentsPanel({
   onToggleResolved,
   onDelete,
   onClose,
+  scope,
+  autoLayout,
 }: {
   elementName: string | null;
   comments: DiagramComment[];
@@ -25,6 +28,8 @@ export function CommentsPanel({
   onToggleResolved: (comment: DiagramComment) => void;
   onDelete: (comment: DiagramComment) => void;
   onClose: () => void;
+  scope: string;
+  autoLayout: boolean;
 }) {
   const [body, setBody] = useState('');
   const [preview, setPreview] = useState(false);
@@ -32,6 +37,7 @@ export function CommentsPanel({
   const [pendingSelection, setPendingSelection] = useState<
     (TextSelection & { nonce: number }) | null
   >(null);
+  const drag = usePanelDrag('comments', scope, autoLayout);
 
   useEffect(() => {
     if (!pendingSelection) {
@@ -66,16 +72,27 @@ export function CommentsPanel({
   };
 
   return (
-    <section className="comments-panel" aria-label="Комментарии">
-      <header className="comments-panel__header">
+    <section
+      ref={drag.panelRef}
+      className="comments-panel"
+      style={drag.panelStyle}
+      aria-label="Комментарии"
+    >
+      <header className="comments-panel__header" {...drag.handleProps}>
         <div>
           <h2 className="comments-panel__title">Комментарии</h2>
           <p className="comments-panel__element">
             {elementName ? <code>{elementName}</code> : 'элемент не выбран'}
           </p>
         </div>
-        <button type="button" className="ghost-button ghost-button--small" onClick={onClose}>
-          Закрыть
+        <button
+          type="button"
+          className="ghost-button ghost-button--small"
+          title="Закрыть"
+          aria-label="Закрыть"
+          onClick={onClose}
+        >
+          <span aria-hidden="true">×</span>
         </button>
       </header>
 
@@ -130,6 +147,15 @@ export function CommentsPanel({
       ) : null}
 
       {error ? <p className="comments-panel__error">{error}</p> : null}
+
+      {autoLayout ? null : (
+        <span
+          className="comments-panel__resize"
+          aria-hidden="true"
+          title="Изменить размер"
+          {...drag.resizeHandleProps}
+        />
+      )}
 
       {elementName ? (
         <div className="comments-panel__composer">

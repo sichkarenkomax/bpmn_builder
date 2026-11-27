@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { usePanelDrag } from '../hooks/usePanelDrag';
 import type { ValidationFinding, ValidationReport } from '../lib/api';
 
 const SEVERITIES = ['error', 'warning', 'info'] as const;
@@ -21,6 +22,9 @@ export function ProblemsPanel({
   onDownload,
   downloading,
   onClose,
+  highlighted,
+  scope,
+  autoLayout,
 }: {
   report: ValidationReport | null;
   stale: boolean;
@@ -30,6 +34,9 @@ export function ProblemsPanel({
   onDownload: () => void;
   downloading: boolean;
   onClose: () => void;
+  highlighted: ValidationFinding | null;
+  scope: string;
+  autoLayout: boolean;
 }) {
   const [filters, setFilters] = useState<Record<Severity, boolean>>({
     error: true,
@@ -58,10 +65,27 @@ export function ProblemsPanel({
 
   const counts = report?.summary ?? { errors: 0, warnings: 0, infos: 0 };
   const visibleCount = groups.error.length + groups.warning.length + groups.info.length;
+  const drag = usePanelDrag('problems', scope, autoLayout);
+  const highlightedRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    highlightedRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [highlighted]);
+
+  const isHighlighted = (finding: ValidationFinding) =>
+    highlighted !== null &&
+    highlighted.rule_id === finding.rule_id &&
+    highlighted.element_id === finding.element_id &&
+    highlighted.message === finding.message;
 
   return (
-    <section className="comments-panel problems-panel" aria-label="Проблемы">
-      <header className="comments-panel__header">
+    <section
+      ref={drag.panelRef}
+      className="comments-panel problems-panel"
+      style={drag.panelStyle}
+      aria-label="Проблемы"
+    >
+      <header className="comments-panel__header" {...drag.handleProps}>
         <div>
           <h2 className="comments-panel__title">Проблемы</h2>
           <p
@@ -85,8 +109,14 @@ export function ProblemsPanel({
           >
             {downloading ? 'Отчёт…' : 'DOCX'}
           </button>
-          <button type="button" className="ghost-button ghost-button--small" onClick={onClose}>
-            Закрыть
+          <button
+            type="button"
+            className="ghost-button ghost-button--small"
+            title="Закрыть"
+            aria-label="Закрыть"
+            onClick={onClose}
+          >
+            <span aria-hidden="true">×</span>
           </button>
         </div>
       </header>
@@ -184,11 +214,13 @@ export function ProblemsPanel({
                       const element = finding.element_id
                         ? finding.element_name || finding.element_id
                         : null;
+                      const current = isHighlighted(finding);
                       return (
                         <li key={`${finding.rule_id}:${finding.element_id ?? 'diagram'}:${index}`}>
                           <button
+                            ref={current ? highlightedRef : undefined}
                             type="button"
-                            className="problem"
+                            className={current ? 'problem problem--highlighted' : 'problem'}
                             disabled={!finding.element_id}
                             title={element ? `Перейти к ${element}` : 'Ошибка уровня схемы'}
                             onClick={() => onSelect(finding)}
@@ -212,6 +244,15 @@ export function ProblemsPanel({
           })}
         </div>
       ) : null}
+
+      {autoLayout ? null : (
+        <span
+          className="comments-panel__resize"
+          aria-hidden="true"
+          title="Изменить размер"
+          {...drag.resizeHandleProps}
+        />
+      )}
     </section>
   );
 }

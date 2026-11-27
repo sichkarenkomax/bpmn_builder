@@ -577,10 +577,15 @@ code {
   display: inline-flex;
   flex: none;
   align-items: center;
+  justify-content: flex-start;
   gap: 5px;
+  /* Фиксированная ширина: смена статуса не перестраивает панель инструментов. */
+  width: 112px;
+  overflow: hidden;
   color: var(--text-muted);
   font-size: 11px;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .validation-status::before {
@@ -622,6 +627,21 @@ code {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.editor-toolbar__auto {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.editor-toolbar__auto input {
+  margin: 0;
 }
 
 .editor-toolbar__size {
@@ -1875,16 +1895,35 @@ code {
   background: #2563eb;
 }
 
-.comments-panel {
+/* Колонка оверлеев холста: панели стоят друг под другом и не наезжают
+   одна на другую; перетаскивание за заголовок даёт смещение через transform.
+   Обёртка занимает весь холст, иначе сдвинутая влево панель обрезается её
+   невидимой границей. */
+.canvas-panels {
   position: absolute;
   z-index: 130;
-  top: 12px;
-  right: 12px;
+  inset: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  overflow-y: auto;
+  pointer-events: none;
+}
+
+.canvas-panels > * {
+  position: relative;
+  flex: none;
+  pointer-events: auto;
+}
+
+.comments-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: min(320px, calc(100% - 24px));
-  max-height: calc(100% - 24px);
+  max-height: 100%;
   padding: 10px 12px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1898,6 +1937,37 @@ code {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.comments-panel__header:active {
+  cursor: grabbing;
+}
+
+/* Уголок изменения размера: размер панели тоже запоминается. */
+.comments-panel__resize {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  background: linear-gradient(
+    135deg,
+    transparent 0 40%,
+    var(--text-muted) 40% 48%,
+    transparent 48% 60%,
+    var(--text-muted) 60% 68%,
+    transparent 68%
+  );
+  opacity: 0.55;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.comments-panel__resize:hover {
+  opacity: 1;
 }
 
 .comments-panel__title {
@@ -2101,6 +2171,12 @@ code {
 
 .problem:hover:not(:disabled) {
   border-color: var(--accent);
+}
+
+.problem--highlighted {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-muted));
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .problem:disabled {
@@ -2731,7 +2807,14 @@ code {
 .simulation-panel {
   z-index: 132;
   width: min(400px, calc(100% - 24px));
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* При ресайзе блоки не сжимаются меньше своего содержимого: панель скроллится. */
+.simulation-panel > * {
+  flex-shrink: 0;
 }
 
 .simulation-panel__header {
@@ -2739,6 +2822,13 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.simulation-panel__header:active {
+  cursor: grabbing;
 }
 
 .simulation-panel__title {
@@ -2819,6 +2909,7 @@ code {
 
 .simulation-panel__log {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 2px;
   min-height: 0;
@@ -2871,8 +2962,139 @@ code {
   white-space: nowrap;
 }
 
+.simulation-panel__state {
+  min-height: 0;
+}
+
+.simulation-panel__state ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  max-height: 84px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.simulation-panel__state-item {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.simulation-panel__state-name {
+  color: var(--text-muted);
+}
+
+.simulation-panel__state-value {
+  color: var(--text);
+}
+
+.simulation-panel__state-item--changed .simulation-panel__state-name,
+.simulation-panel__state-item--changed .simulation-panel__state-value {
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.simulation-panel__state-item--changed::after {
+  content: '•';
+  color: #2563eb;
+}
+
 .simulation-panel__counts {
   min-height: 0;
+}
+
+.simulation-panel__library {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.simulation-panel__library-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.simulation-panel__case-name {
+  flex: 1 1 120px;
+  min-width: 120px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+}
+
+.simulation-panel__library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 140px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.simulation-panel__library-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  font-size: 11.5px;
+}
+
+.simulation-panel__library-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.simulation-panel__case-name {
+  max-width: 100%;
+}
+
+.simulation-panel__case-edit {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.simulation-panel__case-edit textarea.simulation-panel__case-name {
+  flex-basis: 100%;
+  resize: vertical;
+}
+
+.simulation-panel__case-repin {
+  display: flex;
+  flex-basis: 100%;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.simulation-panel__case-result {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 2px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  font-size: 11px;
 }
 
 .simulation-panel__subtitle {

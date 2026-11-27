@@ -16,6 +16,7 @@ from app.bpmn.model import (
     Bounds,
     BpmnDocument,
     Collaboration,
+    ErrorDefinition,
     Flow,
     FlowType,
     Lane,
@@ -142,6 +143,14 @@ def parse_bpmn(payload: str | bytes, *, root: etree._Element | None = None) -> B
     collaboration = (
         _parse_collaboration(collaboration_el, di) if collaboration_el is not None else None
     )
+    errors = [
+        ErrorDefinition(
+            id=element.get("id") or f"Error_{index + 1}",
+            name=element.get("name"),
+            error_code=element.get("errorCode"),
+        )
+        for index, element in enumerate(root.findall(q(BPMN, "error")))
+    ]
 
     document = BpmnDocument(
         id=root.get("id") or "Definitions_1",
@@ -149,6 +158,7 @@ def parse_bpmn(payload: str | bytes, *, root: etree._Element | None = None) -> B
         exporter=root.get("exporter"),
         processes=processes,
         collaboration=collaboration,
+        errors=errors,
     )
     return document.keep_source(raw.decode("utf-8"))
 
@@ -240,12 +250,25 @@ def _parse_lane(element: etree._Element, di: _DiIndex) -> Lane:
     )
 
 
+def _parse_inner(element: etree._Element, di: _DiIndex) -> tuple[list[Node], list[Flow]]:
+    """Вложенные элементы подпроцесса: узлы и потоки последовательности."""
+    nodes: list[Node] = []
+    flows: list[Flow] = []
+    for child in element:
+        local = etree.QName(child).localname
+        if local in _NODE_TYPES:
+            nodes.append(_parse_node(child, _NODE_TYPES[local], di))
+        elif local == "sequenceFlow":
+            flows.append(_parse_flow(child, FlowType.SEQUENCE, di))
+    return nodes, flows
+
+
 def _parse_node(element: etree._Element, node_type: NodeType, di: _DiIndex) -> Node:
     node_id = element.get("id")
     if not node_id:
         raise BpmnModelError(f"у элемента {node_type.value} нет id", line=_line(element))
     script = element.find(q(BPMN, "script"))
-    return Node(
+    node = Node(
         id=node_id,
         type=node_type,
         name=element.get("name"),
@@ -259,7 +282,11 @@ def _parse_node(element: etree._Element, node_type: NodeType, di: _DiIndex) -> N
         script=script.text if script is not None and script.text else None,
         default_flow=element.get("default"),
         timer=_parse_timer(element),
+        error_ref=_parse_error_ref(element),
     )
+    if node_type is NodeType.SUB_PROCESS:
+        node.nodes, node.flows = _parse_inner(element, di)
+    return node
 
 
 def _parse_timer(element: etree._Element) -> TimerDefinition | None:
@@ -273,6 +300,14 @@ def _parse_timer(element: etree._Element) -> TimerDefinition | None:
         if local in _TIMER_KINDS and text:
             return TimerDefinition(kind=_TIMER_KINDS[local], expression=text)
     return None
+
+
+def _parse_error_ref(element: etree._Element) -> str | None:
+    """Ссылка `errorRef` из errorEventDefinition."""
+    definition = element.find(q(BPMN, "errorEventDefinition"))
+    if definition is None:
+        return None
+    return definition.get("errorRef")
 
 
 def _parse_flow(element: etree._Element, flow_type: FlowType, di: _DiIndex) -> Flow:

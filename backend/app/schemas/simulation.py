@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -44,6 +45,10 @@ class SimulationStep(BaseModel):
     message: str | None = None
     #: Сколько симуляция ждёт на таймере (`timeDuration`), мс.
     wait_ms: int | None = Field(default=None, ge=0)
+    #: Значения переменных после шага — состояние на этом шаге.
+    variables: dict[str, VariableValue] = Field(default_factory=dict)
+    #: Имена переменных, которые изменил этот шаг (скрипт-задача).
+    changed: list[str] = Field(default_factory=list)
 
 
 class SimulationBranch(BaseModel):
@@ -89,6 +94,92 @@ class SimulationReport(BaseModel):
     decision: SimulationDecision | None = None
 
 
+class SimulationRunCreate(SimulationRequest):
+    """Прогон, который нужно сохранить: входные данные без отчёта."""
+
+
+class SimulationRunRead(BaseModel):
+    """Сохранённый прогон вместе с полученным отчётом."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    diagram_id: str
+    version_id: str | None = None
+    variables: dict[str, VariableValue] = Field(default_factory=dict)
+    choices: dict[str, str] = Field(default_factory=dict)
+    report: SimulationReport
+    created_at: datetime
+
+
+class TestCaseCreate(BaseModel):
+    """Тест-кейс: имя, входные данные и ожидаемый результат."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    variables: dict[str, VariableValue] = Field(default_factory=dict)
+    choices: dict[str, str] = Field(default_factory=dict)
+    expected_steps: list[str] = Field(default_factory=list, max_length=5000)
+    expected_variables: dict[str, VariableValue] = Field(default_factory=dict)
+
+
+class TestCaseUpdate(BaseModel):
+    """Частичное изменение тест-кейса; не переданные поля не меняются."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    variables: dict[str, VariableValue] | None = None
+    choices: dict[str, str] | None = None
+    expected_steps: list[str] | None = Field(default=None, max_length=5000)
+    expected_variables: dict[str, VariableValue] | None = None
+    #: Перепривязать кейс к другой версии XML.
+    version_id: str | None = Field(default=None, max_length=36)
+
+
+class TestCaseRead(BaseModel):
+    """Сохранённый тест-кейс."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    diagram_id: str
+    name: str
+    version_id: str | None = None
+    variables: dict[str, VariableValue] = Field(default_factory=dict)
+    choices: dict[str, str] = Field(default_factory=dict)
+    expected_steps: list[str] = Field(default_factory=list)
+    expected_variables: dict[str, VariableValue] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class StepDiff(BaseModel):
+    """Расхождение шага: какой элемент ожидали и какой прошёл."""
+
+    index: int = Field(ge=0)
+    expected: str | None = None
+    actual: str | None = None
+
+
+class VariableDiff(BaseModel):
+    """Расхождение значения переменной после прогона."""
+
+    name: str
+    expected: VariableValue | None = None
+    actual: VariableValue | None = None
+
+
+class TestCaseResult(BaseModel):
+    """Результат запуска тест-кейса: pass/fail и различия."""
+
+    passed: bool
+    report: SimulationReport
+    step_diffs: list[StepDiff] = Field(default_factory=list)
+    variable_diffs: list[VariableDiff] = Field(default_factory=list)
+
+
 __all__ = [
     "SIMULATION_SCHEMA_VERSION",
     "SimulationBranch",
@@ -96,7 +187,15 @@ __all__ = [
     "SimulationDecisionReason",
     "SimulationReport",
     "SimulationRequest",
+    "SimulationRunCreate",
+    "SimulationRunRead",
     "SimulationStep",
     "SimulationStepAction",
+    "StepDiff",
+    "TestCaseCreate",
+    "TestCaseRead",
+    "TestCaseUpdate",
+    "TestCaseResult",
+    "VariableDiff",
     "VariableValue",
 ]

@@ -54,6 +54,16 @@ class TimerDefinition(BaseModel):
     expression: str = Field(min_length=1, max_length=255)
 
 
+class ErrorDefinition(BaseModel):
+    """Корневое `bpmn:error`: ссылка из errorEventDefinition и код."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, frozen=True)
+
+    id: str = Field(min_length=1, max_length=255)
+    name: str | None = None
+    error_code: str | None = Field(default=None, max_length=255)
+
+
 class FlowType(StrEnum):
     SEQUENCE = "sequenceFlow"
     MESSAGE = "messageFlow"
@@ -119,6 +129,11 @@ class Node(DiagramElement):
     default_flow: str | None = None
     #: Таймер стартового, промежуточного ловящего или граничного события.
     timer: TimerDefinition | None = None
+    #: Ссылка на корневой `bpmn:error` у события-ошибки.
+    error_ref: str | None = None
+    #: Вложенные элементы раскрытого подпроцесса; у остальных типов пусто.
+    nodes: list[Node] = Field(default_factory=list)
+    flows: list[Flow] = Field(default_factory=list)
 
     @field_validator("script")
     @classmethod
@@ -152,6 +167,16 @@ class Node(DiagramElement):
         }
         if self.timer is not None and self.type not in timer_events:
             msg = "таймер допустим только для стартового, промежуточного или граничного события"
+            raise ValueError(msg)
+        error_events = {
+            NodeType.START_EVENT,
+            NodeType.END_EVENT,
+            NodeType.INTERMEDIATE_CATCH_EVENT,
+            NodeType.INTERMEDIATE_THROW_EVENT,
+            NodeType.BOUNDARY_EVENT,
+        }
+        if self.error_ref and self.type not in error_events:
+            msg = "errorRef допустим только для события"
             raise ValueError(msg)
         return self
 
@@ -254,8 +279,15 @@ class BpmnDocument(BaseModel):
     exporter: str | None = None
     processes: list[Process] = Field(default_factory=list)
     collaboration: Collaboration | None = None
+    #: Корневые определения ошибок, на которые ссылаются события.
+    errors: list[ErrorDefinition] = Field(default_factory=list)
 
     _source_xml: str | None = PrivateAttr(default=None)
+
+    @field_validator("exporter")
+    @classmethod
+    def _exporter_optional(cls, value: str | None) -> str | None:
+        return _empty_to_none(value)
 
     @property
     def source_xml(self) -> str | None:
@@ -281,10 +313,33 @@ class BpmnDocument(BaseModel):
         return BpmnDocument.model_validate(self.model_dump())
 
     def nodes(self) -> list[Node]:
+        """Узлы верхнего уровня: элементы внутри подпроцессов сюда не входят."""
         return [node for process in self.processes for node in process.nodes]
 
     def flows(self) -> list[Flow]:
+        """Потоки верхнего уровня: внутренние потоки подпроцессов не входят."""
         return [flow for process in self.processes for flow in process.flows]
+
+    def all_nodes(self) -> list[Node]:
+        """Все узлы, включая вложенные в подпроцессы на любую глубину."""
+        result: list[Node] = []
+        for process in self.processes:
+            stack = list(reversed(process.nodes))
+            while stack:
+                node = stack.pop()
+                result.append(node)
+                stack.extend(reversed(node.nodes))
+        return result
+
+    def all_flows(self) -> list[Flow]:
+        """Все потоки, включая внутренние потоки подпроцессов."""
+        result: list[Flow] = [flow for process in self.processes for flow in process.flows]
+        stack = list(reversed(self.nodes()))
+        while stack:
+            node = stack.pop()
+            result.extend(node.flows)
+            stack.extend(reversed(node.nodes))
+        return result
 
     def plane_for(self, element_ref: str) -> tuple[str, str] | None:
         for process in self.processes:
@@ -299,3 +354,7 @@ class BpmnDocument(BaseModel):
         ):
             return collaboration.diagram_id, collaboration.plane_id
         return None
+
+
+# `Node.flows` ссылается на `Flow`, объявленный ниже, — собираем модель после него.
+Node.model_rebuild()

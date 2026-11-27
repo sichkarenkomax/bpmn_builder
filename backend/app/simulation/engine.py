@@ -7,12 +7,24 @@
 ветка не подошла, прогон останавливается с `decision`: ветку выбирает
 пользователь, а повторный запуск получает выбор в `choices`. Таймер события
 даёт шаг `waiting` с `wait_ms` (для `timeDuration`), остальные промежуточные
-события считаются «ручным шагом» — токен проходит дальше; подпроцессы не
-раскрываются. Эти ограничения — граница первого среза `v0.3`.
+события считаются «ручным шагом» — токен проходит дальше; скрипт-задача
+исполняет безопасные присваивания `имя = выражение`, а каждый шаг несёт снимок
+переменных после себя.
+
+Подпроцессы: свёрнутый проходит одним шагом и не раскрывается в журнале,
+раскрытый (`isExpanded`) входит через внутренние стартовые события и выходит
+через внутренние концы на исходящие потоки подпроцесса; вложенность любой
+глубины, внутренние узлы видны в журнале и счётчиках, переменные общие.
+Граничное событие с таймером прерывает подпроцесс и уводит токен по своему
+потоку; `cancelActivity="false"` запускает параллельную ветку, не останавливая
+подпроцесс. Ошибка скрипта внутри подпроцесса перехватывается ближайшим
+граничным событием-ошибкой (`errorEventDefinition`), остальные ошибки
+по-прежнему дают `SimulationError`.
 """
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict, deque
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -32,6 +44,7 @@ from app.simulation.expressions import (
     ExpressionError,
     MissingVariableError,
     evaluate_condition,
+    evaluate_value,
 )
 from app.simulation.timers import timer_wait_ms
 
@@ -53,6 +66,8 @@ class _Token:
     node_id: str
     token: int
     from_flow: str | None = None
+    #: id подпроцесса, внутри которого сейчас токен; `None` — верхний уровень.
+    scope: str | None = None
 
 
 def _labelled(node: Node) -> str:
@@ -61,6 +76,10 @@ def _labelled(node: Node) -> str:
 
 def _flow_list(flows: list[Flow]) -> str:
     return ", ".join(flow.id for flow in flows)
+
+
+#: Присваивание в скрипт-задаче: `имя = выражение` из безопасного вычислителя.
+_ASSIGNMENT_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$")
 
 
 class _Runner:
@@ -75,14 +94,26 @@ class _Runner:
         self._variables = dict(variables)
         self._choices = dict(choices)
         self._max_steps = max_steps
-        self._nodes: dict[str, Node] = {node.id: node for node in document.nodes()}
-        self._flows: dict[str, Flow] = {flow.id: flow for flow in document.flows()}
+        self._nodes: dict[str, Node] = {node.id: node for node in document.all_nodes()}
+        self._flows: dict[str, Flow] = {flow.id: flow for flow in document.all_flows()}
+        #: вложенный узел → id подпроцесса, в котором он лежит.
+        self._parents: dict[str, str] = {}
+        for process in document.processes:
+            stack: list[tuple[Node, str | None]] = [(node, None) for node in process.nodes]
+            while stack:
+                node, parent = stack.pop()
+                if parent is not None:
+                    self._parents[node.id] = parent
+                stack.extend((child, node.id) for child in node.nodes)
+        self._boundary: dict[str, list[Node]] = defaultdict(list)
+        for node in self._nodes.values():
+            if node.type is NodeType.BOUNDARY_EVENT and node.attached_to:
+                self._boundary[node.attached_to].append(node)
         self._outgoing: dict[str, list[Flow]] = defaultdict(list)
         self._incoming: dict[str, list[Flow]] = defaultdict(list)
-        for process in document.processes:
-            for flow in process.flows:
-                self._outgoing[flow.source_ref].append(flow)
-                self._incoming[flow.target_ref].append(flow)
+        for flow in self._flows.values():
+            self._outgoing[flow.source_ref].append(flow)
+            self._incoming[flow.target_ref].append(flow)
         self._queue: deque[_Token] = deque()
         self._steps: list[SimulationStep] = []
         self._counts: dict[str, int] = defaultdict(int)
@@ -132,24 +163,57 @@ class _Runner:
         if node is None:
             raise SimulationError(f"поток ведёт в неизвестный элемент {token.node_id!r}")
 
+        changed: tuple[str, ...] = ()
+        if node.type is NodeType.SCRIPT_TASK and node.script:
+            try:
+                changed = self._run_script(node)
+            except SimulationError as exc:
+                if self._handle_script_error(token, node, exc):
+                    return
+                raise
+
+        if node.type is NodeType.SUB_PROCESS:
+            self._enter_subprocess(token, node, changed)
+            return
+
         incoming = self._incoming.get(node.id, [])
-        is_join = (
-            node.type
-            in {
-                NodeType.PARALLEL_GATEWAY,
-                NodeType.INCLUSIVE_GATEWAY,
-            }
-            and len(incoming) > 1
-        )
-        if is_join:
+        is_parallel_join = node.type is NodeType.PARALLEL_GATEWAY and len(incoming) > 1
+        is_inclusive_join = node.type is NodeType.INCLUSIVE_GATEWAY and len(incoming) > 1
+        if is_parallel_join:
             arrived = self._arrivals[node.id]
             arrived.add(token.from_flow or "")
             expected = {flow.id for flow in incoming}
             if not expected.issubset(arrived):
-                self._log(token, node, "waiting", message=f"ждёт ветки: {_flow_list(incoming)}")
+                self._log(
+                    token,
+                    node,
+                    "waiting",
+                    message=f"ждёт ветки: {_flow_list(incoming)}",
+                    changed=changed,
+                )
                 return
             self._arrivals[node.id] = set()
-            self._log(token, node, "completed", message="ветки синхронизированы")
+            self._log(token, node, "completed", message="ветки синхронизированы", changed=changed)
+        elif is_inclusive_join:
+            # Инклюзивное слияние ждёт не все входы, а только те ветки, которые
+            # реально запущены и ещё могут дойти: невыбранные условия и ветки,
+            # ушедшие в другой конец процесса, не должны блокировать токен.
+            if self._queued_tokens_can_reach(node.id):
+                self._log(
+                    token,
+                    node,
+                    "waiting",
+                    message="ждёт активные ветки",
+                    changed=changed,
+                )
+                return
+            self._log(
+                token,
+                node,
+                "completed",
+                message="активные ветки сошлись",
+                changed=changed,
+            )
         elif node.timer is not None:
             self._log(
                 token,
@@ -157,13 +221,17 @@ class _Runner:
                 "waiting",
                 message=f"ожидание таймера: {node.timer.expression}",
                 wait_ms=timer_wait_ms(node.timer),
+                changed=changed,
             )
         else:
-            self._log(token, node, "completed")
+            self._log(token, node, "completed", changed=changed)
 
         self._counts[node.id] += 1
         if node.type is NodeType.END_EVENT:
-            self._completed += 1
+            if token.scope is None:
+                self._completed += 1
+            else:
+                self._exit_subprocess(token, node)
             return
 
         outgoing = self._outgoing.get(node.id, [])
@@ -172,7 +240,180 @@ class _Runner:
 
         chosen = self._choose_flows(node, outgoing)
         for flow in chosen:
-            self._queue.append(_Token(flow.target_ref, token.token, flow.id))
+            self._queue.append(_Token(flow.target_ref, token.token, flow.id, token.scope))
+
+    # --- подпроцессы ------------------------------------------------------
+
+    def _enter_subprocess(self, token: _Token, node: Node, changed: tuple[str, ...]) -> None:
+        boundaries = self._boundary.get(node.id, [])
+        interrupting = [
+            item for item in boundaries if item.timer and item.cancel_activity is not False
+        ]
+        if interrupting:
+            boundary = interrupting[0]
+            self._log(
+                token,
+                node,
+                "completed",
+                message=f"прерван граничным событием {_labelled(boundary)}",
+                changed=changed,
+            )
+            self._counts[node.id] += 1
+            self._trigger_boundary(token, boundary)
+            return
+
+        # Неразрушающий таймер запускает параллельную ветку, подпроцесс продолжается.
+        non_interrupting = [
+            item
+            for item in boundaries
+            if item.timer and item.cancel_activity is False and item.error_ref is None
+        ]
+
+        if not node.is_expanded:
+            # Свёрнутый подпроцесс — «чёрный ящик»: один шаг без внутренностей.
+            self._log(token, node, "completed", changed=changed)
+            self._counts[node.id] += 1
+            for boundary in non_interrupting:
+                self._trigger_boundary(token, boundary)
+            self._leave_subprocess(token, node, "подпроцесса")
+            return
+
+        self._log(token, node, "completed", message="вход в подпроцесс", changed=changed)
+        self._counts[node.id] += 1
+        for boundary in non_interrupting:
+            self._trigger_boundary(token, boundary)
+        starts = [
+            inner
+            for inner in node.nodes
+            if inner.type is NodeType.START_EVENT and not self._incoming.get(inner.id)
+        ]
+        if not starts:
+            # Пустой раскрытый подпроцесс завершается сразу.
+            self._leave_subprocess(token, node, "подпроцесса")
+            return
+        for start in starts:
+            self._queue.append(_Token(start.id, token.token, None, node.id))
+
+    def _exit_subprocess(self, token: _Token, end: Node) -> None:
+        """Внутренний конец возвращает токен на исходящие потоки подпроцесса."""
+        owner_id = token.scope
+        if owner_id is None:
+            raise SimulationError(f"внутренний конец {_labelled(end)} вне подпроцесса")
+        owner = self._nodes[owner_id]
+        self._leave_subprocess(token, owner, "подпроцесса")
+
+    def _leave_subprocess(self, token: _Token, node: Node, what: str) -> None:
+        outgoing = self._outgoing.get(node.id, [])
+        if not outgoing:
+            raise SimulationError(f"тупик: у {what} {_labelled(node)} нет исходящего потока")
+        scope = self._parents.get(node.id)
+        for flow in outgoing:
+            self._queue.append(_Token(flow.target_ref, token.token, flow.id, scope))
+
+    def _handle_script_error(self, token: _Token, node: Node, error: SimulationError) -> bool:
+        """Ищет граничное событие-ошибку у своего или внешнего подпроцесса."""
+        scope = token.scope
+        while scope is not None:
+            owner = self._nodes[scope]
+            boundary = next(
+                (item for item in self._boundary.get(scope, []) if item.error_ref is not None),
+                None,
+            )
+            if boundary is not None:
+                self._log(
+                    token,
+                    owner,
+                    "completed",
+                    message=f"прерван ошибкой: {error}",
+                )
+                self._counts[owner.id] += 1
+                self._trigger_boundary(
+                    token,
+                    boundary,
+                    action="completed",
+                    message=f"ошибка перехвачена: {error}",
+                )
+                return True
+            scope = self._parents.get(scope)
+        return False
+
+    def _trigger_boundary(
+        self,
+        token: _Token,
+        boundary: Node,
+        *,
+        action: SimulationStepAction = "waiting",
+        message: str | None = None,
+    ) -> None:
+        if message is None and boundary.timer is not None:
+            message = f"ожидание таймера: {boundary.timer.expression}"
+        self._steps.append(
+            SimulationStep(
+                index=len(self._steps) + 1,
+                token=token.token,
+                node_id=boundary.id,
+                node_name=boundary.name,
+                node_type=boundary.type,
+                action=action,
+                message=message,
+                wait_ms=timer_wait_ms(boundary.timer),
+                variables=dict(self._variables),
+            )
+        )
+        self._counts[boundary.id] += 1
+        outgoing = self._outgoing.get(boundary.id, [])
+        if not outgoing:
+            raise SimulationError(
+                f"тупик: у граничного события {_labelled(boundary)} нет исходящего потока"
+            )
+        scope = self._parents.get(boundary.attached_to or "")
+        for flow in outgoing:
+            self._queue.append(_Token(flow.target_ref, token.token, flow.id, scope))
+
+    def _run_script(self, node: Node) -> tuple[str, ...]:
+        """Исполняет присваивания скрипт-задачи и возвращает изменённые имена.
+
+        Это не JS/Groovy-рантайм: поддерживаются только строки `имя = выражение`,
+        вычисляемые тем же безопасным парсером, что и условия потоков. Такой
+        скрипт может изменить переменные прогона, и состояние видно на каждом шаге.
+        """
+        if not node.script:
+            return ()
+        changed: list[str] = []
+        for number, raw in enumerate(node.script.splitlines(), start=1):
+            line = raw.strip()
+            if line == "" or line.startswith("#") or line.startswith("//"):
+                continue
+            match = _ASSIGNMENT_RE.match(line)
+            if match is None:
+                raise SimulationError(
+                    f"скрипт у {_labelled(node)}, строка {number}: "
+                    "поддерживаются только присваивания «имя = выражение»"
+                )
+            name, expression = match.group(1), match.group(2)
+            try:
+                self._variables[name] = evaluate_value(expression, self._variables)
+            except ExpressionError as exc:
+                raise SimulationError(
+                    f"скрипт у {_labelled(node)}, строка {number}: {exc}"
+                ) from exc
+            if name not in changed:
+                changed.append(name)
+        return tuple(changed)
+
+    def _queued_tokens_can_reach(self, target_id: str) -> bool:
+        """Есть ли в очереди токен, которому ещё предстоит дойти до слияния."""
+        seen: set[str] = set()
+
+        def reaches(node_id: str) -> bool:
+            if node_id == target_id:
+                return True
+            if node_id in seen:
+                return False
+            seen.add(node_id)
+            return any(reaches(flow.target_ref) for flow in self._outgoing.get(node_id, []))
+
+        return any(reaches(token.node_id) for token in self._queue)
 
     # --- выбор веток ------------------------------------------------------
 
@@ -308,6 +549,7 @@ class _Runner:
         action: SimulationStepAction,
         message: str | None = None,
         wait_ms: int | None = None,
+        changed: tuple[str, ...] = (),
     ) -> None:
         self._steps.append(
             SimulationStep(
@@ -320,6 +562,8 @@ class _Runner:
                 flow_id=token.from_flow,
                 message=message,
                 wait_ms=wait_ms,
+                variables=dict(self._variables),
+                changed=list(changed),
             )
         )
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from app.core.config import get_settings
 from docx import Document as DocxDocument
 from httpx import AsyncClient
 
@@ -98,8 +99,10 @@ async def test_stored_oversized_xml_is_413(
 async def test_validate_is_rate_limited(db_client: AsyncClient) -> None:
     diagram = await _create(db_client, gateway_errors_xml())
 
+    # Лимит зависит от окружения (.env, CI): проверяем фактический порог, а не 120.
+    limit = get_settings().rate_limit_write_per_minute
     statuses: list[int] = []
-    for _ in range(125):
+    for _ in range(limit + 5):
         response = await db_client.post(f"{API}/diagrams/{diagram['id']}/validate")
         statuses.append(response.status_code)
         if response.status_code == 429:

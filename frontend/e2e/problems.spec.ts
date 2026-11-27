@@ -93,6 +93,41 @@ test('DOCX-отчёт скачивается из панели проблем', 
   }
 });
 
+test('клик по маркеру предупреждения открывает проблемы и подсвечивает находку', async ({
+  page,
+  request,
+}) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E validation pin ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    const task = page.locator('[data-element-id="Task_Unused"]').first();
+    await expect(task).toBeVisible();
+    await expect(page.locator('.validation-status')).toContainText('Актуально', {
+      timeout: 15_000,
+    });
+
+    // Панель проблем закрыта, пока на маркер не нажали.
+    const panel = page.getByRole('region', { name: 'Проблемы' });
+    await expect(panel).toHaveCount(0);
+
+    const pin = page.locator('.validation-pin').first();
+    await expect(pin).toBeVisible();
+    await pin.click();
+
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('.problem--highlighted')).toHaveCount(1);
+    await expect(panel.locator('.problem--highlighted')).toContainText('Лишняя задача');
+    await expect(task).toHaveClass(/selected/);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
 test('ошибка валидации: панель, переход к элементу и повторная проверка', async ({
   page,
   request,
@@ -142,8 +177,9 @@ test('ошибка валидации: панель, переход к элем�
 
     await expect(reopened.getByText('Проблем не найдено.')).toBeVisible();
     await expect(reopened.locator('.problem')).toHaveCount(0);
-    await expect(status).toContainText('Актуально');
-    await expect(status).toContainText('проблем нет');
+    // Статус в панели инструментов — короткий; числа остаются в подсказке.
+    await expect(status).toHaveText('Актуально');
+    await expect(status).toHaveAttribute('title', /Ошибки: 0/);
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }

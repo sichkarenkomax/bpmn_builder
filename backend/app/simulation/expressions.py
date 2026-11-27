@@ -217,9 +217,20 @@ def _arithmetic(operator: str, left: Value, right: Value) -> Value:
     return lhs / rhs
 
 
+def evaluate_value(expression: str, variables: Mapping[str, Value]) -> Value:
+    """Вычисляет выражение и возвращает значение (для присваиваний в скриптах)."""
+    return _Parser(expression, variables).parse()
+
+
 def evaluate_condition(expression: str, variables: Mapping[str, Value]) -> bool:
     """Возвращает истинность условия; ошибки — `ExpressionError`."""
-    return bool(_Parser(expression, variables).parse())
+    return bool(evaluate_value(expression, variables))
 
 
-__all__ = ["ExpressionError", "MissingVariableError", "Value", "evaluate_condition"]
+__all__ = [
+    "ExpressionError",
+    "MissingVariableError",
+    "Value",
+    "evaluate_condition",
+    "evaluate_value",
+]

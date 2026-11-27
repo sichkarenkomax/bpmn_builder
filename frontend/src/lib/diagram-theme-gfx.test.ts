@@ -4,6 +4,19 @@ import { applyThemeToGfx, manualFill, manualStroke, themeById } from './diagram-
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+// jsdom 31 нормализует hex-цвета в rgb(...) при записи в style.
+function normalizedColor(value: string | undefined): string {
+  if (!value) {
+    return '';
+  }
+  const hex = /^#([0-9a-f]{6})$/i.exec(value);
+  if (!hex) {
+    return value;
+  }
+  const number = Number.parseInt(hex[1] ?? '', 16);
+  return `rgb(${(number >> 16) & 255}, ${(number >> 8) & 255}, ${number & 255})`;
+}
+
 function makeGfx(shapes: string[]): SVGGElement {
   const gfx = document.createElementNS(SVG_NS, 'g');
   const visual = document.createElementNS(SVG_NS, 'g');
@@ -20,7 +33,7 @@ describe('applyThemeToGfx', () => {
     const gfx = makeGfx(['path']);
     applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeById('colored'));
     const path = gfx.querySelector('path');
-    expect(path?.style.stroke).toBe('#000000');
+    expect(normalizedColor(path?.style.stroke)).toBe(normalizedColor('#000000'));
     expect(path?.style.strokeWidth).toBe('0.7');
   });
 
@@ -46,8 +59,8 @@ describe('applyThemeToGfx', () => {
 
     applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeById('colored'));
 
-    expect(path.style.stroke).toBe('#000000');
-    expect(path.style.fill).toBe('#000000');
+    expect(normalizedColor(path.style.stroke)).toBe(normalizedColor('#000000'));
+    expect(normalizedColor(path.style.fill)).toBe(normalizedColor('#000000'));
     expect(marker.getAttribute('markerUnits')).toBe('userSpaceOnUse');
     expect(marker.getAttribute('markerWidth')).toBe('12');
     expect(marker.getAttribute('markerHeight')).toBe('12');
@@ -57,10 +70,10 @@ describe('applyThemeToGfx', () => {
     const gfx = makeGfx(['rect', 'path']);
     applyThemeToGfx(gfx, 'bpmn:TextAnnotation', themeById('colored'));
     const [background, bracket] = gfx.querySelectorAll<SVGElement>('.djs-visual > *');
-    expect(background?.style.fill).toBe('#f8fafc');
+    expect(normalizedColor(background?.style.fill)).toBe(normalizedColor('#f8fafc'));
     expect(background?.style.stroke).toBe('none');
     expect(bracket?.style.fill).toBe('none');
-    expect(bracket?.style.stroke).toBe('#000000');
+    expect(normalizedColor(bracket?.style.stroke)).toBe(normalizedColor('#000000'));
   });
 
   it('рисует ассоциацию точками толщиной 1', () => {
@@ -77,7 +90,7 @@ describe('applyThemeToGfx', () => {
     applyThemeToGfx(gfx, 'bpmn:EndEvent', themeById('colored'));
     const circle = gfx.querySelector('circle');
     expect(circle?.style.strokeWidth).toBe('4px');
-    expect(circle?.style.stroke).toBe('#000000');
+    expect(normalizedColor(circle?.style.stroke)).toBe(normalizedColor('#000000'));
   });
 
   it('не утолщает иконку внутри завершающего события', () => {
@@ -103,7 +116,7 @@ describe('applyThemeToGfx', () => {
 
     applyThemeToGfx(rootGfx, 'bpmn:Collaboration', themeById('colored'));
 
-    expect(rect.style.fill).toBe('#22c55e');
+    expect(normalizedColor(rect.style.fill)).toBe(normalizedColor('#22c55e'));
   });
 
   it('читает ручной цвет в старом формате bioc', () => {
@@ -119,7 +132,7 @@ describe('applyThemeToGfx', () => {
     const gfx = makeGfx(['rect']);
     applyThemeToGfx(gfx, 'bpmn:Task', themeById('mono'));
     const rect = gfx.querySelector('rect');
-    expect(rect?.style.fill).toBe('#ffffff');
-    expect(rect?.style.stroke).toBe('#000000');
+    expect(normalizedColor(rect?.style.fill)).toBe(normalizedColor('#ffffff'));
+    expect(normalizedColor(rect?.style.stroke)).toBe(normalizedColor('#000000'));
   });
 });

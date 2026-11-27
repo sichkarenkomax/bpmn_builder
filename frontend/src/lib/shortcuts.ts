@@ -206,7 +206,7 @@ export function comboFromEvent(event: KeyboardEvent): string | null {
     return null;
   }
 
-  let key: string | null = null;
+  let key: string | null;
   let shift = event.shiftKey;
 
   const letterCode = /^Key([A-Z])$/.exec(event.code);
