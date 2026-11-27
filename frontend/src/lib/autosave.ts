@@ -1,5 +1,5 @@
 export const AUTOSAVE_STORAGE_KEY = 'bpmn-studio.autosave';
-export const AUTOSAVE_DEFAULT_SECONDS = 10;
+export const AUTOSAVE_DEFAULT_SECONDS = 180;
 export const AUTOSAVE_MIN_SECONDS = 2;
 export const AUTOSAVE_MAX_SECONDS = 300;
 

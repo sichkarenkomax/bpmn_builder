@@ -68,13 +68,16 @@ import {
   VALIDATION_OVERLAY_TYPE,
 } from '../lib/validation';
 import { clearAllPanelLayouts } from '../lib/panel-layout';
-import { loadAutosaveSeconds, saveAutosaveSeconds } from '../lib/autosave';
-import { loadMarkdownToolbarEnabled, saveMarkdownToolbarEnabled } from '../lib/markdown-settings';
+import { loadAutosaveSeconds } from '../lib/autosave';
+import { loadMarkdownToolbarEnabled } from '../lib/markdown-settings';
+import { loadValidationMode, type ValidationMode } from '../lib/validation-settings';
 import {
-  loadValidationMode,
-  saveValidationMode,
-  type ValidationMode,
-} from '../lib/validation-settings';
+  clearDiagramPreferences,
+  loadDiagramPreferences,
+  saveDiagramPreference,
+  type BehaviorPreferences,
+} from '../lib/diagram-preferences';
+import { loadResizeDefaults } from '../lib/resize-defaults';
 import {
   clearDefaultStyle,
   getDefaultStyle,
@@ -120,7 +123,7 @@ import {
 import bsModdle from '../lib/bs-moddle.json';
 import { attributeTypeForXml, parseAttributeType } from '../lib/attributes';
 import { savePortalDefaults } from '../lib/portal-defaults';
-import { loadTypePaletteEnabled, saveTypePaletteEnabled } from '../lib/type-palette';
+import { loadTypePaletteEnabled } from '../lib/type-palette';
 import { isElementLocked } from '../lib/lock';
 import {
   clearLocalDraft,
@@ -132,11 +135,7 @@ import { anchorPoint, closestSide, type AnchorSide } from '../lib/connection-anc
 import { hasDiagonalSegment, orthogonalAssociationWaypoints } from '../lib/association-route';
 import { proportionalAnchor, type Bounds, type Point } from '../lib/resize-anchors';
 import { ConnectionAnchors } from './ConnectionAnchors';
-import {
-  loadCanvasMouseMode,
-  saveCanvasMouseMode,
-  type CanvasMouseMode,
-} from '../lib/mouse-settings';
+import { loadCanvasMouseMode, type CanvasMouseMode } from '../lib/mouse-settings';
 import { DiagramLegend } from './DiagramLegend';
 import { DiagramResizeSettings } from './DiagramResizeSettings';
 import { ThemeSettings } from './ThemeSettings';
@@ -152,7 +151,6 @@ import {
   formatCombo,
   loadShortcuts,
   matchesCombo,
-  saveShortcuts,
   SHORTCUT_DEFINITIONS,
   type ShortcutAction,
   type ShortcutMap,
@@ -1485,13 +1483,20 @@ export function DiagramEditor({
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [replaceMenu, setReplaceMenu] = useState<ReplaceMenuState | null>(null);
   const [replaceInline, setReplaceInline] = useState(false);
-  const [typePaletteEnabled, setTypePaletteEnabled] = useState<boolean>(() =>
-    loadTypePaletteEnabled(),
+  // Пер-схемные переопределения: схема без переопределения следует за
+  // глобальными настройками из раздела «Настройки».
+  const [preferences, setPreferences] = useState<BehaviorPreferences>(() =>
+    loadDiagramPreferences(diagramId),
   );
-  const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => loadShortcuts());
-  const [autosaveSeconds, setAutosaveSeconds] = useState<number>(() => loadAutosaveSeconds());
-  const [markdownToolbar, setMarkdownToolbar] = useState<boolean>(() =>
-    loadMarkdownToolbarEnabled(),
+  const [typePaletteEnabled, setTypePaletteEnabled] = useState<boolean>(
+    () => preferences.typePalette ?? loadTypePaletteEnabled(),
+  );
+  const [shortcuts] = useState<ShortcutMap>(() => loadShortcuts());
+  const [autosaveSeconds, setAutosaveSeconds] = useState<number>(
+    () => preferences.autosaveSeconds ?? loadAutosaveSeconds(),
+  );
+  const [markdownToolbar, setMarkdownToolbar] = useState<boolean>(
+    () => preferences.markdownToolbar ?? loadMarkdownToolbarEnabled(),
   );
   const [styleDefaults, setStyleDefaults] = useState<StyleDefaults>(() => loadStyleDefaults());
   const styleDefaultsRef = useRef(styleDefaults);
@@ -1500,11 +1505,8 @@ export function DiagramEditor({
   const themeRef = useRef(themeId);
   themeRef.current = themeId;
   const [canvasTheme, setCanvasTheme] = useState<CanvasTheme>('light');
-  const [resizeSettings, setResizeSettings] = useState({
-    tasks: DEFAULT_RESIZE_TASKS,
-    others: DEFAULT_RESIZE_OTHERS,
-    compactBoundaryEvents: DEFAULT_COMPACT_BOUNDARY_EVENTS,
-  });
+  const resizeDefaultsRef = useRef(loadResizeDefaults());
+  const [resizeSettings, setResizeSettings] = useState(() => ({ ...resizeDefaultsRef.current }));
   const [legendPosition, setLegendPosition] = useState<LegendPosition>(DEFAULT_LEGEND_POSITION);
   const [comments, setComments] = useState<DiagramComment[]>([]);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -1520,7 +1522,9 @@ export function DiagramEditor({
   const [validationNonce, setValidationNonce] = useState(0);
   const [reportDownloading, setReportDownloading] = useState(false);
   const lastValidationNonceRef = useRef(0);
-  const [validationMode, setValidationMode] = useState<ValidationMode>(() => loadValidationMode());
+  const [validationMode, setValidationMode] = useState<ValidationMode>(
+    () => preferences.validationMode ?? loadValidationMode(),
+  );
   const validationCount = validationFindingsCount(validation);
   const validationState =
     validationBusy || save.kind === 'saving'
@@ -1545,7 +1549,9 @@ export function DiagramEditor({
   const validationSummaryTitle = validation
     ? `Ошибки: ${validation.summary.errors}; предупреждения: ${validation.summary.warnings}; информация: ${validation.summary.infos}`
     : undefined;
-  const [mouseMode, setMouseMode] = useState<CanvasMouseMode>(() => loadCanvasMouseMode());
+  const [mouseMode, setMouseMode] = useState<CanvasMouseMode>(
+    () => preferences.mouseMode ?? loadCanvasMouseMode(),
+  );
   const mouseModeRef = useRef(mouseMode);
   mouseModeRef.current = mouseMode;
   const [marquee, setMarquee] = useState<{
@@ -1689,11 +1695,34 @@ export function DiagramEditor({
   overlayOpenRef.current =
     settingsOpen || exportOpen || themeOpen || resizeSettingsOpen || menu !== null;
 
-  const updateShortcuts = useCallback((next: ShortcutMap) => {
-    setShortcuts(next);
-    shortcutsRef.current = next;
-    saveShortcuts(next);
-  }, []);
+  // Переопределение пишется только когда значение отличается от глобального:
+  // так схема продолжает следовать за настройками платформы.
+  const writePreference = <K extends keyof BehaviorPreferences>(
+    key: K,
+    value: BehaviorPreferences[K],
+    globalValue: BehaviorPreferences[K],
+  ) => {
+    const next = { ...preferences };
+    if (value === globalValue) {
+      delete next[key];
+      saveDiagramPreference(diagramId, key, undefined);
+    } else {
+      next[key] = value;
+      saveDiagramPreference(diagramId, key, value);
+    }
+    setPreferences(next);
+  };
+
+  const resetPreferences = () => {
+    clearDiagramPreferences(diagramId);
+    setPreferences({});
+    setAutosaveSeconds(loadAutosaveSeconds());
+    setValidationMode(loadValidationMode());
+    setMarkdownToolbar(loadMarkdownToolbarEnabled());
+    setTypePaletteEnabled(loadTypePaletteEnabled());
+    setMouseMode(loadCanvasMouseMode());
+    setReplaceMenu(null);
+  };
 
   const persist = useCallback(async () => {
     const modeler = modelerRef.current;
@@ -1921,7 +1950,9 @@ export function DiagramEditor({
       },
     };
     const properties: Record<string, string | undefined> = {};
-    for (const [key, value] of Object.entries(diagramSettingsProperties(settings))) {
+    for (const [key, value] of Object.entries(
+      diagramSettingsProperties(settings, resizeDefaultsRef.current),
+    )) {
       properties[`bs:${key}`] = value;
     }
     modeler.get<CommandStackLike>('commandStack').execute('element.updateModdleProperties', {
@@ -2830,7 +2861,7 @@ export function DiagramEditor({
       setCanRedo(stack.canRedo());
       // Undo/redo может вернуть прежнюю тему или позицию легенды: состояние
       // панелей синхронизируем с документом до перерисовки стилей.
-      const stored = readDiagramSettings(findDefinitions(modeler));
+      const stored = readDiagramSettings(findDefinitions(modeler), resizeDefaultsRef.current);
       const storedTheme = stored.theme ?? 'mono';
       if (storedTheme !== themeRef.current) {
         themeRef.current = storedTheme;
@@ -2870,7 +2901,7 @@ export function DiagramEditor({
         }
         modeler.get<CanvasLike>('canvas').zoom('fit-viewport');
         setMinimapOpen(modeler.get<MinimapLike>('minimap').isOpen());
-        const stored = readDiagramSettings(findDefinitions(modeler));
+        const stored = readDiagramSettings(findDefinitions(modeler), resizeDefaultsRef.current);
         const storedTheme = stored.theme ?? 'mono';
         themeRef.current = storedTheme;
         setThemeId(storedTheme);
@@ -4274,7 +4305,20 @@ export function DiagramEditor({
               aria-label="Настройки редактора"
               onClick={() => setSettingsOpen(true)}
             >
-              <span aria-hidden="true">⌨</span>
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                aria-hidden="true"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="3.2" />
+                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.54 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.54a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.1 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.46 9v.09A1.7 1.7 0 0 0 21 10h.09a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z" />
+              </svg>
             </button>
             <button
               type="button"
@@ -4779,25 +4823,36 @@ export function DiagramEditor({
       />
       <SettingsDialog
         open={settingsOpen}
-        shortcuts={shortcuts}
-        onChange={updateShortcuts}
         autosaveSeconds={autosaveSeconds}
-        onAutosaveChange={(seconds) => setAutosaveSeconds(saveAutosaveSeconds(seconds))}
+        onAutosaveChange={(seconds) => {
+          setAutosaveSeconds(seconds);
+          writePreference('autosaveSeconds', seconds, loadAutosaveSeconds());
+        }}
         validationMode={validationMode}
-        onValidationModeChange={(mode) => setValidationMode(saveValidationMode(mode))}
+        onValidationModeChange={(mode) => {
+          setValidationMode(mode);
+          writePreference('validationMode', mode, loadValidationMode());
+        }}
         markdownToolbar={markdownToolbar}
-        onMarkdownToolbarChange={(enabled) =>
-          setMarkdownToolbar(saveMarkdownToolbarEnabled(enabled))
-        }
+        onMarkdownToolbarChange={(enabled) => {
+          setMarkdownToolbar(enabled);
+          writePreference('markdownToolbar', enabled, loadMarkdownToolbarEnabled());
+        }}
         mouseMode={mouseMode}
-        onMouseModeChange={(mode) => setMouseMode(saveCanvasMouseMode(mode))}
+        onMouseModeChange={(mode) => {
+          setMouseMode(mode);
+          writePreference('mouseMode', mode, loadCanvasMouseMode());
+        }}
         typePalette={typePaletteEnabled}
         onTypePaletteChange={(enabled) => {
-          setTypePaletteEnabled(saveTypePaletteEnabled(enabled));
+          setTypePaletteEnabled(enabled);
+          writePreference('typePalette', enabled, loadTypePaletteEnabled());
           if (!enabled) {
             setReplaceMenu(null);
           }
         }}
+        hasOverrides={Object.keys(preferences).length > 0}
+        onResetOverrides={resetPreferences}
         onClose={() => setSettingsOpen(false)}
       />
     </div>

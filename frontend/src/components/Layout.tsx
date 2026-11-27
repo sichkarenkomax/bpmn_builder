@@ -14,6 +14,15 @@ function DiagramsIcon() {
   );
 }
 
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.54 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.54a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.1 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.46 9v.09A1.7 1.7 0 0 0 21 10h.09a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z" />
+    </svg>
+  );
+}
+
 function PlusIcon() {
   return (
     <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
@@ -59,6 +68,9 @@ function sectionName(pathname: string): string {
   if (pathname === '/') {
     return 'Диаграммы';
   }
+  if (pathname === '/settings') {
+    return 'Настройки';
+  }
   return 'Страница';
 }
 
@@ -66,6 +78,7 @@ export function Layout() {
   const { pathname } = useLocation();
   const diagramsActive = pathname === '/' || (pathname.startsWith('/d/') && pathname !== '/d/new');
   const newDiagramActive = pathname === '/d/new';
+  const settingsActive = pathname === '/settings';
   // В редакторе рельс скрыт: холсту нужна вся доступная ширина.
   const editorFocus = pathname.startsWith('/d/') && pathname !== '/d/new';
 
@@ -80,6 +93,16 @@ export function Layout() {
 
         <nav className="app-rail__nav">
           <Link
+            className={`app-rail__link${newDiagramActive ? ' is-active' : ''}`}
+            to="/d/new"
+            aria-current={newDiagramActive ? 'page' : undefined}
+          >
+            <span className="app-rail__icon">
+              <PlusIcon />
+            </span>
+            <span className="app-rail__label">Новая</span>
+          </Link>
+          <Link
             className={`app-rail__link${diagramsActive ? ' is-active' : ''}`}
             to="/"
             aria-current={diagramsActive ? 'page' : undefined}
@@ -90,14 +113,14 @@ export function Layout() {
             <span className="app-rail__label">Диаграммы</span>
           </Link>
           <Link
-            className={`app-rail__link${newDiagramActive ? ' is-active' : ''}`}
-            to="/d/new"
-            aria-current={newDiagramActive ? 'page' : undefined}
+            className={`app-rail__link${settingsActive ? ' is-active' : ''}`}
+            to="/settings"
+            aria-current={settingsActive ? 'page' : undefined}
           >
             <span className="app-rail__icon">
-              <PlusIcon />
+              <SettingsIcon />
             </span>
-            <span className="app-rail__label">Новая</span>
+            <span className="app-rail__label">Настройки</span>
           </Link>
         </nav>
 

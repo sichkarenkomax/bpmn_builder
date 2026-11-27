@@ -5,6 +5,7 @@ import { DialogFocusGuard } from './components/DialogFocusGuard';
 import { Layout } from './components/Layout';
 import { DiagramListPage } from './pages/DiagramListPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 // bpmn-js и редактор не должны попадать в начальный чанк списка диаграмм.
 const DiagramPage = lazy(() =>
@@ -18,6 +19,7 @@ export function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<DiagramListPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route
             path="/d/:diagramId"
             element={

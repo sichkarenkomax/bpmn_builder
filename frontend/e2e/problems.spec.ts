@@ -78,6 +78,10 @@ test('DOCX-отчёт скачивается из панели проблем', 
   const diagram = (await created.json()) as { id: string };
 
   try {
+    // По умолчанию проверка теперь только по требованию: тесту нужен авторежим.
+    await page.addInitScript(() =>
+      window.localStorage.setItem('bpmn-studio.validation-mode', 'after-save'),
+    );
     await page.goto(`/d/${diagram.id}`);
     await expect(page.locator('.validation-status')).toContainText('Актуально', {
       timeout: 15_000,
@@ -104,6 +108,10 @@ test('клик по маркеру предупреждения открывае
   const diagram = (await created.json()) as { id: string };
 
   try {
+    // По умолчанию проверка теперь только по требованию: тесту нужен авторежим.
+    await page.addInitScript(() =>
+      window.localStorage.setItem('bpmn-studio.validation-mode', 'after-save'),
+    );
     await page.goto(`/d/${diagram.id}`);
     const task = page.locator('[data-element-id="Task_Unused"]').first();
     await expect(task).toBeVisible();
@@ -139,6 +147,10 @@ test('ошибка валидации: панель, переход к элем�
   const diagram = (await created.json()) as { id: string };
 
   try {
+    // По умолчанию проверка теперь только по требованию: тесту нужен авторежим.
+    await page.addInitScript(() =>
+      window.localStorage.setItem('bpmn-studio.validation-mode', 'after-save'),
+    );
     await page.goto(`/d/${diagram.id}`);
     const task = page.locator('[data-element-id="Task_Unused"]').first();
     await expect(task).toBeVisible();

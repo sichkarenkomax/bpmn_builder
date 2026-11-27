@@ -27,6 +27,8 @@ describe('validation-settings', () => {
     expect(loadValidationMode(null)).toBe(DEFAULT_VALIDATION_MODE);
     expect(parseValidationMode(null)).toBe(DEFAULT_VALIDATION_MODE);
     expect(parseValidationMode('garbage')).toBe(DEFAULT_VALIDATION_MODE);
+    // Явно сохранённый авторежим не должен подменяться дефолтом.
+    expect(parseValidationMode('after-save')).toBe('after-save');
   });
 
   it('режим «только по требованию» сохраняется и читается обратно', () => {
