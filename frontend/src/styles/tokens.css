@@ -18,7 +18,7 @@
   --gray-200: #e2e8f1;
   --gray-300: #cbd5e3;
   --gray-400: #98a6ba;
-  --gray-500: #6b7c93;
+  --gray-500: #5f7086;
   --gray-600: #53647a;
   --gray-700: #344257;
   --gray-800: #1b2637;
@@ -49,6 +49,16 @@
   --success: var(--ok);
   --warning: #b45309;
   --error: #c0392b;
+  --info: #2563eb;
+  /* Мягкие фоны статусов: панели, баннеры, подсказки. */
+  --ok-soft: color-mix(in srgb, var(--ok) 10%, var(--surface));
+  --warning-soft: color-mix(in srgb, var(--warning) 12%, var(--surface));
+  --error-soft: color-mix(in srgb, var(--error) 10%, var(--surface));
+  --info-soft: color-mix(in srgb, var(--info) 10%, var(--surface));
+  --ok-border: color-mix(in srgb, var(--ok) 32%, var(--border));
+  --warning-border: color-mix(in srgb, var(--warning) 38%, var(--border));
+  --error-border: color-mix(in srgb, var(--error) 35%, var(--border));
+  --info-border: color-mix(in srgb, var(--info) 32%, var(--border));
   --focus-ring: color-mix(in srgb, var(--accent) 42%, transparent);
 
   /* Оболочка: тёмный рельс остаётся узнаваемым в обеих темах. */
@@ -97,9 +107,13 @@
   --shadow-lg: 0 24px 60px rgb(16 24 40 / 16%);
 
   /* Служебные размеры и движение. */
-  --rail-width: 78px;
+  /* 96 px хватает подписи «Диаграммы» без обрезки. */
+  --rail-width: 96px;
   --topbar-height: 56px;
   --control-height: 34px;
+  --control-height-sm: 28px;
+  --control-padding: 5px 8px;
+  --panel-padding: var(--space-3);
   --transition: 160ms ease;
 }
 
@@ -124,6 +138,7 @@
   --success: var(--ok);
   --warning: #f0b35a;
   --error: #ff7a6b;
+  --info: #7ea2ff;
   --focus-ring: color-mix(in srgb, var(--accent) 55%, transparent);
 
   --rail-bg: #050a11;

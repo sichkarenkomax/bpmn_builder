@@ -18,7 +18,7 @@ body {
 }
 
 code {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   background: var(--surface-muted);
   border-radius: 4px;
@@ -90,7 +90,7 @@ code {
   align-items: center;
   gap: 5px;
   width: 100%;
-  padding: 9px 4px 8px;
+  padding: 9px 2px 8px;
   border-radius: var(--radius-md);
   color: var(--rail-text);
   font-size: 10.5px;
@@ -293,6 +293,9 @@ code {
   flex: 1;
   min-width: 0;
   min-height: 0;
+  /* Скроллится только контент: рельс и топбар остаются на месте. */
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: var(--space-4) var(--space-6) var(--space-5);
 }
 
@@ -466,9 +469,9 @@ code {
 .page-error {
   margin: 0;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border: 1px solid var(--error-border);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--error) 8%, transparent);
+  background: var(--error-soft);
   color: var(--error);
   font-size: var(--text-sm);
 }
@@ -1044,14 +1047,14 @@ code {
   padding: 0 4px;
   border-radius: 999px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
   font-size: 10px;
   line-height: 14px;
   text-align: center;
 }
 
 .editor-toolbar__count--warning {
-  background: #d97706;
+  background: var(--warning);
 }
 
 .validation-status {
@@ -1086,7 +1089,7 @@ code {
 }
 
 .validation-status--stale {
-  color: #b45309;
+  color: var(--warning);
 }
 
 .validation-status--error {
@@ -1482,7 +1485,7 @@ code {
 .ghost-button--primary {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-contrast);
 }
 
 .ghost-button--primary:hover {
@@ -1578,11 +1581,6 @@ code {
   width: 14px;
   height: 14px;
   accent-color: var(--accent);
-}
-
-.inspector__field small {
-  font-size: 11px;
-  color: var(--error);
 }
 
 /* --- Контекстное меню --- */
@@ -1756,8 +1754,8 @@ code {
   overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 18px 50px rgb(16 24 40 / 30%);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
 }
 
 .dialog__header {
@@ -1794,15 +1792,15 @@ code {
 .validation-summary {
   margin: 0;
   padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, #2f855a 30%, var(--border));
-  border-radius: 7px;
-  background: color-mix(in srgb, #2f855a 8%, var(--surface));
-  font-size: 13px;
+  border: 1px solid var(--ok-border);
+  border-radius: var(--radius-xs);
+  background: var(--ok-soft);
+  font-size: var(--text-md);
 }
 
 .validation-summary.is-invalid {
-  border-color: color-mix(in srgb, var(--error) 35%, var(--border));
-  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+  border-color: var(--error-border);
+  background: var(--error-soft);
   color: var(--error);
 }
 
@@ -1829,7 +1827,7 @@ code {
 }
 
 .validation-item--warning {
-  border-left-color: #d69e2e;
+  border-left-color: var(--warning);
 }
 
 .validation-item--info {
@@ -1958,8 +1956,8 @@ code {
   border-bottom-width: 2px;
   border-radius: 6px;
   background: var(--surface-muted);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 11.5px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 
@@ -2202,7 +2200,7 @@ code {
 }
 
 .export-history__status--done {
-  color: var(--success, #15803d);
+  color: var(--success);
 }
 
 .export-history__status--failed {
@@ -2537,11 +2535,15 @@ code {
 
 .problems-panel__config {
   padding: 8px 10px;
-  border: 1px solid #f59e0b;
-  border-radius: 6px;
-  background: #fffbeb;
-  color: #78350f;
-  font-size: 11.5px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-xs);
+  background: var(--warning-soft);
+  color: var(--text);
+  font-size: var(--text-xs);
+}
+
+.problems-panel__config strong {
+  color: var(--warning);
 }
 
 .problems-panel__config ul {
@@ -2579,17 +2581,17 @@ code {
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: #2563eb;
+  background: var(--info);
 }
 
 .problems-panel__filter--error .problems-panel__dot,
 .problems-panel__group--error .problems-panel__dot {
-  background: #dc2626;
+  background: var(--error);
 }
 
 .problems-panel__filter--warning .problems-panel__dot,
 .problems-panel__group--warning .problems-panel__dot {
-  background: #d97706;
+  background: var(--warning);
 }
 
 .problems-panel__count {
@@ -3248,15 +3250,15 @@ code {
 }
 
 .toast--success {
-  border-left-color: #16a34a;
+  border-left-color: var(--ok);
 }
 
 .toast--error {
-  border-left-color: #dc2626;
+  border-left-color: var(--error);
 }
 
 .toast--info {
-  border-left-color: #2563eb;
+  border-left-color: var(--info);
 }
 
 .toast__close {
@@ -3381,11 +3383,11 @@ code {
 .simulation-panel__error {
   margin: 0;
   padding: 6px 8px;
-  border: 1px solid #fca5a5;
-  border-radius: 6px;
-  background: #fef2f2;
-  color: #991b1b;
-  font-size: 11.5px;
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-xs);
+  background: var(--error-soft);
+  color: var(--error);
+  font-size: var(--text-xs);
 }
 
 .simulation-panel__log {
@@ -3427,7 +3429,7 @@ code {
 }
 
 .simulation-panel__step--active {
-  background: color-mix(in srgb, #2563eb 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--text);
   font-weight: 600;
 }
@@ -3476,13 +3478,13 @@ code {
 
 .simulation-panel__state-item--changed .simulation-panel__state-name,
 .simulation-panel__state-item--changed .simulation-panel__state-value {
-  color: #1d4ed8;
+  color: var(--accent);
   font-weight: 600;
 }
 
 .simulation-panel__state-item--changed::after {
   content: '•';
-  color: #2563eb;
+  color: var(--accent);
 }
 
 .simulation-panel__counts {
@@ -3610,7 +3612,7 @@ code {
 .simulation-panel__count-bar {
   height: 5px;
   border-radius: 999px;
-  background: #2563eb;
+  background: var(--accent);
   opacity: 0.55;
 }
 
@@ -3755,6 +3757,115 @@ code {
 
 .sim-heat--3 {
   background: #dc2626;
+}
+
+/* --- Общие контролы панелей и диалогов (3.6.3) --- */
+
+/* Одна геометрия и одни состояния для полей инспектора, настроек и диалогов. */
+.inspector__field input,
+.inspector__field textarea,
+.inspector__mini input,
+.inspector__mini select,
+.settings-field input:not([type='checkbox']):not([type='radio']),
+.settings-field select,
+.dialog-form input,
+.dialog-form textarea,
+.dialog-form select,
+.template-picker select,
+.comments-panel__input {
+  min-height: var(--control-height-sm);
+  padding: var(--control-padding);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  transition:
+    border-color var(--transition),
+    background var(--transition);
+}
+
+.inspector__field input:hover:not(:disabled),
+.inspector__field textarea:hover:not(:disabled),
+.inspector__mini input:hover:not(:disabled),
+.inspector__mini select:hover:not(:disabled),
+.settings-field input:not([type='checkbox']):not([type='radio']):hover:not(:disabled),
+.settings-field select:hover:not(:disabled),
+.dialog-form input:hover:not(:disabled),
+.dialog-form textarea:hover:not(:disabled),
+.dialog-form select:hover:not(:disabled),
+.template-picker select:hover:not(:disabled),
+.comments-panel__input:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.inspector__field input:focus-visible,
+.inspector__field textarea:focus-visible,
+.inspector__mini input:focus-visible,
+.inspector__mini select:focus-visible,
+.settings-field input:not([type='checkbox']):not([type='radio']):focus-visible,
+.settings-field select:focus-visible,
+.dialog-form input:focus-visible,
+.dialog-form textarea:focus-visible,
+.dialog-form select:focus-visible,
+.template-picker select:focus-visible,
+.comments-panel__input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.inspector__field input:disabled,
+.inspector__field textarea:disabled,
+.inspector__mini input:disabled,
+.inspector__mini select:disabled,
+.settings-field input:disabled,
+.settings-field select:disabled,
+.dialog-form input:disabled,
+.dialog-form textarea:disabled,
+.dialog-form select:disabled,
+.template-picker select:disabled,
+.comments-panel__input:disabled {
+  background: var(--surface-muted);
+  color: var(--text-subtle);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Ошибочное поле: та же рамка, но в цвете ошибки и без изменения размеров. */
+.inspector__field input[aria-invalid='true'],
+.inspector__field textarea[aria-invalid='true'],
+.dialog-form input[aria-invalid='true'],
+.dialog-form textarea[aria-invalid='true'],
+.comments-panel__input[aria-invalid='true'] {
+  border-color: var(--error);
+}
+
+/* Длинные подписи переносятся, контрол сохраняет свою ширину. */
+.settings-field > span,
+.settings-field > label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.shortcut-row__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Заголовки панелей-оверлеев: один размер, вес и отступ. */
+.comments-panel,
+.simulation-panel {
+  padding: var(--panel-padding);
+  border-radius: var(--radius-md);
+}
+
+.comments-panel__title,
+.simulation-panel__title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
 }
 
 /* --- Адаптивность оболочки (3.6) --- */

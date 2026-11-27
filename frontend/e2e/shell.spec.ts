@@ -35,6 +35,43 @@ test('оболочка: тема переключается и пережива�
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
 
+test('оболочка: при прокрутке рельс и топбар остаются на месте', async ({ page, request }) => {
+  const API = '/api/v1';
+  const created: string[] = [];
+
+  try {
+    for (let index = 0; index < 6; index += 1) {
+      const response = await request.post(`${API}/diagrams`, {
+        data: { title: `E2E shell scroll ${Date.now()}-${index}` },
+      });
+      expect(response.ok()).toBeTruthy();
+      const diagram = (await response.json()) as { id: string };
+      created.push(diagram.id);
+    }
+
+    await page.setViewportSize({ width: 1440, height: 520 });
+    await page.goto('/');
+
+    const main = page.locator('.app-main');
+    await expect.poll(() => main.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+
+    await page.mouse.move(720, 380);
+    await page.mouse.wheel(0, 400);
+
+    await expect.poll(() => main.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+
+    const railTop = (await page.locator('.app-rail').boundingBox())!.y;
+    const topbarTop = (await page.locator('.app-topbar').boundingBox())!.y;
+    expect(railTop).toBe(0);
+    expect(topbarTop).toBe(0);
+  } finally {
+    for (const id of created) {
+      await request.delete(`${API}/diagrams/${id}`);
+    }
+  }
+});
+
 test('оболочка: на 1024 и 390 px нет горизонтальной прокрутки', async ({ page }) => {
   for (const width of [1024, 390]) {
     await page.setViewportSize({ width, height: 844 });
