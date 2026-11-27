@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { usePanelDrag } from '../hooks/usePanelDrag';
 import type { DiagramComment } from '../lib/api';
 import { commentAuthorLabel, formatCommentTime } from '../lib/comments';
+import { MARKDOWN_TOOLS } from '../lib/markdown-tools';
 import { applyFormat, type FormatKind, type TextSelection } from '../lib/markdown-toolbar';
 import { MarkdownView } from './MarkdownView';
-import { MARKDOWN_TOOLS } from './MarkdownWindow';
 
 /** Панель обсуждения выбранного элемента (1.3.8). */
 export function CommentsPanel({

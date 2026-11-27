@@ -1000,7 +1000,8 @@ code {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  /* Ширину правой колонки задаёт панель свойств: её можно тянуть (1.5.19). */
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
 }
 
@@ -1238,11 +1239,67 @@ code {
 }
 
 .inspector {
+  position: relative;
+  width: 280px;
+  max-width: min(520px, calc(100vw - 24px));
+  min-width: 0;
   overflow-y: auto;
   padding: 12px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+/* 1.5.19: порядок блоков и полей задаёт пользователь. */
+.inspector__grip {
+  margin-right: 4px;
+  padding: 0 2px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+  cursor: grab;
+}
+
+.inspector__grip:hover,
+.inspector__grip:focus-visible {
+  color: var(--accent);
+}
+
+.inspector__grip:active {
+  cursor: grabbing;
+}
+
+.inspector__field-block {
+  position: relative;
+}
+
+.inspector__field-block > .inspector__grip {
+  position: absolute;
+  top: 17px;
+  right: 0;
+  z-index: 1;
+}
+
+.inspector__resize {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: nwse-resize;
 }
 
 .inspector__header {
@@ -1463,7 +1520,54 @@ code {
   }
 }
 
-/* --- Панель редактора --- */
+/* --- Frontend-модули (4.0.5) --- */
+
+.module-form {
+  display: grid;
+  grid-template-columns: minmax(0, 240px) minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.module-form input {
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--text);
+  font: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.module-notes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.module-note {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.module-note p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+@media (max-width: 720px) {
+  .module-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 .editor-toolbar__divider {
   width: 1px;
@@ -2950,6 +3054,110 @@ code {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+}
+
+/* 1.5.20: одна строка форматирования; редкие кнопки — в меню «Ещё». */
+.md-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.md-toolbar .docs-editor__tool {
+  min-width: 24px;
+  padding: 3px 4px;
+}
+
+.md-toolbar__more,
+.md-toolbar__help {
+  position: relative;
+  display: inline-flex;
+}
+
+.md-toolbar__more-button {
+  font-weight: 600;
+}
+
+.md-toolbar__menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 50%;
+  z-index: 20;
+  display: grid;
+  gap: 2px;
+  width: 210px;
+  padding: 5px;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgb(16 24 40 / 18%);
+}
+
+.md-toolbar__menu-item {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  width: 100%;
+  padding: 5px 7px;
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.md-toolbar__menu-item:hover,
+.md-toolbar__menu-item:focus-visible {
+  background: var(--surface-muted);
+}
+
+.md-toolbar__menu-icon {
+  width: 20px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.md-toolbar__help-button {
+  border-radius: 50%;
+  font-weight: 600;
+}
+
+.md-toolbar__tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 25;
+  width: 210px;
+  padding: 8px 9px;
+  transform: translateX(-50%);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+  visibility: hidden;
+  opacity: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgb(16 24 40 / 18%);
+  transition: opacity 0.12s ease;
+}
+
+.md-toolbar__help:hover .md-toolbar__tooltip,
+.md-toolbar__help:focus-within .md-toolbar__tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
+.md-toolbar__actions {
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
 }
 
 .docs-editor__tool {
