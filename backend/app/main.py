@@ -16,6 +16,7 @@ from app.core.middleware import (
     SecurityHeadersMiddleware,
 )
 from app.export.jobs import export_jobs
+from app.modules import MODULES
 
 
 @asynccontextmanager
@@ -66,6 +67,9 @@ def create_app() -> FastAPI:
     app.include_router(comments.router, prefix=settings.api_prefix)
     app.include_router(exports.router, prefix=settings.api_prefix)
     app.include_router(simulation.router, prefix=settings.api_prefix)
+    # Модули подключаются после ядра и не меняют его роуты (ADR-006).
+    for module in MODULES:
+        app.include_router(module.router, prefix=settings.api_prefix)
     return app
 
 

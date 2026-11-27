@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 import app.db.models  # noqa: F401 — регистрирует таблицы в метаданных
+import app.modules.pilot.models  # noqa: F401 — таблицы модулей той же цепочкой
 from alembic import context
 from app.core.config import get_settings
 from app.db.base import Base
