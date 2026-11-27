@@ -107,26 +107,33 @@ function DiagramHeader({ meta }: { meta: DiagramSummary }) {
   };
 
   return (
-    <div className="page__toolbar">
-      <div>
-        <h1 className="page__title">{title}</h1>
-        <p className="page__subtitle">
-          статус: {STATUS_LABELS[status] ?? status} · etag: <code>{meta.etag?.slice(0, 12)}</code>
+    <div className="page-head page-head--diagram">
+      <div className="page-head__text">
+        <span className="page-head__eyebrow">Диаграмма процесса</span>
+        <h1 className="page-head__title">{title}</h1>
+        <p className="page-head__meta">
+          <span className={`diagram-card__status diagram-card__status--${status}`}>
+            {STATUS_LABELS[status] ?? status}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            etag: <code>{meta.etag?.slice(0, 12)}</code>
+          </span>
         </p>
       </div>
-      <div className="page__toolbar-actions">
+      <div className="page-head__actions">
         <button
           type="button"
-          className="ghost-button"
+          className="btn btn--ghost"
           onClick={() => void check()}
           disabled={validationLoading}
         >
           {validationLoading ? 'Проверяю…' : 'Проверить'}
         </button>
-        <button type="button" className="ghost-button" onClick={() => setOpen(true)}>
+        <button type="button" className="btn btn--ghost" onClick={() => setOpen(true)}>
           Настройки схемы
         </button>
-        <Link className="ghost-button" to="/">
+        <Link className="btn btn--ghost" to="/">
           К списку
         </Link>
       </div>
@@ -310,34 +317,53 @@ export function DiagramPage() {
   if (isNew) {
     return (
       <section className="page page--centered">
-        <h1 className="page__title">Новая диаграмма</h1>
-        <p className="page__subtitle">Выберите шаблон или начните с демонстрационного процесса.</p>
-        <TemplatePicker />
-        <button type="button" className="ghost-button" onClick={createDemo} disabled={creating}>
-          {creating ? 'Создаю…' : 'Создать демо-процесс'}
-        </button>
-        {createError ? <p className="canvas__overlay--error">{createError}</p> : null}
-        <Link className="ghost-button" to="/">
-          К списку
-        </Link>
+        <div className="empty-state">
+          <span className="page-head__eyebrow">Новый процесс</span>
+          <h1 className="page-head__title">Новая диаграмма</h1>
+          <p className="empty-state__text">
+            Выберите шаблон или начните с демонстрационного процесса.
+          </p>
+          <TemplatePicker />
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={createDemo}
+            disabled={creating}
+          >
+            {creating ? 'Создаю…' : 'Создать демо-процесс'}
+          </button>
+          {createError ? <p className="page-error">{createError}</p> : null}
+          <Link className="btn btn--ghost" to="/">
+            К списку
+          </Link>
+        </div>
       </section>
     );
   }
 
   if (loadable.state === 'loading') {
-    return <section className="page page--centered">Загружаю диаграмму…</section>;
+    return (
+      <section className="page page--centered">
+        <p className="empty-state__text">Загружаю диаграмму…</p>
+      </section>
+    );
   }
 
   if (loadable.state === 'missing' || loadable.state === 'error') {
     return (
       <section className="page page--centered">
-        <h1 className="page__title">
-          {loadable.state === 'missing' ? 'Диаграмма не найдена' : 'Не удалось загрузить'}
-        </h1>
-        {loadable.state === 'error' ? <p className="page__subtitle">{loadable.message}</p> : null}
-        <Link className="ghost-button" to="/">
-          К списку
-        </Link>
+        <div className="empty-state">
+          <span className="page-head__eyebrow">Диаграмма</span>
+          <h1 className="page-head__title">
+            {loadable.state === 'missing' ? 'Диаграмма не найдена' : 'Не удалось загрузить'}
+          </h1>
+          {loadable.state === 'error' ? (
+            <p className="empty-state__text">{loadable.message}</p>
+          ) : null}
+          <Link className="btn btn--primary" to="/">
+            К списку
+          </Link>
+        </div>
       </section>
     );
   }
@@ -345,7 +371,7 @@ export function DiagramPage() {
   const { meta, xml } = loadable.data;
 
   return (
-    <section className="page">
+    <section className="page page--diagram">
       <DiagramHeader meta={meta} />
       <DiagramEditor diagramId={meta.id} initialXml={xml} initialEtag={meta.etag} />
     </section>

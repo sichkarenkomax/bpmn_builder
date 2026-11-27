@@ -44,7 +44,12 @@ export function TemplatePicker({ compact = false }: { compact?: boolean }) {
           ))}
         </select>
       </label>
-      <button type="button" className="ghost-button" onClick={() => void create()} disabled={busy}>
+      <button
+        type="button"
+        className="btn btn--ghost"
+        onClick={() => void create()}
+        disabled={busy}
+      >
         {busy ? 'Создаю…' : 'Создать'}
       </button>
       {!compact ? (

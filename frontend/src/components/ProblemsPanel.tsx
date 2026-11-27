@@ -95,7 +95,7 @@ export function ProblemsPanel({
             aria-atomic="true"
           >
             {report
-              ? `${report.findings.length} находок · ${report.duration_ms} мс`
+              ? `${report.findings.length} находок · ${report.duration_ms.toFixed(1)} мс`
               : 'проверка схемы'}
           </p>
         </div>

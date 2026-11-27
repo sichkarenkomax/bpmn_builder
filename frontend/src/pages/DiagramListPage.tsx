@@ -9,6 +9,16 @@ import { TemplatePicker } from '../components/TemplatePicker';
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
+const STATUS_LABELS: Record<string, string> = {
+  draft: 'Черновик',
+  approved: 'Утверждена',
+  archived: 'В архиве',
+};
+
+function statusClass(value: string): string {
+  return value === 'approved' || value === 'archived' ? value : 'draft';
+}
+
 function importTitle(fileName: string): string {
   const base = fileName.replace(/\.(bpmn|xml)$/i, '').trim();
   return (base || 'Импортированный процесс').slice(0, 255);
@@ -85,17 +95,20 @@ export function DiagramListPage() {
   };
 
   return (
-    <section className="page">
-      <div className="page__toolbar">
-        <div>
-          <h1 className="page__title">Диаграммы</h1>
-          <p className="page__subtitle">сохраняются в API с историей версий</p>
+    <section className="page page--list">
+      <header className="page-head">
+        <div className="page-head__text">
+          <span className="page-head__eyebrow">Библиотека процессов</span>
+          <h1 className="page-head__title">Диаграммы</h1>
+          <p className="page-head__subtitle">
+            Модели, версии и прогоны в одном рабочем пространстве
+          </p>
         </div>
-        <div className="page__toolbar-actions">
+        <div className="page-head__actions">
           <TemplatePicker compact />
           <button
             type="button"
-            className="ghost-button"
+            className="btn btn--ghost"
             onClick={() => importInput.current?.click()}
             disabled={creating || importing}
           >
@@ -111,40 +124,71 @@ export function DiagramListPage() {
           />
           <button
             type="button"
-            className="ghost-button"
+            className="btn btn--primary"
             onClick={createDemo}
             disabled={creating || importing}
           >
             {creating ? 'Создаю…' : 'Демо-процесс'}
           </button>
         </div>
-      </div>
+      </header>
 
-      {error ? <p className="canvas__overlay--error">{error}</p> : null}
-      {loadable.state === 'loading' ? <p className="page__subtitle">Загружаю…</p> : null}
+      {error ? <p className="page-error">{error}</p> : null}
+      {loadable.state === 'loading' ? (
+        <div className="empty-state">
+          <p className="empty-state__text">Загружаю диаграммы…</p>
+        </div>
+      ) : null}
       {loadable.state === 'error' ? (
-        <p className="canvas__overlay--error">API недоступен: {loadable.message}</p>
+        <p className="page-error">API недоступен: {loadable.message}</p>
       ) : null}
 
       {loadable.state === 'ready' && loadable.data.items.length === 0 ? (
-        <p className="page__subtitle">
-          Пока пусто. Создайте демо-процесс — он сохранится в API как настоящая диаграмма.
-        </p>
+        <div className="empty-state">
+          <h2 className="empty-state__title">Пока пусто</h2>
+          <p className="empty-state__text">
+            Создайте демо-процесс или импортируйте BPMN — диаграмма сохранится в API с историей
+            версий.
+          </p>
+        </div>
       ) : null}
 
       {loadable.state === 'ready' && loadable.data.items.length > 0 ? (
-        <ul className="diagram-list">
-          {loadable.data.items.map((diagram) => (
-            <li key={diagram.id} className="diagram-list__item">
-              <Link className="diagram-list__link" to={`/d/${diagram.id}`}>
-                {diagram.title}
-              </Link>
-              <span className="diagram-list__meta">
-                {diagram.description ? `${diagram.description} · ` : ''}
-                {diagram.status} · {new Date(diagram.updated_at).toLocaleString('ru-RU')}
-              </span>
-            </li>
-          ))}
+        <ul className="diagram-grid">
+          {loadable.data.items.map((diagram) => {
+            const status = statusClass(diagram.status);
+            return (
+              <li key={diagram.id} className="diagram-card">
+                <Link className="diagram-card__link" to={`/d/${diagram.id}`}>
+                  <div className="diagram-card__top">
+                    <span className={`diagram-card__status diagram-card__status--${status}`}>
+                      {STATUS_LABELS[status]}
+                    </span>
+                    <span className="diagram-card__arrow" aria-hidden="true">
+                      →
+                    </span>
+                  </div>
+                  <h2 className="diagram-card__title" title={diagram.title}>
+                    {diagram.title}
+                  </h2>
+                  {diagram.description ? (
+                    <p className="diagram-card__description">{diagram.description}</p>
+                  ) : null}
+                  <footer className="diagram-card__footer">
+                    <span>
+                      обновлено{' '}
+                      {new Date(diagram.updated_at).toLocaleDateString('ru-RU', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </span>
+                    <span className="diagram-card__id">#{diagram.id.slice(0, 8)}</span>
+                  </footer>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
     </section>

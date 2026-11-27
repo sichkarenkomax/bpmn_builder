@@ -1,0 +1,154 @@
+/*
+ * Дизайн-токены BPMN Studio.
+ *
+ * Здесь только значения: палитра, типографика, отступы, радиусы, тени и
+ * служебные размеры shell. Компоненты используют семантические переменные
+ * (--surface, --text, --accent), а не сырые HEX, чтобы светлая и тёмная темы
+ * менялись в одном месте. Холст и BPMN-элементы этими токенами не управляются.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Палитра: нейтрали и акцент. */
+  --gray-0: #ffffff;
+  --gray-25: #f8fafc;
+  --gray-50: #f4f7fb;
+  --gray-100: #eef2f8;
+  --gray-200: #e2e8f1;
+  --gray-300: #cbd5e3;
+  --gray-400: #98a6ba;
+  --gray-500: #5f7086;
+  --gray-600: #53647a;
+  --gray-700: #344257;
+  --gray-800: #1b2637;
+  --gray-900: #101828;
+  --blue-50: #e8efff;
+  --blue-100: #d7e3ff;
+  --blue-400: #7e9cf5;
+  --blue-500: #3f68ea;
+  --blue-600: #2d55d6;
+  --blue-700: #2445ad;
+
+  /* Семантика: светлая тема. */
+  --bg: var(--gray-100);
+  --surface: var(--gray-0);
+  --surface-raised: var(--gray-0);
+  --surface-muted: var(--gray-50);
+  --surface-strong: var(--gray-200);
+  --border: var(--gray-200);
+  --border-strong: var(--gray-300);
+  --text: var(--gray-900);
+  --text-muted: var(--gray-600);
+  --text-subtle: var(--gray-500);
+  --accent: var(--blue-600);
+  --accent-hover: var(--blue-700);
+  --accent-soft: var(--blue-50);
+  --accent-contrast: #ffffff;
+  --ok: #15803d;
+  --success: var(--ok);
+  --warning: #b45309;
+  --error: #c0392b;
+  --info: #2563eb;
+  /* Мягкие фоны статусов: панели, баннеры, подсказки. */
+  --ok-soft: color-mix(in srgb, var(--ok) 10%, var(--surface));
+  --warning-soft: color-mix(in srgb, var(--warning) 12%, var(--surface));
+  --error-soft: color-mix(in srgb, var(--error) 10%, var(--surface));
+  --info-soft: color-mix(in srgb, var(--info) 10%, var(--surface));
+  --ok-border: color-mix(in srgb, var(--ok) 32%, var(--border));
+  --warning-border: color-mix(in srgb, var(--warning) 38%, var(--border));
+  --error-border: color-mix(in srgb, var(--error) 35%, var(--border));
+  --info-border: color-mix(in srgb, var(--info) 32%, var(--border));
+  --focus-ring: color-mix(in srgb, var(--accent) 42%, transparent);
+
+  /* Оболочка: тёмный рельс остаётся узнаваемым в обеих темах. */
+  --rail-bg: #0d1624;
+  --rail-surface: #172235;
+  --rail-border: rgb(255 255 255 / 9%);
+  --rail-text: #aebbd0;
+  --rail-text-strong: #f7f9fc;
+  --rail-accent: #9db8ff;
+
+  /* Типографика. */
+  --font: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 520;
+  --weight-semibold: 620;
+  --weight-bold: 700;
+
+  /* Отступы, радиусы, тени. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-pill: 999px;
+  --shadow: 0 1px 2px rgb(16 24 40 / 6%);
+  --shadow-md: 0 12px 32px rgb(16 24 40 / 10%);
+  --shadow-lg: 0 24px 60px rgb(16 24 40 / 16%);
+
+  /* Служебные размеры и движение. */
+  /* 96 px хватает подписи «Диаграммы» без обрезки. */
+  --rail-width: 96px;
+  --topbar-height: 56px;
+  --control-height: 34px;
+  --control-height-sm: 28px;
+  --control-padding: 5px 8px;
+  --panel-padding: var(--space-3);
+  --transition: 160ms ease;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #080e17;
+  --surface: #111a27;
+  --surface-raised: #162130;
+  --surface-muted: #172231;
+  --surface-strong: #1f2d40;
+  --border: #263548;
+  --border-strong: #35485f;
+  --text: #eaf0f8;
+  --text-muted: #9aabbf;
+  --text-subtle: #71839a;
+  --accent: #8aa8ff;
+  --accent-hover: #a9bfff;
+  --accent-soft: rgb(95 130 255 / 16%);
+  --accent-contrast: #0a1020;
+  --ok: #3ecf7f;
+  --success: var(--ok);
+  --warning: #f0b35a;
+  --error: #ff7a6b;
+  --info: #7ea2ff;
+  --focus-ring: color-mix(in srgb, var(--accent) 55%, transparent);
+
+  --rail-bg: #050a11;
+  --rail-surface: #101b2a;
+  --rail-border: rgb(255 255 255 / 7%);
+  --rail-text: #9dafc4;
+  --rail-text-strong: #f7f9fc;
+  --rail-accent: #8aa8ff;
+
+  --shadow: 0 1px 2px rgb(0 0 0 / 45%);
+  --shadow-md: 0 14px 36px rgb(0 0 0 / 38%);
+  --shadow-lg: 0 26px 64px rgb(0 0 0 / 48%);
+}
