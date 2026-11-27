@@ -93,16 +93,6 @@ export function Layout() {
 
         <nav className="app-rail__nav">
           <Link
-            className={`app-rail__link${diagramsActive ? ' is-active' : ''}`}
-            to="/"
-            aria-current={diagramsActive ? 'page' : undefined}
-          >
-            <span className="app-rail__icon">
-              <DiagramsIcon />
-            </span>
-            <span className="app-rail__label">Диаграммы</span>
-          </Link>
-          <Link
             className={`app-rail__link${newDiagramActive ? ' is-active' : ''}`}
             to="/d/new"
             aria-current={newDiagramActive ? 'page' : undefined}
@@ -111,6 +101,16 @@ export function Layout() {
               <PlusIcon />
             </span>
             <span className="app-rail__label">Новая</span>
+          </Link>
+          <Link
+            className={`app-rail__link${diagramsActive ? ' is-active' : ''}`}
+            to="/"
+            aria-current={diagramsActive ? 'page' : undefined}
+          >
+            <span className="app-rail__icon">
+              <DiagramsIcon />
+            </span>
+            <span className="app-rail__label">Диаграммы</span>
           </Link>
           <Link
             className={`app-rail__link${settingsActive ? ' is-active' : ''}`}
