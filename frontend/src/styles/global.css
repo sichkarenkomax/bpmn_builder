@@ -2225,7 +2225,9 @@ code {
 
 .dialog-form--inline {
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: 10px;
 }
 
