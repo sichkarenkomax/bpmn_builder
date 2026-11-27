@@ -1777,6 +1777,43 @@ code {
   color: var(--text-muted);
 }
 
+.dialog-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.dialog-tab {
+  flex: 1;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.dialog-tab:hover {
+  color: var(--text);
+}
+
+.dialog-tab--active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 620;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 12%);
+}
+
+.dialog-tab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 .settings-section__empty {
   margin: 0;
   font-size: 12px;

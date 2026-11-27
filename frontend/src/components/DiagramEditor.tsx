@@ -178,7 +178,7 @@ import {
   type StageResizeResult,
 } from '../lib/stages';
 import { PropertiesPanel } from './PropertiesPanel';
-import { SettingsDialog } from './SettingsDialog';
+import { SettingsDialog, type DiagramMetaDraft } from './SettingsDialog';
 
 interface ModdleDocumentation {
   text?: string;
@@ -1455,10 +1455,28 @@ export function DiagramEditor({
   diagramId,
   initialXml,
   initialEtag,
+  settingsOpen,
+  validateSignal,
+  onSettingsOpen,
+  onSettingsClose,
+  metaDraft,
+  metaSaving,
+  metaError,
+  onMetaChange,
+  onMetaSave,
 }: {
   diagramId: string;
   initialXml: string;
   initialEtag: string | null;
+  settingsOpen: boolean;
+  validateSignal: number;
+  onSettingsOpen: () => void;
+  onSettingsClose: () => void;
+  metaDraft: DiagramMetaDraft;
+  metaSaving: boolean;
+  metaError: string | null;
+  onMetaChange: (patch: Partial<DiagramMetaDraft>) => void;
+  onMetaSave: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -1661,7 +1679,6 @@ export function DiagramEditor({
       modeler.get<ModelingLike>('modeling').setColor([element], style);
     }, 0);
   };
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
@@ -3139,6 +3156,17 @@ export function DiagramEditor({
     setValidationNonce((value) => value + 1);
   }, [notify, save.kind]);
 
+  // Кнопка «Проверить» в шапке управляет той же проверкой, что и горячая
+  // клавиша: открывает панель проблем и запрашивает отчёт по сохранённой версии.
+  const lastValidateSignalRef = useRef(validateSignal);
+  useEffect(() => {
+    if (validateSignal === lastValidateSignalRef.current) {
+      return;
+    }
+    lastValidateSignalRef.current = validateSignal;
+    checkValidation();
+  }, [validateSignal, checkValidation]);
+
   // Маркеры открытых обсуждений: цифра на элементе открывает панель.
   useEffect(() => {
     const modeler = modelerRef.current;
@@ -3305,7 +3333,7 @@ export function DiagramEditor({
           return;
         }
         case 'settings':
-          setSettingsOpen(true);
+          onSettingsOpen();
           return;
         case 'editLabel': {
           const element = modeler.get<SelectionLike>('selection').get()[0];
@@ -3349,7 +3377,7 @@ export function DiagramEditor({
         }
       }
     },
-    [checkValidation, duplicateSelection, getCanvas, pasteAtPointer, persist],
+    [checkValidation, duplicateSelection, getCanvas, onSettingsOpen, pasteAtPointer, persist],
   );
 
   // Горячие клавиши перехватываются до bpmn-js: так переназначение реально работает.
@@ -3978,7 +4006,7 @@ export function DiagramEditor({
           id: 'shortcuts',
           label: 'Настройки…',
           hint: hint('settings'),
-          onSelect: () => setSettingsOpen(true),
+          onSelect: () => onSettingsOpen(),
         },
       ];
     }
@@ -4121,16 +4149,6 @@ export function DiagramEditor({
 
           <div className="editor-toolbar__section" role="group" aria-label="Проверка">
             <span className="editor-toolbar__label">Проверка</span>
-            <button
-              type="button"
-              className="ghost-button ghost-button--small"
-              title={`Проверить схему (${formatCombo(shortcuts.validate)})`}
-              aria-label="Проверить схему"
-              onClick={() => executeAction('validate')}
-            >
-              <span aria-hidden="true">✓</span>
-              <span className="ghost-button__label">Проверить</span>
-            </button>
             <span
               className={`validation-status validation-status--${validationState}`}
               role="status"
@@ -4265,61 +4283,11 @@ export function DiagramEditor({
             </button>
           </div>
 
-          <div className="editor-toolbar__section" role="group" aria-label="Выравнивание текста">
-            <span className="editor-toolbar__label">Текст</span>
-            {(
-              [
-                ['left', 'По левому краю'],
-                ['center', 'По центру'],
-                ['right', 'По правому краю'],
-              ] as const
-            ).map(([value, title]) => (
-              <button
-                key={value}
-                type="button"
-                className={
-                  (selectedInspector?.textAlign || 'center') === value
-                    ? 'ghost-button ghost-button--small ghost-button--active'
-                    : 'ghost-button ghost-button--small'
-                }
-                disabled={!selectedInspector}
-                title={title}
-                aria-label={title}
-                aria-pressed={(selectedInspector?.textAlign || 'center') === value}
-                onClick={() => applyPatch({ textAlign: value })}
-              >
-                <AlignIcon align={value} />
-              </button>
-            ))}
-          </div>
-
           <div
             className="editor-toolbar__section editor-toolbar__section--end"
             role="group"
             aria-label="Сохранение"
           >
-            <button
-              type="button"
-              className="ghost-button ghost-button--small"
-              title={`Настройки (${formatCombo(shortcuts.settings)})`}
-              aria-label="Настройки редактора"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="15"
-                height="15"
-                aria-hidden="true"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="3.2" />
-                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.54 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.54a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.1 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.46 9v.09A1.7 1.7 0 0 0 21 10h.09a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z" />
-              </svg>
-            </button>
             <button
               type="button"
               className="ghost-button ghost-button--small"
@@ -4354,6 +4322,31 @@ export function DiagramEditor({
         >
           <div className="editor-toolbar__section" role="group" aria-label="Текст">
             <span className="editor-toolbar__label">Текст</span>
+            {(
+              [
+                ['left', 'По левому краю'],
+                ['center', 'По центру'],
+                ['right', 'По правому краю'],
+              ] as const
+            ).map(([value, title]) => (
+              <button
+                key={value}
+                type="button"
+                className={
+                  (selectedInspector?.textAlign || 'center') === value
+                    ? 'ghost-button ghost-button--small ghost-button--active'
+                    : 'ghost-button ghost-button--small'
+                }
+                disabled={!selectedInspector}
+                title={title}
+                aria-label={title}
+                aria-pressed={(selectedInspector?.textAlign || 'center') === value}
+                onClick={() => applyPatch({ textAlign: value })}
+              >
+                <AlignIcon align={value} />
+              </button>
+            ))}
+            <span className="editor-toolbar__divider" aria-hidden="true" />
             <button
               type="button"
               className={
@@ -4823,6 +4816,11 @@ export function DiagramEditor({
       />
       <SettingsDialog
         open={settingsOpen}
+        meta={metaDraft}
+        metaSaving={metaSaving}
+        metaError={metaError}
+        onMetaChange={onMetaChange}
+        onMetaSave={onMetaSave}
         autosaveSeconds={autosaveSeconds}
         onAutosaveChange={(seconds) => {
           setAutosaveSeconds(seconds);
@@ -4853,7 +4851,7 @@ export function DiagramEditor({
         }}
         hasOverrides={Object.keys(preferences).length > 0}
         onResetOverrides={resetPreferences}
-        onClose={() => setSettingsOpen(false)}
+        onClose={onSettingsClose}
       />
     </div>
   );

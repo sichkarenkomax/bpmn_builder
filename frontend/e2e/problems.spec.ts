@@ -38,8 +38,9 @@ test('ручной режим проверки: без автозапуска, �
     expect(validationRequests).toHaveLength(0);
 
     // Настройка читается обратно в диалоге и переживает перезагрузку.
-    await page.getByRole('button', { name: 'Настройки редактора' }).click();
-    const settings = page.getByRole('dialog', { name: 'Настройки' });
+    await page.getByRole('button', { name: 'Настройки схемы' }).click();
+    const settings = page.getByRole('dialog', { name: 'Настройки схемы' });
+    await settings.getByRole('tab', { name: 'Вид' }).click();
     await expect(settings.getByLabel('Когда проверять')).toHaveValue('manual');
     await settings.getByRole('button', { name: 'Готово' }).click();
 
