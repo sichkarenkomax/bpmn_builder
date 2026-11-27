@@ -85,6 +85,20 @@ describe('applyThemeToGfx', () => {
     expect(path?.style.strokeWidth).toBe('1');
   });
 
+  it('красит старт в насыщенный зелёный, а финиш — в насыщенный красный', () => {
+    const start = makeGfx(['circle']);
+    applyThemeToGfx(start, 'bpmn:StartEvent', themeById('colored'));
+    expect(normalizedColor(start.querySelector('circle')?.style.fill)).toBe(
+      normalizedColor('#a7f3d0'),
+    );
+
+    const end = makeGfx(['circle']);
+    applyThemeToGfx(end, 'bpmn:EndEvent', themeById('colored'));
+    expect(normalizedColor(end.querySelector('circle')?.style.fill)).toBe(
+      normalizedColor('#fecaca'),
+    );
+  });
+
   it('даёт завершающему событию толстую границу', () => {
     const gfx = makeGfx(['circle']);
     applyThemeToGfx(gfx, 'bpmn:EndEvent', themeById('colored'));

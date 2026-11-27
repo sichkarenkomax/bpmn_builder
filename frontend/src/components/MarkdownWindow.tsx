@@ -2,22 +2,7 @@ import { useDeferredValue, useEffect, useRef, useState } from 'react';
 
 import { applyFormat, type FormatKind, type TextSelection } from '../lib/markdown-toolbar';
 import { MarkdownView } from './MarkdownView';
-
-export const MARKDOWN_TOOLS: { kind: FormatKind; label: string; title: string }[] = [
-  { kind: 'bold', label: 'Ж', title: 'Жирный (**текст**)' },
-  { kind: 'italic', label: 'К', title: 'Курсив (*текст*)' },
-  { kind: 'code', label: '‹›', title: 'Код (`текст`)' },
-  { kind: 'heading', label: 'З', title: 'Заголовок (## текст)' },
-  { kind: 'quote', label: '❝', title: 'Цитата (> текст)' },
-  { kind: 'bulletList', label: '•—', title: 'Маркированный список' },
-  { kind: 'orderedList', label: '1.', title: 'Нумерованный список' },
-  { kind: 'checklist', label: '☑', title: 'Чек-лист (- [ ] пункт)' },
-  { kind: 'link', label: '🔗', title: 'Ссылка [текст](url)' },
-  { kind: 'image', label: '🖼', title: 'Изображение ![описание](url)' },
-  { kind: 'codeBlock', label: '{ }', title: 'Блок кода (```)' },
-  { kind: 'table', label: '▦', title: 'Таблица' },
-  { kind: 'hr', label: '—', title: 'Горизонтальная линия' },
-];
+import { MarkdownToolbar } from './MarkdownToolbar';
 
 /** Большое окно документации (1.3.23): поле ввода и предпросмотр рядом. */
 export function MarkdownWindow({
@@ -134,19 +119,8 @@ export function MarkdownWindow({
           </div>
         </header>
 
-        <div className="docs-window__toolbar" role="group" aria-label="Форматирование документации">
-          {MARKDOWN_TOOLS.map((item) => (
-            <button
-              key={item.kind}
-              type="button"
-              className="docs-editor__tool"
-              title={item.title}
-              aria-label={item.title}
-              onClick={() => format(item.kind)}
-            >
-              {item.label}
-            </button>
-          ))}
+        <div className="docs-window__toolbar">
+          <MarkdownToolbar onFormat={format} />
         </div>
 
         <div
@@ -176,12 +150,6 @@ export function MarkdownWindow({
             </div>
           ) : null}
         </div>
-
-        <p className="docs-editor__hint">
-          Заголовки 1–6, списки и чек-листы, цитаты, таблицы, линии, блоки кода с подсветкой,
-          изображения, <code>**жирный**</code>, <code>*курсив*</code>, <code>`код`</code> и{' '}
-          <code>[ссылки](https://…)</code>. HTML не исполняется.
-        </p>
 
         <footer className="dialog__footer">
           <button type="button" className="ghost-button" onClick={onClose}>

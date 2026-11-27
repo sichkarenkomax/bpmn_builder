@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
 import { useBackendHealth } from '../hooks/useBackendHealth';
+import { FRONTEND_MODULES } from '../modules/registry';
 import { loadTheme } from '../lib/theme';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -71,6 +72,10 @@ function sectionName(pathname: string): string {
   if (pathname === '/settings') {
     return 'Настройки';
   }
+  if (pathname.startsWith('/modules/')) {
+    const name = pathname.split('/')[2] ?? '';
+    return FRONTEND_MODULES.find((module) => module.name === name)?.title ?? 'Модуль';
+  }
   return 'Страница';
 }
 
@@ -112,6 +117,22 @@ export function Layout() {
             </span>
             <span className="app-rail__label">Диаграммы</span>
           </Link>
+          {FRONTEND_MODULES.map((module) => {
+            const active = pathname === module.path;
+            return (
+              <Link
+                key={module.name}
+                className={`app-rail__link${active ? ' is-active' : ''}`}
+                to={module.path}
+                aria-current={active ? 'page' : undefined}
+              >
+                <span className="app-rail__icon" aria-hidden="true">
+                  ◫
+                </span>
+                <span className="app-rail__label">{module.title}</span>
+              </Link>
+            );
+          })}
           <Link
             className={`app-rail__link${settingsActive ? ' is-active' : ''}`}
             to="/settings"

@@ -1,8 +1,9 @@
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 
 import { applyFormat, type FormatKind, type TextSelection } from '../lib/markdown-toolbar';
+import { MarkdownToolbar } from './MarkdownToolbar';
 import { MarkdownView } from './MarkdownView';
-import { MARKDOWN_TOOLS, MarkdownWindow } from './MarkdownWindow';
+import { MarkdownWindow } from './MarkdownWindow';
 
 /** Документация элемента: Markdown с панелью форматирования и предпросмотром. */
 export function DocumentationEditor({
@@ -48,39 +49,29 @@ export function DocumentationEditor({
 
   return (
     <div className="docs-editor">
-      <div className="docs-editor__toolbar" role="group" aria-label="Форматирование документации">
-        {MARKDOWN_TOOLS.map((item) => (
-          <button
-            key={item.kind}
-            type="button"
-            className="docs-editor__tool"
-            disabled={preview}
-            title={item.title}
-            aria-label={item.title}
-            onClick={() => format(item.kind)}
-          >
-            {item.label}
-          </button>
-        ))}
+      <MarkdownToolbar onFormat={format} disabled={preview}>
         <button
           type="button"
           className={
             preview ? 'docs-editor__preview docs-editor__preview--active' : 'docs-editor__preview'
           }
           aria-pressed={preview}
+          aria-label={preview ? 'Редактирование' : 'Предпросмотр'}
+          title={preview ? 'Вернуться к редактированию' : 'Предпросмотр Markdown'}
           onClick={() => setPreview((current) => !current)}
         >
-          {preview ? 'Редактирование' : 'Предпросмотр'}
+          {preview ? '✎' : '👁'}
         </button>
         <button
           type="button"
           className="docs-editor__preview"
           title="Открыть большое окно с предпросмотром"
+          aria-label="Окно"
           onClick={() => setExpanded(true)}
         >
-          Окно
+          ⤢
         </button>
-      </div>
+      </MarkdownToolbar>
       {preview ? (
         <div className="docs-editor__preview-pane">
           <MarkdownView text={previewText} />
@@ -94,11 +85,6 @@ export function DocumentationEditor({
           onChange={(event) => onChange(event.target.value)}
         />
       )}
-      <p className="docs-editor__hint">
-        Заголовки 1–6, списки и чек-листы, цитаты, таблицы, линии, блоки кода с подсветкой,
-        изображения, <code>**жирный**</code>, <code>*курсив*</code>, <code>`код`</code> и{' '}
-        <code>[ссылки](https://…)</code>. Вложенные списки и HTML не поддерживаются.
-      </p>
       <MarkdownWindow
         open={expanded}
         title={title || 'элемент'}

@@ -1,8 +1,9 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
 import { DialogFocusGuard } from './components/DialogFocusGuard';
 import { Layout } from './components/Layout';
+import { FRONTEND_MODULES, type FrontendModule } from './modules/registry';
 import { DiagramListPage } from './pages/DiagramListPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -12,6 +13,21 @@ const DiagramPage = lazy(() =>
   import('./pages/DiagramPage').then((module) => ({ default: module.DiagramPage })),
 );
 
+function ModuleRoute({ module }: { module: FrontendModule }) {
+  const Page = useMemo(() => lazy(module.load), [module]);
+  return (
+    <Suspense
+      fallback={
+        <section className="page page--centered">
+          <p className="empty-state__text">Загружаю модуль…</p>
+        </section>
+      }
+    >
+      <Page />
+    </Suspense>
+  );
+}
+
 export function App() {
   return (
     <>
@@ -20,6 +36,9 @@ export function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<DiagramListPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          {FRONTEND_MODULES.map((module) => (
+            <Route key={module.name} path={module.path} element={<ModuleRoute module={module} />} />
+          ))}
           <Route
             path="/d/:diagramId"
             element={

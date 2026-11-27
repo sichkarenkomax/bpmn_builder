@@ -77,6 +77,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+/** Общий API-клиент для модулей: модуль не тянет внутренности редактора. */
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  return request<T>(path, init);
+}
+
+export async function apiRequestNoContent(path: string, init?: RequestInit): Promise<void> {
+  return requestNoContent(path, init);
+}
+
 async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
   const response = await fetch(`${API_BASE}${path}`, init);
   if (!response.ok) {

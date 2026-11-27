@@ -30,7 +30,7 @@ test('Markdown-панель документации: форматировани
     await task.click();
 
     // По умолчанию Markdown-панель включена: тулбар и текстовое поле на месте.
-    const toolbar = page.locator('.docs-editor__toolbar');
+    const toolbar = page.locator('.docs-editor .md-toolbar');
     await expect(toolbar).toBeVisible();
     const docsTextarea = page.locator('.docs-editor textarea');
     await docsTextarea.fill('Проверить SLA до пятницы');
@@ -97,7 +97,7 @@ test('Markdown-панель документации: форматировани
     await settings.getByRole('tab', { name: 'Вид' }).click();
     await settings.getByLabel('Markdown-панель в документации элемента').uncheck();
     await settings.getByRole('button', { name: 'Готово' }).click();
-    await expect(page.locator('.docs-editor__toolbar')).toHaveCount(0);
+    await expect(page.locator('.docs-editor .md-toolbar')).toHaveCount(0);
     const plainDocs = page.getByRole('textbox').filter({ hasText: /Проверить/ });
     await expect(plainDocs).toHaveCount(1);
 

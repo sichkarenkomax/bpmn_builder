@@ -67,9 +67,11 @@ export const THEMES: DiagramTheme[] = [
     name: 'Цветная',
     hint: 'цветные заливки категорий, все границы чёрные',
     colors: {
-      startEvent: { fill: '#ecfdf5', stroke: BLACK },
+      // Старт и финиш заметнее остальных категорий (1.5.18): светло-зелёный
+      // и светло-красный на два шага насыщеннее прежних почти белых заливок.
+      startEvent: { fill: '#a7f3d0', stroke: BLACK },
       intermediateEvent: { fill: '#fefce8', stroke: BLACK },
-      endEvent: { fill: '#fef2f2', stroke: BLACK },
+      endEvent: { fill: '#fecaca', stroke: BLACK },
       task: { fill: '#eff6ff', stroke: BLACK },
       gateway: { fill: '#fef9c3', stroke: BLACK },
       subprocess: { fill: '#dbeafe', stroke: BLACK },
