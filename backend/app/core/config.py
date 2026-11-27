@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     #: Включённые прикладные модули через запятую (4.0.4); пусто — только ядро.
     modules_enabled: str = ""
     trust_proxy_headers: bool = False
+    #: Срок жизни серверной сессии (4.1), дней.
+    auth_session_days: int = 14
 
     rate_limit_enabled: bool = True
     rate_limit_per_minute: int = 600

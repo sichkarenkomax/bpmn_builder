@@ -1,7 +1,6 @@
 """Схемы комментариев к элементу схемы (1.3.8).
 
-До этапа 4 учётных записей нет: автор — техническая метка (`local`),
-интерфейс показывает её как «Вы».
+С 4.1/4.2 автор определяется сессией и в клиентском контракте не передаётся.
 """
 
 from __future__ import annotations
@@ -14,7 +13,6 @@ from pydantic import BaseModel, ConfigDict, Field
 class CommentCreate(BaseModel):
     element_id: str | None = Field(default=None, max_length=255)
     body: str = Field(min_length=1, max_length=4000)
-    author_id: str | None = Field(default=None, max_length=64)
 
 
 class CommentUpdate(BaseModel):

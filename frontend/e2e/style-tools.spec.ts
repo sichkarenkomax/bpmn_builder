@@ -863,7 +863,7 @@ test('портальные дефолты применяются к новой �
       response.request().method() === 'POST' &&
       response.ok(),
   );
-  await page.getByRole('button', { name: 'Создать' }).first().click();
+  await page.getByRole('button', { name: 'Демо-процесс' }).click();
   await page.waitForURL(/\/d\/[0-9a-f-]+/);
   const diagram = (await (await created).json()) as { id: string };
 

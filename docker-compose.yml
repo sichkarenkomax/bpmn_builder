@@ -54,6 +54,8 @@ services:
       - alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./backend/app:/app/app
+      # Миграции тоже монтируем: новая ревизия применяется без пересборки образа.
+      - ./backend/migrations:/app/migrations
     env_file:
       - path: .env
         required: false
@@ -62,6 +64,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000
       CORS_ORIGINS: '["http://localhost", "http://localhost:5173"]'
+      # Полный E2E создаёт и удаляет много диаграмм; на стенде лимит выше,
+      # чем в pytest, чтобы прогон не упирался в 429.
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-2000}
+      RATE_LIMIT_WRITE_PER_MINUTE: ${RATE_LIMIT_WRITE_PER_MINUTE:-600}
     ports:
       - '8000:8000'
     depends_on:

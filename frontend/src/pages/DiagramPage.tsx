@@ -3,9 +3,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import demoXml from '../assets/demo-process.bpmn?raw';
 import { DiagramEditor } from '../components/DiagramEditor';
-import { TemplatePicker } from '../components/TemplatePicker';
 import { useDiagram } from '../hooks/useDiagram';
 import { createDiagram, updateDiagram, type DiagramSummary } from '../lib/api';
+import { buildEmptyDiagram } from '../lib/empty-diagram';
 import { withPortalDefaults } from '../lib/portal-defaults';
 
 const DEMO_TITLE = 'Демонстрационный процесс';
@@ -158,11 +158,11 @@ export function DiagramPage() {
   const isNew = diagramId === 'new';
   const loadable = useDiagram(isNew ? null : diagramId);
 
-  const createDemo = async () => {
+  const create = async (title: string, xml: string) => {
     setCreating(true);
     setCreateError(null);
     try {
-      const diagram = await createDiagram(DEMO_TITLE, withPortalDefaults(demoXml));
+      const diagram = await createDiagram(title, withPortalDefaults(xml));
       navigate(`/d/${diagram.id}`);
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : 'не удалось создать диаграмму');
@@ -178,16 +178,23 @@ export function DiagramPage() {
           <span className="page-head__eyebrow">Новый процесс</span>
           <h1 className="page-head__title">Новая диаграмма</h1>
           <p className="empty-state__text">
-            Выберите шаблон или начните с демонстрационного процесса.
+            Начните с чистого холста или откройте демонстрационный процесс с готовой схемой.
           </p>
-          <TemplatePicker />
           <button
             type="button"
             className="btn btn--primary"
-            onClick={createDemo}
+            onClick={() => void create('Новый процесс', buildEmptyDiagram())}
             disabled={creating}
           >
-            {creating ? 'Создаю…' : 'Создать демо-процесс'}
+            {creating ? 'Создаю…' : 'Создать пустую диаграмму'}
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => void create(DEMO_TITLE, demoXml)}
+            disabled={creating}
+          >
+            Демо-процесс
           </button>
           {createError ? <p className="page-error">{createError}</p> : null}
           <Link className="btn btn--ghost" to="/">

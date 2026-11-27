@@ -25,7 +25,7 @@ async def test_comment_lifecycle(db_client: AsyncClient) -> None:
     comment = created.json()
     assert comment["element_id"] == "Task_1"
     assert comment["body"] == "Уточнить SLA"
-    assert comment["author_id"] == "local"
+    assert comment["author_id"] == "test-user"
     assert comment["resolved_at"] is None
 
     reply = await db_client.post(url, json={"element_id": "Task_1", "body": "SLA — 4 часа"})

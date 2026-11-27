@@ -63,8 +63,15 @@ export class ApiError extends Error {
   }
 }
 
+function notifyUnauthorized(response: Response): void {
+  if (response.status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('bpmn:unauthorized'));
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, init);
+  notifyUnauthorized(response);
   if (!response.ok) {
     let detail: unknown;
     try {
@@ -88,6 +95,7 @@ export async function apiRequestNoContent(path: string, init?: RequestInit): Pro
 
 async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
   const response = await fetch(`${API_BASE}${path}`, init);
+  notifyUnauthorized(response);
   if (!response.ok) {
     let detail: unknown;
     try {
@@ -113,6 +121,7 @@ export function fetchDiagram(id: string, signal?: AbortSignal): Promise<DiagramS
 
 export async function fetchDiagramXml(id: string, signal?: AbortSignal): Promise<string> {
   const response = await fetch(`${API_BASE}/diagrams/${id}/bpmn`, { signal });
+  notifyUnauthorized(response);
   if (!response.ok) {
     throw new ApiError(response.status, `Не удалось загрузить XML: ${response.status}`);
   }
@@ -303,6 +312,7 @@ export function runSimulationTestCase(
 
 export async function downloadValidationReport(id: string): Promise<Blob> {
   const response = await fetch(`${API_BASE}/diagrams/${id}/validation/report.docx`);
+  notifyUnauthorized(response);
   if (!response.ok) {
     throw new ApiError(response.status, `Отчёт вернул ${response.status}`);
   }
@@ -324,6 +334,7 @@ export async function saveDiagramXml(
     body: xml,
     signal,
   });
+  notifyUnauthorized(response);
 
   if (!response.ok) {
     let detail: unknown;
@@ -385,6 +396,7 @@ export function fetchExportJob(id: string, jobId: string): Promise<ExportJobSumm
 
 export async function downloadExportJob(id: string, jobId: string): Promise<Blob> {
   const response = await fetch(`${API_BASE}/diagrams/${id}/exports/jobs/${jobId}/download`);
+  notifyUnauthorized(response);
   if (!response.ok) {
     throw new ApiError(response.status, `Скачивание вернуло ${response.status}`);
   }
@@ -413,6 +425,7 @@ export async function exportServerDocument(
       orientation: options.orientation ?? 'portrait',
     }),
   });
+  notifyUnauthorized(response);
   if (!response.ok) {
     let detail: unknown;
     try {
@@ -476,6 +489,7 @@ export async function deleteComment(
     method: 'DELETE',
     signal,
   });
+  notifyUnauthorized(response);
   if (!response.ok) {
     throw new ApiError(response.status, `Удаление комментария вернуло ${response.status}`);
   }

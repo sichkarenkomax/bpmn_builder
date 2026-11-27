@@ -16,6 +16,18 @@ import {
 } from '../lib/mouse-settings';
 import { loadMarkdownToolbarEnabled, saveMarkdownToolbarEnabled } from '../lib/markdown-settings';
 import {
+  DEFAULT_PROPERTIES_LAYOUT,
+  PROPERTIES_FIELDS,
+  PROPERTIES_SECTIONS,
+  loadPropertiesLayout,
+  moveItem,
+  normalizePropertiesLayout,
+  savePropertiesLayout,
+  type PropertiesFieldId,
+  type PropertiesLayout,
+  type PropertiesSectionId,
+} from '../lib/properties-layout';
+import {
   loadResizeDefaults,
   saveResizeDefaults,
   type ResizeDefaults,
@@ -40,6 +52,9 @@ export function SettingsPage() {
   const [mouseMode, setMouseMode] = useState<CanvasMouseMode>(() => loadCanvasMouseMode());
   const [resizeDefaults, setResizeDefaults] = useState<ResizeDefaults>(() => loadResizeDefaults());
   const [shortcuts, setShortcuts] = useState<ShortcutMap>(() => loadShortcuts());
+  const [propertiesLayout, setPropertiesLayout] = useState<PropertiesLayout>(() =>
+    loadPropertiesLayout(),
+  );
   const [saved, setSaved] = useState(false);
 
   const flashSaved = () => {
@@ -57,6 +72,27 @@ export function SettingsPage() {
     const next = saveResizeDefaults({ ...resizeDefaults, ...patch });
     setResizeDefaults(next);
     flashSaved();
+  };
+
+  const changePropertiesLayout = (next: PropertiesLayout) => {
+    setPropertiesLayout(savePropertiesLayout(next));
+    flashSaved();
+  };
+
+  const moveSection = (id: PropertiesSectionId, delta: number) => {
+    const from = propertiesLayout.sections.indexOf(id);
+    changePropertiesLayout({
+      ...propertiesLayout,
+      sections: moveItem(propertiesLayout.sections, from, delta),
+    });
+  };
+
+  const moveField = (id: PropertiesFieldId, delta: number) => {
+    const from = propertiesLayout.fields.indexOf(id);
+    changePropertiesLayout({
+      ...propertiesLayout,
+      fields: moveItem(propertiesLayout.fields, from, delta),
+    });
   };
 
   return (
@@ -212,6 +248,89 @@ export function SettingsPage() {
             />
             <span>Компактные граничные события</span>
           </label>
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <h2 className="settings-card__title">Панель свойств</h2>
+        <p className="dialog__hint">
+          Порядок блоков и полей общий для всех схем и хранится в браузере. В редакторе его включает
+          кнопка «⠿ Раскладка», а свернуть блок можно кнопкой в его заголовке.
+        </p>
+        <div className="layout-settings-grid">
+          <div className="settings-section">
+            <h3 className="settings-section__title">Порядок блоков</h3>
+            <ul className="layout-order" aria-label="Порядок блоков свойств">
+              {propertiesLayout.sections.map((id, index) => {
+                const label = PROPERTIES_SECTIONS.find((item) => item.id === id)?.label ?? id;
+                return (
+                  <li key={id} className="layout-order__row">
+                    <span className="layout-order__label">{label}</span>
+                    <button
+                      type="button"
+                      className="ghost-button ghost-button--small"
+                      aria-label={`Выше: ${label}`}
+                      disabled={index === 0}
+                      onClick={() => moveSection(id, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button ghost-button--small"
+                      aria-label={`Ниже: ${label}`}
+                      disabled={index === propertiesLayout.sections.length - 1}
+                      onClick={() => moveSection(id, 1)}
+                    >
+                      ↓
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div className="settings-section">
+            <h3 className="settings-section__title">Порядок полей «Элемента»</h3>
+            <ul className="layout-order" aria-label="Порядок полей элемента">
+              {propertiesLayout.fields.map((id, index) => {
+                const label = PROPERTIES_FIELDS.find((item) => item.id === id)?.label ?? id;
+                return (
+                  <li key={id} className="layout-order__row">
+                    <span className="layout-order__label">{label}</span>
+                    <button
+                      type="button"
+                      className="ghost-button ghost-button--small"
+                      aria-label={`Выше: ${label}`}
+                      disabled={index === 0}
+                      onClick={() => moveField(id, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button ghost-button--small"
+                      aria-label={`Ниже: ${label}`}
+                      disabled={index === propertiesLayout.fields.length - 1}
+                      onClick={() => moveField(id, 1)}
+                    >
+                      ↓
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+        <div>
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() =>
+              changePropertiesLayout(normalizePropertiesLayout(DEFAULT_PROPERTIES_LAYOUT))
+            }
+          >
+            Сбросить раскладку
+          </button>
         </div>
       </div>
 

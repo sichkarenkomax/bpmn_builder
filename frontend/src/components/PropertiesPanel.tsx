@@ -21,15 +21,17 @@ import { elementTypeLabel } from '../lib/element-types';
 import {
   DEFAULT_PROPERTIES_LAYOUT,
   MAX_PROPERTIES_WIDTH,
-  MIN_PROPERTIES_HEIGHT,
   MIN_PROPERTIES_WIDTH,
   PROPERTIES_FIELDS,
   PROPERTIES_SECTIONS,
+  dropPosition,
   loadPropertiesLayout,
   moveItem,
   normalizePropertiesLayout,
-  reorderItem,
+  reorderItemAt,
   savePropertiesLayout,
+  toggleSectionCollapsed,
+  type DropPosition,
   type PropertiesFieldId,
   type PropertiesLayout,
   type PropertiesSectionId,
@@ -69,24 +71,46 @@ function Checkbox({
   );
 }
 
+type DropHint = { scope: 'section' | 'field'; id: string; position: DropPosition };
+
 type ReorderHandlers = {
-  onDropSection: (dragged: PropertiesSectionId, target: PropertiesSectionId) => void;
+  editing: boolean;
+  /** Chromium не отдаёт данные drag в dragover, поэтому источник держим в состоянии. */
+  dragging: DropHint | null;
+  setDragging: (hint: DropHint | null) => void;
+  collapsed: readonly PropertiesSectionId[];
+  dropHint: DropHint | null;
+  setDropHint: (hint: DropHint | null) => void;
+  onDropSection: (
+    dragged: PropertiesSectionId,
+    target: PropertiesSectionId,
+    position: DropPosition,
+  ) => void;
   onMoveSection: (id: PropertiesSectionId, delta: number) => void;
-  onDropField: (dragged: PropertiesFieldId, target: PropertiesFieldId) => void;
+  onDropField: (
+    dragged: PropertiesFieldId,
+    target: PropertiesFieldId,
+    position: DropPosition,
+  ) => void;
   onMoveField: (id: PropertiesFieldId, delta: number) => void;
+  onToggleSection: (id: PropertiesSectionId) => void;
 };
 
-/** Ручка перетаскивания: мышь — HTML5 drag, клавиатура — Alt+↑/↓ (1.5.19). */
+/** Ручка перетаскивания: видна только в режиме раскладки (1.5.19). */
 function DragGrip({
   label,
   scope,
   id,
   onMove,
+  onDragStart,
+  onDragEnd,
 }: {
   label: string;
   scope: 'section' | 'field';
   id: string;
   onMove: (delta: number) => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
 }) {
   return (
     <button
@@ -99,7 +123,9 @@ function DragGrip({
         event.stopPropagation();
         event.dataTransfer.setData('text/plain', `${scope}:${id}`);
         event.dataTransfer.effectAllowed = 'move';
+        onDragStart();
       }}
+      onDragEnd={onDragEnd}
       onKeyDown={(event) => {
         if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) {
           return;
@@ -119,6 +145,12 @@ function dragScope(event: DragEvent): { scope: string; id: string } | null {
   return scope && id ? { scope, id } : null;
 }
 
+function DropLine({ position }: { position: DropPosition }) {
+  return (
+    <span className={`inspector__drop-line inspector__drop-line--${position}`} aria-hidden="true" />
+  );
+}
+
 function InspectorBlock({
   id,
   label,
@@ -130,30 +162,86 @@ function InspectorBlock({
   handlers: ReorderHandlers;
   children: ReactNode;
 }) {
+  const collapsed = handlers.collapsed.includes(id);
+  const hint = handlers.dropHint;
+  const isBefore = hint?.scope === 'section' && hint.id === id && hint.position === 'before';
+  const isAfter = hint?.scope === 'section' && hint.id === id && hint.position === 'after';
+
+  const onDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!handlers.editing || handlers.dragging?.scope !== 'section') {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    handlers.setDropHint({
+      scope: 'section',
+      id,
+      position: dropPosition(event.currentTarget.getBoundingClientRect(), event.clientY),
+    });
+  };
+
+  const onDragLeave = (event: DragEvent<HTMLElement>) => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) {
+      return;
+    }
+    handlers.setDropHint(null);
+  };
+
+  const onDrop = (event: DragEvent<HTMLElement>) => {
+    const dragged = dragScope(event) ?? handlers.dragging;
+    if (!handlers.editing || dragged?.scope !== 'section') {
+      return;
+    }
+    event.preventDefault();
+    const position =
+      hint?.scope === 'section' && hint.id === id
+        ? hint.position
+        : dropPosition(event.currentTarget.getBoundingClientRect(), event.clientY);
+    handlers.onDropSection(dragged.id as PropertiesSectionId, id, position);
+    handlers.setDropHint(null);
+  };
+
   return (
     <fieldset
-      className="inspector__section"
+      className={`inspector__section${collapsed ? ' is-collapsed' : ''}${
+        handlers.editing ? ' is-editing' : ''
+      }`}
       data-inspector-section={id}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        const dragged = dragScope(event);
-        if (dragged?.scope !== 'section') {
-          return;
-        }
-        event.preventDefault();
-        handlers.onDropSection(dragged.id as PropertiesSectionId, id);
-      }}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
     >
+      {handlers.editing && isBefore ? <DropLine position="before" /> : null}
       <legend>
-        <DragGrip
-          label={label}
-          scope="section"
-          id={id}
-          onMove={(delta) => handlers.onMoveSection(id, delta)}
-        />
-        {label}
+        {handlers.editing ? (
+          <DragGrip
+            label={label}
+            scope="section"
+            id={id}
+            onMove={(delta) => handlers.onMoveSection(id, delta)}
+            onDragStart={() => handlers.setDragging({ scope: 'section', id, position: 'before' })}
+            onDragEnd={() => {
+              handlers.setDragging(null);
+              handlers.setDropHint(null);
+            }}
+          />
+        ) : null}
+        <button
+          type="button"
+          className="inspector__section-toggle"
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? 'Развернуть' : 'Свернуть'} «${label}»`}
+          onClick={() => handlers.onToggleSection(id)}
+        >
+          <span className="inspector__chevron" aria-hidden="true">
+            {collapsed ? '▸' : '▾'}
+          </span>
+          {label}
+        </button>
       </legend>
-      {children}
+      {collapsed ? null : children}
+      {handlers.editing && isAfter ? <DropLine position="after" /> : null}
     </fieldset>
   );
 }
@@ -169,28 +257,65 @@ function InspectorFieldBlock({
   handlers: ReorderHandlers;
   children: ReactNode;
 }) {
+  const hint = handlers.dropHint;
+  const isBefore = hint?.scope === 'field' && hint.id === id && hint.position === 'before';
+  const isAfter = hint?.scope === 'field' && hint.id === id && hint.position === 'after';
+
   return (
     <div
       className="inspector__field-block"
       data-inspector-field={id}
-      onDragOver={(event) => event.preventDefault()}
+      onDragOver={(event) => {
+        if (!handlers.editing || handlers.dragging?.scope !== 'field') {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = 'move';
+        handlers.setDropHint({
+          scope: 'field',
+          id,
+          position: dropPosition(event.currentTarget.getBoundingClientRect(), event.clientY),
+        });
+      }}
+      onDragLeave={(event) => {
+        const next = event.relatedTarget;
+        if (next instanceof Node && event.currentTarget.contains(next)) {
+          return;
+        }
+        handlers.setDropHint(null);
+      }}
       onDrop={(event) => {
-        const dragged = dragScope(event);
-        if (dragged?.scope !== 'field') {
+        const dragged = dragScope(event) ?? handlers.dragging;
+        if (!handlers.editing || dragged?.scope !== 'field') {
           return;
         }
         event.stopPropagation();
         event.preventDefault();
-        handlers.onDropField(dragged.id as PropertiesFieldId, id);
+        const position =
+          hint?.scope === 'field' && hint.id === id
+            ? hint.position
+            : dropPosition(event.currentTarget.getBoundingClientRect(), event.clientY);
+        handlers.onDropField(dragged.id as PropertiesFieldId, id, position);
+        handlers.setDropHint(null);
       }}
     >
-      <DragGrip
-        label={label}
-        scope="field"
-        id={id}
-        onMove={(delta) => handlers.onMoveField(id, delta)}
-      />
+      {handlers.editing && isBefore ? <DropLine position="before" /> : null}
+      {handlers.editing ? (
+        <DragGrip
+          label={label}
+          scope="field"
+          id={id}
+          onMove={(delta) => handlers.onMoveField(id, delta)}
+          onDragStart={() => handlers.setDragging({ scope: 'field', id, position: 'before' })}
+          onDragEnd={() => {
+            handlers.setDragging(null);
+            handlers.setDropHint(null);
+          }}
+        />
+      ) : null}
       {children}
+      {handlers.editing && isAfter ? <DropLine position="after" /> : null}
     </div>
   );
 }
@@ -228,6 +353,9 @@ export function PropertiesPanel({
   // Пустые строки атрибутов живут только в панели: в модель попадают лишь заполненные.
   const [attrDraft, setAttrDraft] = useState(element?.customProperties ?? []);
   const [layout, setLayout] = useState<PropertiesLayout>(() => loadPropertiesLayout());
+  const [editing, setEditing] = useState(false);
+  const [dragging, setDragging] = useState<DropHint | null>(null);
+  const [dropHint, setDropHint] = useState<DropHint | null>(null);
   const [wide, setWide] = useState(
     () => typeof window === 'undefined' || window.matchMedia('(min-width: 1101px)').matches,
   );
@@ -265,20 +393,31 @@ export function PropertiesPanel({
   };
 
   const handlers: ReorderHandlers = {
-    onDropSection: (dragged, target) =>
-      persistLayout({ ...layout, sections: reorderItem(layout.sections, dragged, target) }),
+    editing,
+    dragging,
+    setDragging,
+    collapsed: layout.collapsed,
+    dropHint,
+    setDropHint,
+    onDropSection: (dragged, target, position) =>
+      persistLayout({
+        ...layout,
+        sections: reorderItemAt(layout.sections, dragged, target, position),
+      }),
     onMoveSection: (id, delta) => {
       const from = layout.sections.indexOf(id);
       persistLayout({ ...layout, sections: moveItem(layout.sections, from, delta) });
     },
-    onDropField: (dragged, target) =>
-      persistLayout({ ...layout, fields: reorderItem(layout.fields, dragged, target) }),
+    onDropField: (dragged, target, position) =>
+      persistLayout({ ...layout, fields: reorderItemAt(layout.fields, dragged, target, position) }),
     onMoveField: (id, delta) => {
       const from = layout.fields.indexOf(id);
       persistLayout({ ...layout, fields: moveItem(layout.fields, from, delta) });
     },
+    onToggleSection: (id) => persistLayout(toggleSectionCollapsed(layout, id)),
   };
 
+  // Ширина меняется перетаскиванием левой границы: панель прижата к правому краю.
   const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!wide) {
       return;
@@ -288,11 +427,8 @@ export function PropertiesPanel({
     if (!(panel instanceof HTMLElement)) {
       return;
     }
-    const rect = panel.getBoundingClientRect();
     const startX = event.clientX;
-    const startY = event.clientY;
-    const startWidth = rect.width;
-    const startHeight = rect.height;
+    const startWidth = panel.getBoundingClientRect().width;
 
     const onMove = (move: PointerEvent) => {
       const width = Math.round(
@@ -301,11 +437,7 @@ export function PropertiesPanel({
           Math.max(MIN_PROPERTIES_WIDTH, startWidth - (move.clientX - startX)),
         ),
       );
-      const maxHeight = Math.max(MIN_PROPERTIES_HEIGHT, window.innerHeight - 160);
-      const height = Math.round(
-        Math.min(maxHeight, Math.max(MIN_PROPERTIES_HEIGHT, startHeight + (move.clientY - startY))),
-      );
-      const next = normalizePropertiesLayout({ ...layout, width, height });
+      const next = normalizePropertiesLayout({ ...layout, width });
       setLayout(next);
       savePropertiesLayout(next);
     };
@@ -327,6 +459,7 @@ export function PropertiesPanel({
       <aside
         className={inspectorOpen ? 'inspector inspector--open' : 'inspector'}
         aria-label="Свойства элемента"
+        style={wide && layout.width ? { width: layout.width } : undefined}
       >
         <div className="inspector__header">
           <h2 className="inspector__title">Свойства</h2>
@@ -348,6 +481,15 @@ export function PropertiesPanel({
           Правый клик по холсту и по элементу открывает меню действий; комбинации клавиш
           настраиваются кнопкой «Настройки» на панели.
         </p>
+        {wide ? (
+          <button
+            type="button"
+            className="inspector__resize"
+            aria-label="Изменить ширину панели свойств"
+            title="Потяните левую границу, чтобы изменить ширину панели"
+            onPointerDown={startResize}
+          />
+        ) : null}
       </aside>
     );
   }
@@ -750,14 +892,24 @@ export function PropertiesPanel({
   if (isUserTaskType(element.type)) {
     blocks.assignee = (
       <InspectorBlock id="assignee" label="Исполнитель" handlers={handlers}>
-        <Field label="Assignee">
+        <Field
+          label="Ответственный (assignee)"
+          hint={
+            element.laneAssignee
+              ? `Если поле пустое, при создании задачи в дорожке подставится «${element.laneAssignee}». Ручное значение не перезаписывается.`
+              : 'Конкретный пользователь, который получает задачу.'
+          }
+        >
           <input
             value={element.assignee}
-            placeholder="user@example.com"
+            placeholder={element.laneAssignee || 'user@example.com'}
             onChange={(event) => onChange({ assignee: event.target.value })}
           />
         </Field>
-        <Field label="Candidate groups">
+        <Field
+          label="Группы кандидатов (candidateGroups)"
+          hint="Через запятую: группы, которые видят задачу в общей очереди Camunda. Любой участник группы может взять её на себя."
+        >
           <input
             value={element.candidateGroups}
             placeholder="sales, managers"
@@ -853,30 +1005,44 @@ export function PropertiesPanel({
     <aside
       className={inspectorOpen ? 'inspector inspector--open' : 'inspector'}
       aria-label="Свойства элемента"
-      style={
-        wide
-          ? {
-              width: layout.width,
-              height: layout.height,
-            }
-          : undefined
-      }
+      style={wide && layout.width ? { width: layout.width } : undefined}
     >
       <div className="inspector__header">
         <h2 className="inspector__title">Свойства</h2>
-        <button
-          type="button"
-          className="inspector__close"
-          aria-label="Закрыть свойства"
-          title="Закрыть свойства"
-          onClick={onClose}
-        >
-          ×
-        </button>
+        <div className="inspector__header-actions">
+          <button
+            type="button"
+            className={`inspector__layout-toggle${editing ? ' is-active' : ''}`}
+            aria-pressed={editing}
+            title={editing ? 'Завершить изменение раскладки' : 'Включить перенос блоков и полей'}
+            onClick={() => {
+              setEditing((current) => !current);
+              setDragging(null);
+              setDropHint(null);
+            }}
+          >
+            {editing ? 'Готово' : '⠿ Раскладка'}
+          </button>
+          <button
+            type="button"
+            className="inspector__close"
+            aria-label="Закрыть свойства"
+            title="Закрыть свойства"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
       </div>
       <p className="inspector__hint">
         <code>{element.id}</code>
       </p>
+      {editing ? (
+        <p className="inspector__hint inspector__hint--layout">
+          Перетащите блок или поле за ручку ⠿: линия покажет, куда оно встанет. Изменения общие для
+          всех схем. Свернуть блок — кнопкой в его заголовке.
+        </p>
+      ) : null}
 
       {layout.sections.map((sectionId) => {
         const block = blocks[sectionId];
@@ -887,12 +1053,10 @@ export function PropertiesPanel({
         <button
           type="button"
           className="inspector__resize"
-          aria-label="Изменить размер панели свойств"
-          title="Потяните, чтобы изменить ширину и высоту панели"
+          aria-label="Изменить ширину панели свойств"
+          title="Потяните левую границу, чтобы изменить ширину панели"
           onPointerDown={startResize}
-        >
-          ⇲
-        </button>
+        />
       ) : null}
     </aside>
   );

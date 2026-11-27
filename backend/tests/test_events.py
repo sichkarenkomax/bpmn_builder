@@ -125,5 +125,5 @@ async def test_comment_create_emits_event(
         "diagram_id": diagram["id"],
         "comment_id": created.json()["id"],
         "element_id": "Task_1",
-        "author_id": "local",
+        "author_id": "test-user",
     }

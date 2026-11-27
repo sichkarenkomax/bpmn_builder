@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyThemeToGfx, manualFill, manualStroke, themeById } from './diagram-theme';
+import {
+  applyThemeToGfx,
+  manualFill,
+  manualStroke,
+  themeById,
+  themeForCanvas,
+} from './diagram-theme';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -148,5 +154,33 @@ describe('applyThemeToGfx', () => {
     const rect = gfx.querySelector('rect');
     expect(normalizedColor(rect?.style.fill)).toBe(normalizedColor('#ffffff'));
     expect(normalizedColor(rect?.style.stroke)).toBe(normalizedColor('#000000'));
+  });
+
+  it('на тёмном холсте даёт тёмную заливку и светлую границу', () => {
+    const theme = themeForCanvas(themeById('colored'), 'dark');
+    const gfx = makeGfx(['rect']);
+    applyThemeToGfx(gfx, 'bpmn:Task', theme, { canvas: 'dark' });
+    const rect = gfx.querySelector('rect');
+    expect(normalizedColor(rect?.style.fill)).toBe(normalizedColor('#1e3a5f'));
+    expect(normalizedColor(rect?.style.stroke)).toBe(normalizedColor('#93c5fd'));
+  });
+
+  it('на тёмном холсте делает стрелки и их наконечники светлыми', () => {
+    const gfx = makeGfx([]);
+    const visual = gfx.querySelector('.djs-visual');
+    const defs = document.createElementNS(SVG_NS, 'defs');
+    const marker = document.createElementNS(SVG_NS, 'marker');
+    const markerPath = document.createElementNS(SVG_NS, 'path');
+    marker.append(markerPath);
+    defs.append(marker);
+    const path = document.createElementNS(SVG_NS, 'path');
+    visual?.append(path, defs);
+
+    applyThemeToGfx(gfx, 'bpmn:SequenceFlow', themeForCanvas(themeById('mono'), 'dark'), {
+      canvas: 'dark',
+    });
+
+    expect(normalizedColor(path.style.stroke)).toBe(normalizedColor('#dbe7f5'));
+    expect(normalizedColor(markerPath.style.fill)).toBe(normalizedColor('#dbe7f5'));
   });
 });

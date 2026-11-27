@@ -6,6 +6,8 @@ export interface InspectorElement {
   name: string;
   documentation: string;
   assignee: string;
+  /** Ответственный по названию дорожки; применяется, если assignee пуст. */
+  laneAssignee: string;
   candidateGroups: string;
   script: string;
   scriptFormat: string;

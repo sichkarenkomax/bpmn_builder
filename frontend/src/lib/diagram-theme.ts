@@ -59,6 +59,30 @@ export function isThemeId(value: unknown): value is ThemeId {
 }
 
 const BLACK = '#000000';
+const DARK_STROKE = '#dbe7f5';
+
+/** Цвета на тёмном холсте: тёмные заливки, светлые границы и стрелки. */
+const DARK_COLORS: ThemeColorsMap = {
+  startEvent: { fill: '#14532d', stroke: '#6ee7b7' },
+  intermediateEvent: { fill: '#3f3a16', stroke: '#fde68a' },
+  endEvent: { fill: '#5f1f1f', stroke: '#fca5a5' },
+  task: { fill: '#1e3a5f', stroke: '#93c5fd' },
+  gateway: { fill: '#4a3a10', stroke: '#fde68a' },
+  subprocess: { fill: '#1e3350', stroke: '#93c5fd' },
+  data: { fill: '#243447', stroke: '#cbd5e1' },
+  pool: { fill: '#172231', stroke: '#64748b' },
+};
+
+const DARK_MONO: ThemeColorsMap = {
+  startEvent: { fill: '#1b2634', stroke: DARK_STROKE },
+  intermediateEvent: { fill: '#1b2634', stroke: DARK_STROKE },
+  endEvent: { fill: '#1b2634', stroke: DARK_STROKE },
+  task: { fill: '#1b2634', stroke: DARK_STROKE },
+  gateway: { fill: '#1b2634', stroke: DARK_STROKE },
+  subprocess: { fill: '#1b2634', stroke: DARK_STROKE },
+  data: { fill: '#1b2634', stroke: DARK_STROKE },
+  pool: { fill: '#111a27', stroke: '#64748b' },
+};
 
 /** Две выбираемые темы: цветная и чёрно-белая. Все границы чёрные. */
 export const THEMES: DiagramTheme[] = [
@@ -116,6 +140,14 @@ export function themeById(id: ThemeId, customColors?: ThemeColorsMap | null): Di
     return customColors ? { ...CUSTOM_THEME, colors: customColors } : CUSTOM_THEME;
   }
   return THEMES.find((theme) => theme.id === id) ?? THEMES[0]!;
+}
+
+/** На тёмном холсте те же категории получают тёмные заливки и светлые границы. */
+export function themeForCanvas(theme: DiagramTheme, canvas: 'light' | 'dark'): DiagramTheme {
+  if (canvas === 'light') {
+    return theme;
+  }
+  return { ...theme, colors: theme.id === 'mono' ? DARK_MONO : DARK_COLORS };
 }
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -297,8 +329,9 @@ export function applyThemeToGfx(
   gfx: SVGGElement | undefined,
   type: string,
   theme: DiagramTheme,
-  options?: { strokeWidth?: string },
+  options?: { strokeWidth?: string; canvas?: 'light' | 'dark' },
 ): void {
+  const lineColor = options?.canvas === 'dark' ? DARK_STROKE : BLACK;
   if (!gfx) {
     return;
   }
@@ -307,8 +340,15 @@ export function applyThemeToGfx(
   // прозрачный прямоугольник, который тема не должна закрашивать.
   if (type === 'bpmn:TextAnnotation') {
     applyAnnotationStyle(gfx, {
-      fill: theme.id === 'mono' ? '#ffffff' : '#f8fafc',
-      stroke: '#000000',
+      fill:
+        options?.canvas === 'dark'
+          ? theme.id === 'mono'
+            ? '#1b2634'
+            : '#243447'
+          : theme.id === 'mono'
+            ? '#ffffff'
+            : '#f8fafc',
+      stroke: lineColor,
     });
     return;
   }
@@ -329,7 +369,7 @@ export function applyThemeToGfx(
     const strokeWidth = options?.strokeWidth?.trim() || (isAssociation ? '1' : '0.7');
     for (const child of visual.querySelectorAll<SVGElement>(':scope > *')) {
       if (child.tagName !== 'text') {
-        child.style.stroke = '#000000';
+        child.style.stroke = lineColor;
         child.style.fill = 'none';
         child.style.strokeWidth = strokeWidth;
         if (isAssociation) {
@@ -340,8 +380,8 @@ export function applyThemeToGfx(
       }
     }
     for (const marker of gfx.querySelectorAll<SVGElement>('.djs-visual defs marker path')) {
-      marker.style.stroke = '#000000';
-      marker.style.fill = '#000000';
+      marker.style.stroke = lineColor;
+      marker.style.fill = lineColor;
     }
     // Наконечник задан в единицах холста, а не в толщинах линии
     // (по умолчанию markerUnits="strokeWidth"): иначе у тонкого потока

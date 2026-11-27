@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from app.api.access import DiagramAccess, require_diagram
 from app.api.deps import get_session
 from app.api.routes.diagrams import MAX_XML_BYTES, _current_xml, _load
 from app.bpmn import BpmnError, parse_and_validate_bpmn
@@ -134,6 +135,7 @@ async def _simulate_diagram(
 async def simulate_diagram(
     diagram_id: str,
     payload: SimulationRequest,
+    _access: DiagramAccess = Depends(require_diagram("viewer")),
     session: AsyncSession = Depends(get_session),
 ) -> SimulationReport:
     """Проводит токен по сохранённому XML, ничего не записывая в диаграмму."""
@@ -160,6 +162,7 @@ async def _load_run(session: AsyncSession, diagram_id: str, run_id: str) -> Simu
 async def save_simulation_run(
     diagram_id: str,
     payload: SimulationRunCreate,
+    _access: DiagramAccess = Depends(require_diagram("editor")),
     session: AsyncSession = Depends(get_session),
 ) -> SimulationRun:
     """Выполняет прогон по текущему XML и сохраняет его вместе с отчётом."""
@@ -189,11 +192,11 @@ async def save_simulation_run(
 
 @router.get("/{diagram_id}/simulation-runs", response_model=list[SimulationRunRead])
 async def list_simulation_runs(
-    diagram_id: str,
+    access: DiagramAccess = Depends(require_diagram("viewer")),
     session: AsyncSession = Depends(get_session),
     limit: int = Query(default=SIMULATION_RUN_LIMIT, ge=1, le=100),
 ) -> list[SimulationRun]:
-    await _load(session, diagram_id)
+    diagram_id = access.diagram.id
     rows = await session.scalars(
         select(SimulationRun)
         .where(SimulationRun.diagram_id == diagram_id)
@@ -205,9 +208,11 @@ async def list_simulation_runs(
 
 @router.delete("/{diagram_id}/simulation-runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_simulation_run(
-    diagram_id: str, run_id: str, session: AsyncSession = Depends(get_session)
+    run_id: str,
+    access: DiagramAccess = Depends(require_diagram("editor")),
+    session: AsyncSession = Depends(get_session),
 ) -> Response:
-    run = await _load_run(session, diagram_id, run_id)
+    run = await _load_run(session, access.diagram.id, run_id)
     await session.delete(run)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -229,13 +234,13 @@ async def _load_case(session: AsyncSession, diagram_id: str, case_id: str) -> Te
     status_code=status.HTTP_201_CREATED,
 )
 async def create_test_case(
-    diagram_id: str,
     payload: TestCaseCreate,
+    access: DiagramAccess = Depends(require_diagram("editor")),
     session: AsyncSession = Depends(get_session),
 ) -> TestCase:
-    diagram = await _load(session, diagram_id)
+    diagram = access.diagram
     case = TestCase(
-        diagram_id=diagram_id,
+        diagram_id=diagram.id,
         version_id=diagram.current_version_id,
         name=payload.name,
         variables=payload.variables,
@@ -251,12 +256,12 @@ async def create_test_case(
 
 @router.get("/{diagram_id}/test-cases", response_model=list[TestCaseRead])
 async def list_test_cases(
-    diagram_id: str, session: AsyncSession = Depends(get_session)
+    access: DiagramAccess = Depends(require_diagram("viewer")),
+    session: AsyncSession = Depends(get_session),
 ) -> list[TestCase]:
-    await _load(session, diagram_id)
     rows = await session.scalars(
         select(TestCase)
-        .where(TestCase.diagram_id == diagram_id)
+        .where(TestCase.diagram_id == access.diagram.id)
         .order_by(TestCase.created_at, TestCase.name)
     )
     return list(rows)
@@ -264,13 +269,13 @@ async def list_test_cases(
 
 @router.patch("/{diagram_id}/test-cases/{case_id}", response_model=TestCaseRead)
 async def update_test_case(
-    diagram_id: str,
     case_id: str,
     payload: TestCaseUpdate,
+    access: DiagramAccess = Depends(require_diagram("editor")),
     session: AsyncSession = Depends(get_session),
 ) -> TestCase:
-    case = await _load_case(session, diagram_id, case_id)
-    diagram = await _load(session, diagram_id)
+    case = await _load_case(session, access.diagram.id, case_id)
+    diagram = access.diagram
     fields = payload.model_fields_set
     if payload.name is not None:
         case.name = payload.name
@@ -295,9 +300,11 @@ async def update_test_case(
 
 @router.delete("/{diagram_id}/test-cases/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_test_case(
-    diagram_id: str, case_id: str, session: AsyncSession = Depends(get_session)
+    case_id: str,
+    access: DiagramAccess = Depends(require_diagram("editor")),
+    session: AsyncSession = Depends(get_session),
 ) -> Response:
-    case = await _load_case(session, diagram_id, case_id)
+    case = await _load_case(session, access.diagram.id, case_id)
     await session.delete(case)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -305,13 +312,15 @@ async def delete_test_case(
 
 @router.post("/{diagram_id}/test-cases/{case_id}/run", response_model=TestCaseResult)
 async def run_test_case(
-    diagram_id: str, case_id: str, session: AsyncSession = Depends(get_session)
+    case_id: str,
+    access: DiagramAccess = Depends(require_diagram("viewer")),
+    session: AsyncSession = Depends(get_session),
 ) -> TestCaseResult:
     """Прогоняет тест-кейс по текущему XML и сравнивает шаги и переменные."""
-    case = await _load_case(session, diagram_id, case_id)
+    case = await _load_case(session, access.diagram.id, case_id)
     _, report = await _simulate_diagram(
         session,
-        diagram_id,
+        access.diagram.id,
         SimulationRequest(variables=case.variables, choices=case.choices),
         version_id=case.version_id,
     )

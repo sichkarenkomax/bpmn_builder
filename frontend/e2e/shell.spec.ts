@@ -40,7 +40,9 @@ test('оболочка: при прокрутке рельс и топбар о�
   const created: string[] = [];
 
   try {
-    for (let index = 0; index < 6; index += 1) {
+    // Учётная запись E2E видит только свои диаграммы, поэтому карточек нужно
+    // достаточно, чтобы страница гарантированно прокручивалась.
+    for (let index = 0; index < 12; index += 1) {
       const response = await request.post(`${API}/diagrams`, {
         data: { title: `E2E shell scroll ${Date.now()}-${index}` },
       });

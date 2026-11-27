@@ -6,7 +6,8 @@ import hashlib
 from typing import Any, cast
 from urllib.parse import quote
 
-from app.api.deps import get_session
+from app.api.access import DiagramAccess, require_diagram
+from app.api.deps import get_current_user, get_session
 from app.bpmn import (
     BpmnDocument,
     BpmnError,
@@ -17,7 +18,7 @@ from app.bpmn import (
 from app.core.config import get_settings
 from app.core.events import DIAGRAM_SAVED
 from app.core.events import publish as publish_event
-from app.db.models import Diagram, DiagramVersion
+from app.db.models import Diagram, DiagramAcl, DiagramVersion, User
 from app.schemas.diagram import (
     BpmnSaved,
     DiagramCreate,
@@ -35,7 +36,7 @@ from app.validation import (
 )
 from app.validation.report import build_validation_docx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -151,7 +152,9 @@ async def _current_xml(session: AsyncSession, diagram: Diagram) -> str:
 
 @router.post("", response_model=DiagramRead, status_code=status.HTTP_201_CREATED)
 async def create_diagram(
-    payload: DiagramCreate, session: AsyncSession = Depends(get_session)
+    payload: DiagramCreate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> Diagram:
     xml = payload.bpmn_xml
     if xml is None:
@@ -165,12 +168,14 @@ async def create_diagram(
         title=payload.title,
         description=payload.description,
         status=payload.status,
+        owner_id=user.id,
         etag=etag,
     )
     session.add(diagram)
     await session.flush()
+    session.add(DiagramAcl(diagram_id=diagram.id, user_id=user.id, role="owner"))
 
-    version = DiagramVersion(diagram_id=diagram.id, xml=xml, message="Создание")
+    version = DiagramVersion(diagram_id=diagram.id, xml=xml, message="Создание", author_id=user.id)
     session.add(version)
     await session.flush()
 
@@ -186,13 +191,22 @@ async def create_diagram(
 
 @router.get("", response_model=DiagramList)
 async def list_diagrams(
+    user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> DiagramList:
-    total = await session.scalar(select(func.count()).select_from(Diagram))
+    accessible = or_(
+        Diagram.owner_id == user.id,
+        Diagram.id.in_(select(DiagramAcl.diagram_id).where(DiagramAcl.user_id == user.id)),
+    )
+    total = await session.scalar(select(func.count()).select_from(Diagram).where(accessible))
     rows = await session.scalars(
-        select(Diagram).order_by(Diagram.updated_at.desc()).limit(limit).offset(offset)
+        select(Diagram)
+        .where(accessible)
+        .order_by(Diagram.updated_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     return DiagramList(
         items=[DiagramRead.model_validate(row) for row in rows],
@@ -201,17 +215,19 @@ async def list_diagrams(
 
 
 @router.get("/{diagram_id}", response_model=DiagramRead)
-async def get_diagram(diagram_id: str, session: AsyncSession = Depends(get_session)) -> Diagram:
-    return await _load(session, diagram_id)
+async def get_diagram(
+    access: DiagramAccess = Depends(require_diagram("viewer")),
+) -> Diagram:
+    return access.diagram
 
 
 @router.patch("/{diagram_id}", response_model=DiagramRead)
 async def update_diagram(
-    diagram_id: str,
     payload: DiagramUpdate,
+    access: DiagramAccess = Depends(require_diagram("editor")),
     session: AsyncSession = Depends(get_session),
 ) -> Diagram:
-    diagram = await _load(session, diagram_id)
+    diagram = access.diagram
     if payload.title is not None:
         diagram.title = payload.title
     if "description" in payload.model_fields_set:
@@ -224,16 +240,21 @@ async def update_diagram(
 
 
 @router.delete("/{diagram_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_diagram(diagram_id: str, session: AsyncSession = Depends(get_session)) -> Response:
-    diagram = await _load(session, diagram_id)
-    await session.delete(diagram)
+async def delete_diagram(
+    access: DiagramAccess = Depends(require_diagram("owner")),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    await session.delete(access.diagram)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{diagram_id}/bpmn", responses={200: {"content": {"application/xml": {}}}})
-async def get_bpmn(diagram_id: str, session: AsyncSession = Depends(get_session)) -> Response:
-    diagram = await _load(session, diagram_id)
+async def get_bpmn(
+    access: DiagramAccess = Depends(require_diagram("viewer")),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    diagram = access.diagram
     xml = await _current_xml(session, diagram)
     headers = {"ETag": f'"{diagram.etag}"'} if diagram.etag else {}
     return Response(content=xml, media_type="application/xml", headers=headers)
@@ -241,13 +262,13 @@ async def get_bpmn(diagram_id: str, session: AsyncSession = Depends(get_session)
 
 @router.put("/{diagram_id}/bpmn", response_model=BpmnSaved)
 async def put_bpmn(
-    diagram_id: str,
     request: Request,
     response: Response,
+    access: DiagramAccess = Depends(require_diagram("editor")),
     if_match: str | None = Header(default=None, alias="If-Match"),
     session: AsyncSession = Depends(get_session),
 ) -> BpmnSaved:
-    diagram = await _load(session, diagram_id)
+    diagram = access.diagram
     _check_if_match(diagram, if_match)
     body = await _read_limited_body(request, MAX_XML_BYTES)
 
@@ -272,7 +293,7 @@ async def put_bpmn(
     if diagram.etag and etag == diagram.etag:
         return BpmnSaved(etag=diagram.etag, version_id=diagram.current_version_id or "")
 
-    version = DiagramVersion(diagram_id=diagram.id, xml=xml, message=None)
+    version = DiagramVersion(diagram_id=diagram.id, xml=xml, message=None, author_id=access.user.id)
     session.add(version)
     await session.flush()
 
@@ -389,17 +410,16 @@ _VALIDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     responses=_VALIDATE_RESPONSES,
 )
 async def validate_diagram_post(
-    diagram_id: str,
     include: str | None = Query(
         default=None,
         description="Категории правил: xsd,structure,gateway,event,lane",
         examples=["structure,gateway"],
     ),
+    access: DiagramAccess = Depends(require_diagram("viewer")),
     session: AsyncSession = Depends(get_session),
 ) -> ValidationReport:
     """Проверяет сохранённый XML; не создаёт версию и не меняет диаграмму (2.2.1)."""
-    diagram = await _load(session, diagram_id)
-    return await _validate_saved(session, diagram, include)
+    return await _validate_saved(session, access.diagram, include)
 
 
 @router.get(
@@ -409,21 +429,21 @@ async def validate_diagram_post(
     deprecated=True,
 )
 async def validate_diagram(
-    diagram_id: str,
     include: str | None = Query(default=None),
+    access: DiagramAccess = Depends(require_diagram("viewer")),
     session: AsyncSession = Depends(get_session),
 ) -> ValidationReport:
     """Совместимый GET для UI; контракт для CI — `POST /validate`."""
-    diagram = await _load(session, diagram_id)
-    return await _validate_saved(session, diagram, include)
+    return await _validate_saved(session, access.diagram, include)
 
 
 @router.get("/{diagram_id}/validation/report.docx")
 async def validation_report_docx(
-    diagram_id: str, session: AsyncSession = Depends(get_session)
+    access: DiagramAccess = Depends(require_diagram("viewer")),
+    session: AsyncSession = Depends(get_session),
 ) -> Response:
     """DOCX-отчёт по сохранённой версии (2.4.2)."""
-    diagram = await _load(session, diagram_id)
+    diagram = access.diagram
     report = await _validate_saved(session, diagram, None)
     payload = await run_in_threadpool(
         build_validation_docx,
@@ -441,12 +461,12 @@ async def validation_report_docx(
 
 @router.get("/{diagram_id}/versions", response_model=list[VersionRead])
 async def list_versions(
-    diagram_id: str,
+    access: DiagramAccess = Depends(require_diagram("viewer")),
     session: AsyncSession = Depends(get_session),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[DiagramVersion]:
-    await _load(session, diagram_id)
+    diagram_id = access.diagram.id
     rows = await session.scalars(
         select(DiagramVersion)
         .where(DiagramVersion.diagram_id == diagram_id)

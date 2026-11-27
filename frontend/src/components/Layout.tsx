@@ -2,6 +2,7 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 
 import { useBackendHealth } from '../hooks/useBackendHealth';
 import { FRONTEND_MODULES } from '../modules/registry';
+import { useAuth } from '../lib/auth-context';
 import { loadTheme } from '../lib/theme';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -81,6 +82,7 @@ function sectionName(pathname: string): string {
 
 export function Layout() {
   const { pathname } = useLocation();
+  const { user, logout } = useAuth();
   const diagramsActive = pathname === '/' || (pathname.startsWith('/d/') && pathname !== '/d/new');
   const newDiagramActive = pathname === '/d/new';
   const settingsActive = pathname === '/settings';
@@ -167,6 +169,12 @@ export function Layout() {
           </nav>
           <div className="app-topbar__actions">
             <BackendBadge />
+            <span className="app-user" title={user.email}>
+              <span className="app-user__name">{user.name}</span>
+              <button type="button" className="app-user__logout" onClick={() => void logout()}>
+                Выйти
+              </button>
+            </span>
             <ThemeToggle initial={loadTheme()} />
           </div>
         </header>

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import comments, diagrams, exports, health, modules, simulation
+from app.api.routes import acl, auth, comments, diagrams, exports, health, modules, simulation
 from app.core.config import Settings, get_settings
 from app.core.db import dispose_engine
 from app.core.middleware import (
@@ -67,7 +67,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health.router, prefix=settings.api_prefix)
+    app.include_router(auth.router, prefix=settings.api_prefix)
     app.include_router(diagrams.router, prefix=settings.api_prefix)
+    app.include_router(acl.router, prefix=settings.api_prefix)
     app.include_router(comments.router, prefix=settings.api_prefix)
     app.include_router(exports.router, prefix=settings.api_prefix)
     app.include_router(simulation.router, prefix=settings.api_prefix)

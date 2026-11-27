@@ -12,10 +12,10 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter
 
-from app.api.deps import get_session
+from app.api.deps import get_current_user, get_session
 from app.db.base import Base
 
-__all__ = ["Base", "ModuleSpec", "get_session"]
+__all__ = ["Base", "ModuleSpec", "get_current_user", "get_session"]
 
 
 @dataclass(frozen=True)

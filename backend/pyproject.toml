@@ -56,6 +56,7 @@ extend-immutable-calls = [
     "fastapi.Query",
     "fastapi.Header",
     "fastapi.Body",
+    "app.api.access.require_diagram",
 ]
 
 [tool.mypy]

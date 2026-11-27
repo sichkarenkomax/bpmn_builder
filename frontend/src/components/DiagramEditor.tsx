@@ -107,6 +107,7 @@ import {
   manualFill,
   manualStroke,
   themeById,
+  themeForCanvas,
   type ThemeId,
 } from '../lib/diagram-theme';
 import {
@@ -125,6 +126,7 @@ import { attributeTypeForXml, parseAttributeType } from '../lib/attributes';
 import { savePortalDefaults } from '../lib/portal-defaults';
 import { loadTypePaletteEnabled } from '../lib/type-palette';
 import { isElementLocked } from '../lib/lock';
+import { laneAssignee, needsLaneAssignee } from '../lib/lane-assignee';
 import {
   clearLocalDraft,
   readLocalDraft,
@@ -310,6 +312,7 @@ interface EditorEvent {
   gfx?: SVGGElement;
   context?: {
     shape?: DiagramElement;
+    shapes?: DiagramElement[];
     connection?: DiagramElement;
     direction?: string;
     newBounds?: { x: number; y: number; width: number; height: number };
@@ -1244,6 +1247,7 @@ function toInspector(element: DiagramElement): InspectorElement {
     name: bo.name ?? '',
     documentation: bo.documentation?.[0]?.text ?? '',
     assignee: bo.assignee ?? '',
+    laneAssignee: laneAssignee(element),
     candidateGroups: bo.candidateGroups ?? '',
     script: bo.script ?? '',
     scriptFormat: bo.scriptFormat ?? '',
@@ -1523,6 +1527,8 @@ export function DiagramEditor({
   const themeRef = useRef(themeId);
   themeRef.current = themeId;
   const [canvasTheme, setCanvasTheme] = useState<CanvasTheme>('light');
+  const canvasThemeRef = useRef(canvasTheme);
+  canvasThemeRef.current = canvasTheme;
   const resizeDefaultsRef = useRef(loadResizeDefaults());
   const [resizeSettings, setResizeSettings] = useState(() => ({ ...resizeDefaultsRef.current }));
   const [legendPosition, setLegendPosition] = useState<LegendPosition>(DEFAULT_LEGEND_POSITION);
@@ -1615,7 +1621,7 @@ export function DiagramEditor({
 
   const applyAllStyles = (modeler: Modeler) => {
     const registry = modeler.get<ElementRegistryLike>('elementRegistry');
-    const theme = themeById(themeRef.current);
+    const theme = themeForCanvas(themeById(themeRef.current), canvasThemeRef.current);
     for (const element of registry.getAll()) {
       const gfx = registry.getGraphics(element);
       if (gfx) {
@@ -1651,6 +1657,7 @@ export function DiagramEditor({
       } else {
         applyThemeToGfx(gfx, element.businessObject.$type, theme, {
           strokeWidth: readExtendedStyle(element.di).strokeWidth,
+          canvas: canvasThemeRef.current,
         });
       }
     }
@@ -1660,6 +1667,29 @@ export function DiagramEditor({
       modeler.get<SelectionLike>('selection').get()[0],
       modeler.get<CanvasLike>('canvas').getLayer('resizers'),
     );
+  };
+
+  /**
+   * Ответственный по умолчанию — название дорожки. Ручной assignee не трогаем;
+   * команду выполняем после завершения создания/переноса, чтобы не ломать undo.
+   */
+  const applyLaneAssignee = (element: DiagramElement | undefined, modeler: Modeler) => {
+    if (!element) {
+      return;
+    }
+    const name = laneAssignee(element);
+    const businessObject = element.businessObject;
+    if (!needsLaneAssignee(businessObject.$type, businessObject.assignee, name)) {
+      return;
+    }
+    window.setTimeout(() => {
+      if (
+        needsLaneAssignee(businessObject.$type, businessObject.assignee, name) &&
+        laneAssignee(element) === name
+      ) {
+        modeler.get<ModelingLike>('modeling').updateProperties(element, { assignee: name });
+      }
+    }, 0);
   };
 
   const applyDefaultStyle = (element: DiagramElement | undefined, modeler: Modeler) => {
@@ -1986,8 +2016,13 @@ export function DiagramEditor({
   };
 
   const updateCanvasTheme = (next: CanvasTheme) => {
+    canvasThemeRef.current = next;
     setCanvasTheme(next);
     writeDiagramSettings({ canvas: next });
+    const modeler = modelerRef.current;
+    if (modeler) {
+      applyAllStyles(modeler);
+    }
   };
 
   const updateResizeSettings = (patch: {
@@ -2849,9 +2884,19 @@ export function DiagramEditor({
 
     eventBus.on('commandStack.shape.create.postExecuted', (event) => {
       applyDefaultStyle(event.context?.shape, modeler);
+      applyLaneAssignee(event.context?.shape, modeler);
     });
     eventBus.on('commandStack.connection.create.postExecuted', (event) => {
       applyDefaultStyle(event.context?.connection, modeler);
+    });
+    eventBus.on('commandStack.elements.move.postExecuted', (event) => {
+      for (const shape of event.context?.shapes ?? []) {
+        applyLaneAssignee(shape, modeler);
+      }
+    });
+    // Смена типа на пользовательскую задачу внутри дорожки тоже даёт ответственного.
+    eventBus.on('commandStack.shape.replace.postExecuted', (event) => {
+      applyLaneAssignee(event.context?.shape, modeler);
     });
 
     // bpmn-js переупорядочивает группы по модели уже после commandStack.changed.
@@ -2887,6 +2932,7 @@ export function DiagramEditor({
       if (stored.legend) {
         setLegendPosition(stored.legend);
       }
+      canvasThemeRef.current = stored.canvas;
       setCanvasTheme(stored.canvas);
       setStages(stored.stages ?? []);
       const resizeChanged =
@@ -2923,6 +2969,7 @@ export function DiagramEditor({
         themeRef.current = storedTheme;
         setThemeId(storedTheme);
         setLegendPosition(stored.legend ?? DEFAULT_LEGEND_POSITION);
+        canvasThemeRef.current = stored.canvas;
         setCanvasTheme(stored.canvas);
         setStages(stored.stages ?? []);
         resizePermissions.tasks = stored.resizeTasks;
@@ -4052,7 +4099,7 @@ export function DiagramEditor({
         type: element.businessObject.$type,
         di: element.di,
       })),
-      themeById(themeId),
+      themeForCanvas(themeById(themeId), canvasTheme),
     );
   })();
 

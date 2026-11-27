@@ -6,14 +6,12 @@ from datetime import datetime
 from typing import Any, Literal
 from urllib.parse import quote
 
-from app.api.deps import get_session
+from app.api.access import DiagramAccess, require_diagram
 from app.bpmn import BpmnDocument, BpmnError, parse_and_validate_bpmn, serialize_bpmn
-from app.db.models import Diagram
 from app.export import ExportFormat, export_document
 from app.export.jobs import ExportJob, export_jobs
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 router = APIRouter(prefix="/diagrams", tags=["exports"])
@@ -66,15 +64,12 @@ def _check_export_payload(payload: ExportRequest) -> None:
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def create_export_job(
-    diagram_id: str,
     fmt: ExportFormat,
     payload: ExportRequest,
-    session: AsyncSession = Depends(get_session),
+    access: DiagramAccess = Depends(require_diagram("viewer")),
 ) -> ExportJob:
     """Ставит тяжёлую выгрузку в очередь, чтобы не держать HTTP-запрос."""
-    diagram = await session.get(Diagram, diagram_id)
-    if diagram is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="диаграмма не найдена")
+    diagram = access.diagram
     _check_export_payload(payload)
     job = export_jobs.create(
         diagram_id=diagram.id,
@@ -92,25 +87,17 @@ async def create_export_job(
 
 @router.get("/{diagram_id}/exports/jobs", response_model=list[ExportJobRead])
 async def list_export_jobs(
-    diagram_id: str,
-    session: AsyncSession = Depends(get_session),
+    access: DiagramAccess = Depends(require_diagram("viewer")),
 ) -> list[ExportJob]:
-    diagram = await session.get(Diagram, diagram_id)
-    if diagram is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="диаграмма не найдена")
-    return export_jobs.list(diagram_id)
+    return export_jobs.list(access.diagram.id)
 
 
 @router.get("/{diagram_id}/exports/jobs/{job_id}", response_model=ExportJobRead)
 async def get_export_job(
-    diagram_id: str,
     job_id: str,
-    session: AsyncSession = Depends(get_session),
+    access: DiagramAccess = Depends(require_diagram("viewer")),
 ) -> ExportJob:
-    diagram = await session.get(Diagram, diagram_id)
-    if diagram is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="диаграмма не найдена")
-    job = export_jobs.get(diagram_id, job_id)
+    job = export_jobs.get(access.diagram.id, job_id)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="задание не найдено")
     return job
@@ -118,14 +105,11 @@ async def get_export_job(
 
 @router.get("/{diagram_id}/exports/jobs/{job_id}/download")
 async def download_export_job(
-    diagram_id: str,
     job_id: str,
-    session: AsyncSession = Depends(get_session),
+    access: DiagramAccess = Depends(require_diagram("viewer")),
 ) -> Response:
-    diagram = await session.get(Diagram, diagram_id)
-    if diagram is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="диаграмма не найдена")
-    job = export_jobs.get(diagram_id, job_id)
+    diagram = access.diagram
+    job = export_jobs.get(diagram.id, job_id)
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="задание не найдено")
     if job.status != "done" or job.content is None:
@@ -163,14 +147,11 @@ async def download_export_job(
     },
 )
 async def export_diagram(
-    diagram_id: str,
     fmt: ExportFormat,
     payload: ExportRequest,
-    session: AsyncSession = Depends(get_session),
+    access: DiagramAccess = Depends(require_diagram("viewer")),
 ) -> Response:
-    diagram = await session.get(Diagram, diagram_id)
-    if diagram is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="диаграмма не найдена")
+    diagram = access.diagram
 
     _check_export_payload(payload)
 
@@ -212,14 +193,10 @@ async def export_diagram(
     responses={200: {"content": {"application/xml": {}}}},
 )
 async def import_json(
-    diagram_id: str,
     payload: dict[str, Any] = Body(...),
-    session: AsyncSession = Depends(get_session),
+    access: DiagramAccess = Depends(require_diagram("editor")),
 ) -> Response:
     """Превращает JSON-модель (в формате экспорта) обратно в BPMN XML."""
-    diagram = await session.get(Diagram, diagram_id)
-    if diagram is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="диаграмма не найдена")
     try:
         document = BpmnDocument.model_validate(payload)
         xml = serialize_bpmn(document.detached())

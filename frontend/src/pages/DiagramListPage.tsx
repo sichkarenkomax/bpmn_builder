@@ -5,7 +5,6 @@ import demoXml from '../assets/demo-process.bpmn?raw';
 import { useDiagramList } from '../hooks/useDiagram';
 import { ApiError, createDiagram } from '../lib/api';
 import { withPortalDefaults } from '../lib/portal-defaults';
-import { TemplatePicker } from '../components/TemplatePicker';
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
@@ -105,7 +104,6 @@ export function DiagramListPage() {
           </p>
         </div>
         <div className="page-head__actions">
-          <TemplatePicker compact />
           <button
             type="button"
             className="btn btn--ghost"
