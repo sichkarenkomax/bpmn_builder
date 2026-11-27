@@ -236,9 +236,7 @@ class _Runner:
 
     # --- подпроцессы ------------------------------------------------------
 
-    def _enter_subprocess(
-        self, token: _Token, node: Node, changed: tuple[str, ...]
-    ) -> None:
+    def _enter_subprocess(self, token: _Token, node: Node, changed: tuple[str, ...]) -> None:
         boundary = self._interrupting_boundary(node)
         if boundary is not None:
             self._log(

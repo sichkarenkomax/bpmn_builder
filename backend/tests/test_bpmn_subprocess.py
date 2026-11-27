@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from app.bpmn import parse_bpmn, serialize_bpmn, validate_bpmn_xsd
+from app.bpmn import BpmnDocument, parse_bpmn, serialize_bpmn, validate_bpmn_xsd
+from app.bpmn.model import Node
 from app.bpmn.normalize import normalize
 
 XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -140,7 +141,7 @@ SUB_NODES = ["Sub_Start", "Sub_Task", "Sub_Inner", "Sub_Gate", "Sub_End"]
 DEEP_NODES = ["Deep_Start", "Deep_Task", "Deep_End"]
 
 
-def _subprocess(document):
+def _subprocess(document: BpmnDocument) -> Node:
     return next(node for node in document.nodes() if node.id == "Sub_1")
 
 
@@ -201,8 +202,6 @@ def test_nested_change_survives_reconcile() -> None:
 
     assert 'name="Пересчитать"' in xml
     parsed = parse_bpmn(xml)
-    parsed_inner = next(
-        node for node in _subprocess(parsed).nodes if node.id == "Sub_Inner"
-    )
+    parsed_inner = next(node for node in _subprocess(parsed).nodes if node.id == "Sub_Inner")
     assert "Deep_Task" in [node.id for node in parsed_inner.nodes]
     assert [flow.id for flow in parsed_inner.flows] == ["Deep_F1", "Deep_F2"]

@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "bpmn-studio"
-    app_version: str = "0.2.0"
+    app_version: str = "0.3.0"
     environment: Literal["local", "test", "staging", "production"] = "local"
     debug: bool = False
     api_prefix: str = "/api/v1"

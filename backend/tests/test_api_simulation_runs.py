@@ -60,9 +60,7 @@ async def test_saved_run_keeps_report_and_can_be_deleted(db_client: AsyncClient)
 
     deleted = await db_client.delete(f"{API}/diagrams/{diagram_id}/simulation-runs/{run['id']}")
     assert deleted.status_code == 204
-    again = await db_client.delete(
-        f"{API}/diagrams/{diagram_id}/simulation-runs/{run['id']}"
-    )
+    again = await db_client.delete(f"{API}/diagrams/{diagram_id}/simulation-runs/{run['id']}")
     assert again.status_code == 404
 
 
@@ -165,12 +163,8 @@ async def test_runs_and_cases_stay_inside_their_diagram(db_client: AsyncClient) 
     assert created.status_code == 201
     case_id = created.json()["id"]
 
-    missing = await db_client.post(
-        f"{API}/diagrams/{second}/test-cases/{case_id}/run"
-    )
+    missing = await db_client.post(f"{API}/diagrams/{second}/test-cases/{case_id}/run")
     assert missing.status_code == 404
 
-    bad_save = await db_client.post(
-        f"{API}/diagrams/missing/simulation-runs", json={}
-    )
+    bad_save = await db_client.post(f"{API}/diagrams/missing/simulation-runs", json={})
     assert bad_save.status_code == 404

@@ -180,9 +180,7 @@ async def list_simulation_runs(
     return list(rows)
 
 
-@router.delete(
-    "/{diagram_id}/simulation-runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/{diagram_id}/simulation-runs/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_simulation_run(
     diagram_id: str, run_id: str, session: AsyncSession = Depends(get_session)
 ) -> Response:
