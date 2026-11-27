@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import comments, diagrams, exports, health, simulation
-from app.core.config import get_settings
+from app.api.routes import comments, diagrams, exports, health, modules, simulation
+from app.core.config import Settings, get_settings
 from app.core.db import dispose_engine
 from app.core.middleware import (
     BodySizeLimitMiddleware,
@@ -16,7 +16,7 @@ from app.core.middleware import (
     SecurityHeadersMiddleware,
 )
 from app.export.jobs import export_jobs
-from app.modules import MODULES
+from app.modules import load_modules
 
 
 @asynccontextmanager
@@ -26,9 +26,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await dispose_engine()
 
 
-def create_app() -> FastAPI:
-    """Фабрика приложения: нужна тестам и uvicorn-у."""
-    settings = get_settings()
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Фабрика приложения: нужна тестам и uvicorn-у.
+
+    `settings` можно передать явно — так тесты проверяют разные
+    `MODULES_ENABLED` без правки окружения.
+    """
+    settings = settings or get_settings()
     app = FastAPI(
         title="BPMN Studio API",
         version=settings.app_version,
@@ -68,7 +72,11 @@ def create_app() -> FastAPI:
     app.include_router(exports.router, prefix=settings.api_prefix)
     app.include_router(simulation.router, prefix=settings.api_prefix)
     # Модули подключаются после ядра и не меняют его роуты (ADR-006).
-    for module in MODULES:
+    # Список берётся из MODULES_ENABLED; выключенный модуль не импортируется.
+    enabled = load_modules(settings.modules_enabled)
+    app.state.modules = enabled
+    app.include_router(modules.router, prefix=settings.api_prefix)
+    for module in enabled:
         app.include_router(module.router, prefix=settings.api_prefix)
     return app
 

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from app.modules import MODULES
+import pytest
+from app.modules import load_modules
 from app.modules.pilot.models import PilotNote
 from httpx import AsyncClient
 
@@ -10,13 +11,15 @@ API = "/api/v1"
 
 
 def test_module_contract_and_table_prefix() -> None:
-    assert [module.name for module in MODULES] == ["pilot"]
-    pilot = MODULES[0]
+    modules = load_modules("pilot")
+    assert [module.name for module in modules] == ["pilot"]
+    pilot = modules[0]
     assert pilot.table_prefix == "pilot_"
     assert PilotNote.__tablename__.startswith(pilot.table_prefix)
     assert pilot.router.prefix == "/pilot"
 
 
+@pytest.mark.parametrize("db_client", [["pilot"]], indirect=True)
 async def test_pilot_notes_crud(db_client: AsyncClient) -> None:
     created = await db_client.post(
         f"{API}/pilot/notes",
@@ -43,6 +46,7 @@ async def test_pilot_notes_crud(db_client: AsyncClient) -> None:
     assert (await db_client.get(f"{API}/pilot/notes")).json() == []
 
 
+@pytest.mark.parametrize("db_client", [["pilot"]], indirect=True)
 async def test_pilot_rejects_blank_title(db_client: AsyncClient) -> None:
     blank = await db_client.post(f"{API}/pilot/notes", json={"title": "   "})
     assert blank.status_code == 400

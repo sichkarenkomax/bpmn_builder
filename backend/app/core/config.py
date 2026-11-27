@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     debug: bool = False
     api_prefix: str = "/api/v1"
     docs_enabled: bool = True
+    #: Включённые прикладные модули через запятую (4.0.4); пусто — только ядро.
+    modules_enabled: str = ""
     trust_proxy_headers: bool = False
 
     rate_limit_enabled: bool = True
