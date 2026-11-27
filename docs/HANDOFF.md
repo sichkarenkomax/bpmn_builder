@@ -60,6 +60,15 @@ PY
 
 ## Текущее состояние проекта (обновлено 2026-11-27, Freebuff/Buffy)
 
+- **27.11.2026 (merge стека и 4.0.3):** PR #30–#33 влиты в `main`
+  merge-коммитами (`614083b`, `2522225`, `1a6f95c`, `2903dbe`). Сделан 4.0.3:
+  `app/core/events.py` — Redis Stream `bpmn:studio:events` как outbox,
+  `publish()` и `EventSubscriber` (consumer-группа `modules`), идемпотентность
+  по `event.id`; ядро публикует `diagram.saved` и `comment.created`, тип
+  `user.created` зарезервирован. Тесты на fakeredis: событие переживает
+  старт/рестарт воркера, повтор не дублирует обработку, API-эмиссия проверена.
+  Проверки: 227 pytest, ruff, mypy. Ветка `feature/event-outbox`, PR #34;
+  следующий шаг — 4.0.4 (реестр модулей и `MODULES_ENABLED`).
 - **27.11.2026 (ревизия роадмапа и 4.0.2):** сверены статусы — 3.6.1–3.6.6
   и `v0.3` закрыты, 4.0.1 закрыт на ветке `docs/modular-boundaries`; PR #30,
   #31, #32 открыты, CI зелёный, merge ждёт решения пользователя. Сделана

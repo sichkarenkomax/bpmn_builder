@@ -10,6 +10,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from app.api.deps import get_session
+from app.core.events import COMMENT_CREATED
+from app.core.events import publish as publish_event
 from app.db.models import Comment, Diagram
 from app.schemas.comment import CommentCreate, CommentRead, CommentUpdate
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -71,6 +73,15 @@ async def create_comment(
     session.add(comment)
     await session.commit()
     await session.refresh(comment)
+    await publish_event(
+        COMMENT_CREATED,
+        {
+            "diagram_id": diagram_id,
+            "comment_id": comment.id,
+            "element_id": comment.element_id,
+            "author_id": comment.author_id,
+        },
+    )
     return comment
 
 

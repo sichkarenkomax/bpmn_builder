@@ -15,6 +15,8 @@ from app.bpmn import (
     serialize_bpmn,
 )
 from app.core.config import get_settings
+from app.core.events import DIAGRAM_SAVED
+from app.core.events import publish as publish_event
 from app.db.models import Diagram, DiagramVersion
 from app.schemas.diagram import (
     BpmnSaved,
@@ -175,6 +177,10 @@ async def create_diagram(
     diagram.current_version_id = version.id
     await session.commit()
     await session.refresh(diagram)
+    await publish_event(
+        DIAGRAM_SAVED,
+        {"diagram_id": diagram.id, "version_id": version.id, "etag": diagram.etag},
+    )
     return diagram
 
 
@@ -273,6 +279,10 @@ async def put_bpmn(
     diagram.current_version_id = version.id
     diagram.etag = etag
     await session.commit()
+    await publish_event(
+        DIAGRAM_SAVED,
+        {"diagram_id": diagram.id, "version_id": version.id, "etag": etag},
+    )
     return BpmnSaved(etag=diagram.etag, version_id=version.id)
 
 
