@@ -43,19 +43,16 @@ test('глобальные настройки в рельсе задают зн�
   const diagram = await createDiagram(request);
   try {
     await page.goto(`/d/${diagram.id}`);
-    await page.getByRole('button', { name: 'Настройки редактора' }).click();
-    const settings = page.getByRole('dialog', { name: 'Настройки' });
+    await page.getByRole('button', { name: 'Настройки схемы' }).click();
+    const settings = page.getByRole('dialog', { name: 'Настройки схемы' });
     await expect(settings).toBeVisible();
+    await settings.getByRole('tab', { name: 'Вид' }).click();
 
     // Схема без переопределений видит глобальные значения.
     await expect(settings.getByLabel('Период сохранения на сервер, секунд')).toHaveValue('45');
     await expect(settings.getByLabel('Markdown-панель в документации элемента')).not.toBeChecked();
     await expect(settings.getByLabel('Левая кнопка на пустом холсте')).toHaveValue('pan');
     await expect(settings.getByRole('button', { name: 'Изменить' })).toHaveCount(0);
-
-    // Иконка настроек — шестерёнка, а не клавиатура.
-    const settingsButton = page.getByRole('button', { name: 'Настройки редактора' });
-    await expect(settingsButton.locator('svg')).toBeVisible();
 
     // Переопределение живёт только в этой схеме.
     const schemaAutosave = settings.getByLabel('Период сохранения на сервер, секунд');
@@ -64,20 +61,24 @@ test('глобальные настройки в рельсе задают зн�
     await settings.getByRole('button', { name: 'Готово' }).click();
 
     await page.reload();
-    await page.getByRole('button', { name: 'Настройки редактора' }).click();
+    await page.getByRole('button', { name: 'Настройки схемы' }).click();
+    await page
+      .getByRole('dialog', { name: 'Настройки схемы' })
+      .getByRole('tab', { name: 'Вид' })
+      .click();
     await expect(
       page
-        .getByRole('dialog', { name: 'Настройки' })
+        .getByRole('dialog', { name: 'Настройки схемы' })
         .getByLabel('Период сохранения на сервер, секунд'),
     ).toHaveValue('30');
 
     await page
-      .getByRole('dialog', { name: 'Настройки' })
+      .getByRole('dialog', { name: 'Настройки схемы' })
       .getByRole('button', { name: 'Сбросить для схемы' })
       .click();
     await expect(
       page
-        .getByRole('dialog', { name: 'Настройки' })
+        .getByRole('dialog', { name: 'Настройки схемы' })
         .getByLabel('Период сохранения на сервер, секунд'),
     ).toHaveValue('45');
 
