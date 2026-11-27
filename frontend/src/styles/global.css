@@ -1882,8 +1882,10 @@ code {
   font-size: 13px;
 }
 
-/* Чекбокс-вариант: подпись слева, галочка справа — как в настройках автосохранения. */
+/* Чекбокс-вариант: галочка и подпись рядом, без разведения по краям. */
 .settings-field--checkbox {
+  justify-content: flex-start;
+  gap: var(--space-2);
   cursor: pointer;
 }
 
@@ -1917,6 +1919,51 @@ code {
   justify-content: space-between;
   gap: 8px;
   padding-top: 4px;
+}
+
+/* --- Глобальные настройки (страница) --- */
+
+.settings-page {
+  gap: var(--space-4);
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.settings-card__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+}
+
+.settings-card .settings-section {
+  background: var(--surface-muted);
+}
+
+.settings-saved {
+  color: var(--ok);
+  font-size: var(--text-sm);
+}
+
+.dialog__hint a {
+  color: var(--accent);
+}
+
+.shortcut-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: var(--space-2);
 }
 
 .shortcut-list {
@@ -3851,6 +3898,13 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* Перебиваем ширину 84 px у текстовых полей: чекбокс не должен растягиваться. */
+.settings-field--checkbox input {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
 .shortcut-row__label {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -3886,6 +3940,29 @@ code {
   :root {
     --rail-width: 58px;
     --topbar-height: 56px;
+  }
+
+  /* На узком экране поля идут под подписью, а не сбоку: так текст
+     не рвётся по буквам в узкой колонке. */
+  .settings-field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .settings-field--checkbox {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .settings-field input:not([type='checkbox']):not([type='radio']),
+  .settings-field select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .settings-card {
+    padding: var(--space-3);
   }
 
   .app-rail {

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import {
   AUTOSAVE_DEFAULT_SECONDS,
@@ -8,23 +9,13 @@ import {
 } from '../lib/autosave';
 import type { CanvasMouseMode } from '../lib/mouse-settings';
 import type { ValidationMode } from '../lib/validation-settings';
-import {
-  comboFromEvent,
-  DEFAULT_SHORTCUTS,
-  describeAction,
-  findConflict,
-  formatCombo,
-  normalizeCombo,
-  SHORTCUT_DEFINITIONS,
-  validateCombo,
-  type ShortcutAction,
-  type ShortcutMap,
-} from '../lib/shortcuts';
 
+/**
+ * Настройки схемы. Показывают действующие значения и переопределяют
+ * глобальные настройки только для открытой диаграммы.
+ */
 export function SettingsDialog({
   open,
-  shortcuts,
-  onChange,
   autosaveSeconds,
   onAutosaveChange,
   validationMode,
@@ -35,11 +26,11 @@ export function SettingsDialog({
   onMouseModeChange,
   typePalette,
   onTypePaletteChange,
+  hasOverrides,
+  onResetOverrides,
   onClose,
 }: {
   open: boolean;
-  shortcuts: ShortcutMap;
-  onChange: (next: ShortcutMap) => void;
   autosaveSeconds: number;
   onAutosaveChange: (seconds: number) => void;
   validationMode: ValidationMode;
@@ -50,22 +41,31 @@ export function SettingsDialog({
   onMouseModeChange: (mode: CanvasMouseMode) => void;
   typePalette: boolean;
   onTypePaletteChange: (enabled: boolean) => void;
+  hasOverrides: boolean;
+  onResetOverrides: () => void;
   onClose: () => void;
 }) {
-  const [capturing, setCapturing] = useState<ShortcutAction | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [periodDraft, setPeriodDraft] = useState(String(autosaveSeconds));
-  const shortcutsRef = useRef(shortcuts);
-  shortcutsRef.current = shortcuts;
 
   useEffect(() => {
     if (!open) {
-      setCapturing(null);
-      setError(null);
       return;
     }
     setPeriodDraft(String(autosaveSeconds));
   }, [open, autosaveSeconds]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [open, onClose]);
 
   const commitPeriod = () => {
     const next = clampAutosaveSeconds(Number(periodDraft));
@@ -73,62 +73,9 @@ export function SettingsDialog({
     onAutosaveChange(next);
   };
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!capturing) {
-        if (event.key === 'Escape') {
-          onClose();
-        }
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (event.key === 'Escape') {
-        setCapturing(null);
-        setError(null);
-        return;
-      }
-
-      const combo = comboFromEvent(event);
-      if (!combo) {
-        return;
-      }
-      const normalized = normalizeCombo(combo);
-      if (!normalized) {
-        return;
-      }
-      const invalid = validateCombo(normalized);
-      if (invalid) {
-        setError(invalid);
-        return;
-      }
-      const conflict = findConflict(shortcutsRef.current, normalized, capturing);
-      if (conflict) {
-        setError(`Комбинация занята: ${describeAction(conflict)}`);
-        return;
-      }
-      onChange({ ...shortcutsRef.current, [capturing]: normalized });
-      setCapturing(null);
-      setError(null);
-    };
-
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [open, capturing, onChange, onClose]);
-
   if (!open) {
     return null;
   }
-
-  const resetAll = () => {
-    onChange({ ...DEFAULT_SHORTCUTS });
-    setCapturing(null);
-    setError(null);
-  };
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
@@ -140,14 +87,18 @@ export function SettingsDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="dialog__header">
-          <h2 className="dialog__title">Настройки</h2>
+          <h2 className="dialog__title">Настройки схемы</h2>
           <button type="button" className="ghost-button" onClick={onClose}>
             Закрыть
           </button>
         </header>
 
         <p className="dialog__hint">
-          Настройки действуют для всех схем и хранятся в этом браузере.
+          Здесь меняются значения только для этой схемы. Остальные схемы используют{' '}
+          <Link to="/settings" target="_blank" rel="noreferrer">
+            глобальные настройки
+          </Link>
+          . Горячие клавиши теперь настраиваются там же.
         </p>
 
         <div className="settings-section">
@@ -170,9 +121,9 @@ export function SettingsDialog({
             />
           </label>
           <p className="dialog__hint">
-            По умолчанию {AUTOSAVE_DEFAULT_SECONDS} с, допустимо от {AUTOSAVE_MIN_SECONDS} до{' '}
-            {AUTOSAVE_MAX_SECONDS} с. Локальный черновик пишется чаще — он страхует от потери
-            правок.
+            По умолчанию в глобальных настройках {AUTOSAVE_DEFAULT_SECONDS} с, допустимо от{' '}
+            {AUTOSAVE_MIN_SECONDS} до {AUTOSAVE_MAX_SECONDS} с. Локальный черновик пишется чаще — он
+            страхует от потери правок.
           </p>
         </div>
 
@@ -236,57 +187,15 @@ export function SettingsDialog({
           </p>
         </div>
 
-        <p className="dialog__hint">Горячие клавиши: нажмите «Изменить» и введите комбинацию.</p>
-        <div className="shortcut-list">
-          {SHORTCUT_DEFINITIONS.map((definition) => {
-            const isCapturing = capturing === definition.action;
-            const isDefault = shortcuts[definition.action] === definition.combo;
-            return (
-              <div className="shortcut-row" key={definition.action}>
-                <span className="shortcut-row__group">{definition.group}</span>
-                <span className="shortcut-row__label">{definition.label}</span>
-                <kbd
-                  className={
-                    isCapturing
-                      ? 'shortcut-row__keys shortcut-row__keys--capturing'
-                      : 'shortcut-row__keys'
-                  }
-                >
-                  {isCapturing ? 'нажмите клавиши…' : formatCombo(shortcuts[definition.action])}
-                </kbd>
-                <button
-                  type="button"
-                  className="ghost-button ghost-button--small"
-                  onClick={() => {
-                    setCapturing(isCapturing ? null : definition.action);
-                    setError(null);
-                  }}
-                >
-                  {isCapturing ? 'Отмена' : 'Изменить'}
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button ghost-button--small"
-                  disabled={isDefault}
-                  title="Вернуть по умолчанию"
-                  onClick={() => {
-                    onChange({ ...shortcuts, [definition.action]: definition.combo });
-                    setCapturing(null);
-                    setError(null);
-                  }}
-                >
-                  Сброс
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        {error ? <p className="dialog__error">{error}</p> : null}
-
         <footer className="dialog__footer">
-          <button type="button" className="ghost-button" onClick={resetAll}>
-            Сбросить все
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={onResetOverrides}
+            disabled={!hasOverrides}
+            title="Вернуть значения из глобальных настроек"
+          >
+            Сбросить для схемы
           </button>
           <button type="button" className="ghost-button ghost-button--primary" onClick={onClose}>
             Готово

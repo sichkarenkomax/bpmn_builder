@@ -53,7 +53,24 @@ function attribute(
   return typeof direct === 'string' && direct !== '' ? direct : undefined;
 }
 
-export function readDiagramSettings(definitions: DefinitionsLike | undefined): DiagramSettings {
+export type ResizeDefaultsLike = {
+  tasks: boolean;
+  others: boolean;
+  compactBoundaryEvents: boolean;
+};
+
+/**
+ * Читает настройки из `bs:*`. Отсутствующий атрибут ресайза означает
+ * «как в глобальных настройках» — переданные `resizeDefaults`.
+ */
+export function readDiagramSettings(
+  definitions: DefinitionsLike | undefined,
+  resizeDefaults: ResizeDefaultsLike = {
+    tasks: DEFAULT_RESIZE_TASKS,
+    others: DEFAULT_RESIZE_OTHERS,
+    compactBoundaryEvents: DEFAULT_COMPACT_BOUNDARY_EVENTS,
+  },
+): DiagramSettings {
   const theme = attribute(definitions, 'theme', 'theme');
   const x = Number(attribute(definitions, 'legend-x', 'legend-x'));
   const y = Number(attribute(definitions, 'legend-y', 'legend-y'));
@@ -75,26 +92,33 @@ export function readDiagramSettings(definitions: DefinitionsLike | undefined): D
     stages: parseStages(attribute(definitions, 'stages', 'stages')),
     // Отсутствие атрибута — значение по умолчанию: так старые схемы
     // получают привычное поведение без миграции.
-    resizeTasks: resizeTasks === undefined ? DEFAULT_RESIZE_TASKS : resizeTasks !== 'false',
-    resizeOthers: resizeOthers === undefined ? DEFAULT_RESIZE_OTHERS : resizeOthers === 'true',
+    resizeTasks: resizeTasks === undefined ? resizeDefaults.tasks : resizeTasks !== 'false',
+    resizeOthers: resizeOthers === undefined ? resizeDefaults.others : resizeOthers === 'true',
     compactBoundaryEvents:
       compactBoundaryEvents === undefined
-        ? DEFAULT_COMPACT_BOUNDARY_EVENTS
+        ? resizeDefaults.compactBoundaryEvents
         : compactBoundaryEvents === 'true',
   };
 }
 
 /** Свойства документа; `undefined` удаляет соответствующий `bs:*`-атрибут. */
-export function diagramSettingsProperties(settings: {
-  theme?: ThemeId;
-  legend?: LegendPosition;
-  customColors?: ThemeColorsMap;
-  canvas?: CanvasTheme;
-  stages?: DiagramStage[];
-  resizeTasks?: boolean;
-  resizeOthers?: boolean;
-  compactBoundaryEvents?: boolean;
-}): Record<string, string | undefined> {
+export function diagramSettingsProperties(
+  settings: {
+    theme?: ThemeId;
+    legend?: LegendPosition;
+    customColors?: ThemeColorsMap;
+    canvas?: CanvasTheme;
+    stages?: DiagramStage[];
+    resizeTasks?: boolean;
+    resizeOthers?: boolean;
+    compactBoundaryEvents?: boolean;
+  },
+  resizeDefaults: ResizeDefaultsLike = {
+    tasks: DEFAULT_RESIZE_TASKS,
+    others: DEFAULT_RESIZE_OTHERS,
+    compactBoundaryEvents: DEFAULT_COMPACT_BOUNDARY_EVENTS,
+  },
+): Record<string, string | undefined> {
   const properties: Record<string, string | undefined> = {};
   if (settings.theme !== undefined) {
     // «Чёрно-белая» — тема по умолчанию: не пишем лишний атрибут.
@@ -115,17 +139,21 @@ export function diagramSettingsProperties(settings: {
   if (settings.stages !== undefined) {
     properties['stages'] = serializeStages(settings.stages);
   }
+  // Атрибут пишем только когда значение отличается от глобального: схема
+  // без атрибута продолжает следовать за настройками платформы.
   if (settings.resizeTasks !== undefined) {
     properties['resize-tasks'] =
-      settings.resizeTasks === DEFAULT_RESIZE_TASKS ? undefined : 'false';
+      settings.resizeTasks === resizeDefaults.tasks ? undefined : String(settings.resizeTasks);
   }
   if (settings.resizeOthers !== undefined) {
     properties['resize-others'] =
-      settings.resizeOthers === DEFAULT_RESIZE_OTHERS ? undefined : 'true';
+      settings.resizeOthers === resizeDefaults.others ? undefined : String(settings.resizeOthers);
   }
   if (settings.compactBoundaryEvents !== undefined) {
     properties['compact-boundary-events'] =
-      settings.compactBoundaryEvents === DEFAULT_COMPACT_BOUNDARY_EVENTS ? undefined : 'true';
+      settings.compactBoundaryEvents === resizeDefaults.compactBoundaryEvents
+        ? undefined
+        : String(settings.compactBoundaryEvents);
   }
   return properties;
 }

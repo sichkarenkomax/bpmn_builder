@@ -3,10 +3,13 @@
 export type ValidationMode = 'after-save' | 'manual';
 
 export const VALIDATION_MODE_STORAGE_KEY = 'bpmn-studio.validation-mode';
-export const DEFAULT_VALIDATION_MODE: ValidationMode = 'after-save';
+export const DEFAULT_VALIDATION_MODE: ValidationMode = 'manual';
 
 export function parseValidationMode(raw: string | null): ValidationMode {
-  return raw === 'manual' ? 'manual' : DEFAULT_VALIDATION_MODE;
+  if (raw === 'manual' || raw === 'after-save') {
+    return raw;
+  }
+  return DEFAULT_VALIDATION_MODE;
 }
 
 export function loadValidationMode(storage: Storage | null = safeStorage()): ValidationMode {

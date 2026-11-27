@@ -154,6 +154,30 @@ describe('своя тема (1.3.11)', () => {
     expect(readDiagramSettings({ 'bs:custom-theme': 'не json' }).customColors).toBeNull();
   });
 
+  it('без атрибутов схема следует за глобальными настройками вида', () => {
+    const globals = { tasks: false, others: true, compactBoundaryEvents: true };
+    expect(readDiagramSettings({ $attrs: {} }, globals)).toMatchObject({
+      resizeTasks: false,
+      resizeOthers: true,
+      compactBoundaryEvents: true,
+    });
+    expect(diagramSettingsProperties({ ...globals }, globals)).toEqual({
+      'resize-tasks': undefined,
+      'resize-others': undefined,
+      'compact-boundary-events': undefined,
+    });
+  });
+
+  it('ручное значение пишется атрибутом, даже если оно true', () => {
+    const globals = { tasks: false, others: false, compactBoundaryEvents: false };
+    expect(diagramSettingsProperties({ resizeTasks: true }, globals)).toEqual({
+      'resize-tasks': 'true',
+    });
+    expect(
+      readDiagramSettings({ $attrs: { 'bs:resize-tasks': 'true' } }, globals).resizeTasks,
+    ).toBe(true);
+  });
+
   it('устаревшая тема custom подставляет свои цвета', () => {
     const colors: ThemeColorsMap = {
       ...DEFAULT_CUSTOM_COLORS,
