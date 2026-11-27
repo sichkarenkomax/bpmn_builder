@@ -2807,7 +2807,14 @@ code {
 .simulation-panel {
   z-index: 132;
   width: min(400px, calc(100% - 24px));
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* При ресайзе блоки не сжимаются меньше своего содержимого: панель скроллится. */
+.simulation-panel > * {
+  flex-shrink: 0;
 }
 
 .simulation-panel__header {
@@ -2902,6 +2909,7 @@ code {
 
 .simulation-panel__log {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 2px;
   min-height: 0;
@@ -3044,6 +3052,15 @@ code {
   gap: 4px;
   align-items: center;
   font-size: 11.5px;
+}
+
+.simulation-panel__library-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.simulation-panel__case-name {
+  max-width: 100%;
 }
 
 .simulation-panel__case-edit {

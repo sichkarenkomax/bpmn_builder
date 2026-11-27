@@ -436,6 +436,59 @@ test('симуляция: положение и размер панели сох
   }
 });
 
+test('симуляция: при малой высоте панель прокручивается, а блоки не наезжают', async ({
+  page,
+  request,
+}) => {
+  const created = await request.post(`${API}/diagrams`, {
+    data: { title: `E2E simulation overflow ${Date.now()}`, bpmn_xml: sampleXml },
+  });
+  expect(created.ok()).toBeTruthy();
+  const diagram = (await created.json()) as { id: string };
+
+  try {
+    await page.goto(`/d/${diagram.id}`);
+    await expect(page.locator('[data-element-id="StartEvent_1"]').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Симуляция процесса' }).click();
+    const panel = page.locator('.simulation-panel');
+    await expect(panel.getByRole('status').first()).toContainText('Завершено');
+
+    // Ужимаем панель: содержимое должно уйти в прокрутку, а не сжаться в наезд.
+    await page.evaluate(() => {
+      const element = document.querySelector<HTMLElement>('.simulation-panel');
+      if (element) {
+        element.style.height = '200px';
+      }
+    });
+
+    const metrics = await page.evaluate(() => {
+      const element = document.querySelector<HTMLElement>('.simulation-panel');
+      if (!element) {
+        return null;
+      }
+      const blocks = [
+        ...element.querySelectorAll<HTMLElement>(
+          '.simulation-panel__controls, .simulation-panel__summary, .simulation-panel__current, .simulation-panel__state, .simulation-panel__counts, .simulation-panel__library',
+        ),
+      ];
+      return {
+        overflowY: getComputedStyle(element).overflowY,
+        scrollable: element.scrollHeight > element.clientHeight,
+        clipped: blocks
+          .filter((block) => block.scrollHeight > block.clientHeight + 1)
+          .map((block) => block.className),
+      };
+    });
+
+    expect(metrics).not.toBeNull();
+    expect(metrics?.overflowY).toBe('auto');
+    expect(metrics?.scrollable).toBe(true);
+    expect(metrics?.clipped).toEqual([]);
+  } finally {
+    await request.delete(`${API}/diagrams/${diagram.id}`);
+  }
+});
+
 test('симуляция: сдвинутая влево панель не обрезается обёрткой', async ({ page, request }) => {
   const created = await request.post(`${API}/diagrams`, {
     data: { title: `E2E simulation clipping ${Date.now()}`, bpmn_xml: sampleXml },
