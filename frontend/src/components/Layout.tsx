@@ -111,7 +111,9 @@ export function Layout() {
       <div className="app-frame">
         <header className="app-topbar">
           <nav className="app-topbar__crumbs" aria-label="Хлебные крошки">
-            <span className="app-topbar__root">BPMN Studio</span>
+            <Link className="app-topbar__root" to="/">
+              BPMN Studio
+            </Link>
             <span className="app-topbar__separator" aria-hidden="true">
               /
             </span>

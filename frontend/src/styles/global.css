@@ -202,6 +202,12 @@ code {
 .app-topbar__root {
   flex: none;
   color: var(--text-subtle);
+  text-decoration: none;
+  transition: color var(--transition);
+}
+
+.app-topbar__root:hover {
+  color: var(--text);
 }
 
 .app-topbar__separator {

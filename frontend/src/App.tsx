@@ -22,7 +22,11 @@ export function App() {
             path="/d/:diagramId"
             element={
               <Suspense
-                fallback={<section className="page page--centered">Загружаю редактор…</section>}
+                fallback={
+                  <section className="page page--centered">
+                    <p className="empty-state__text">Загружаю редактор…</p>
+                  </section>
+                }
               >
                 <DiagramPage />
               </Suspense>
