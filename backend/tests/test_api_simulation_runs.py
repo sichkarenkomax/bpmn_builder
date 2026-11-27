@@ -31,6 +31,24 @@ XML = f"""<?xml version="1.0" encoding="UTF-8"?>
 </bpmn:definitions>"""
 
 
+XML2 = f"""<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions {NS} id="D" targetNamespace="http://bpmn-studio.dev/test">
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:scriptTask id="Prepare" name="Подготовить" scriptFormat="python">
+      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+      <bpmn:script>total = total + 1</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:task id="Extra" name="Дополнительно">
+      <bpmn:incoming>F2</bpmn:incoming><bpmn:outgoing>F3</bpmn:outgoing></bpmn:task>
+    <bpmn:endEvent id="End"><bpmn:incoming>F3</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Prepare" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Prepare" targetRef="Extra" />
+    <bpmn:sequenceFlow id="F3" sourceRef="Extra" targetRef="End" />
+  </bpmn:process>
+</bpmn:definitions>"""
+
+
 async def create_diagram(client: AsyncClient) -> str:
     created = await client.post(
         f"{API}/diagrams", json={"title": "Сохранённый прогон", "bpmn_xml": XML}
@@ -150,6 +168,98 @@ async def test_test_case_pass_and_fail_with_diff(db_client: AsyncClient) -> None
 
     deleted = await db_client.delete(f"{API}/diagrams/{diagram_id}/test-cases/{case['id']}")
     assert deleted.status_code == 204
+
+
+async def test_test_case_is_pinned_to_its_version(db_client: AsyncClient) -> None:
+    diagram_id = await create_diagram(db_client)
+    expected_steps = ["Start", "Prepare", "End"]
+    created = await db_client.post(
+        f"{API}/diagrams/{diagram_id}/test-cases",
+        json={
+            "name": "Старая версия",
+            "variables": {"total": 1},
+            "expected_steps": expected_steps,
+            "expected_variables": {"total": 2},
+        },
+    )
+    assert created.status_code == 201, created.text
+    case: dict[str, Any] = created.json()
+    pinned = case["version_id"]
+    assert pinned
+
+    bpmn = await db_client.get(f"{API}/diagrams/{diagram_id}/bpmn")
+    etag = bpmn.headers["etag"]
+    updated = await db_client.put(
+        f"{API}/diagrams/{diagram_id}/bpmn",
+        content=XML2,
+        headers={"Content-Type": "application/xml", "If-Match": etag},
+    )
+    assert updated.status_code == 200, updated.text
+
+    # Текущая версия удлинилась, а кейс по-прежнему гоняет сохранённую.
+    current = await db_client.post(
+        f"{API}/diagrams/{diagram_id}/simulate", json={"variables": {"total": 1}}
+    )
+    assert [step["node_id"] for step in current.json()["steps"]] == [
+        "Start",
+        "Prepare",
+        "Extra",
+        "End",
+    ]
+
+    pinned_run = await db_client.post(f"{API}/diagrams/{diagram_id}/test-cases/{case['id']}/run")
+    assert pinned_run.json()["passed"] is True
+
+    # Перепривязка к текущей версии делает расхождение видимым.
+    repinned = await db_client.patch(
+        f"{API}/diagrams/{diagram_id}/test-cases/{case['id']}", json={"version_id": None}
+    )
+    assert repinned.status_code == 200, repinned.text
+    assert repinned.json()["version_id"] != pinned
+    failed = await db_client.post(f"{API}/diagrams/{diagram_id}/test-cases/{case['id']}/run")
+    assert failed.json()["passed"] is False
+    assert failed.json()["step_diffs"][0]["actual"] == "Extra"
+
+    # Возврат к исходной версии снова даёт pass.
+    back = await db_client.patch(
+        f"{API}/diagrams/{diagram_id}/test-cases/{case['id']}", json={"version_id": pinned}
+    )
+    assert back.status_code == 200
+    again = await db_client.post(f"{API}/diagrams/{diagram_id}/test-cases/{case['id']}/run")
+    assert again.json()["passed"] is True
+
+
+async def test_test_case_can_be_edited(db_client: AsyncClient) -> None:
+    diagram_id = await create_diagram(db_client)
+    created = await db_client.post(
+        f"{API}/diagrams/{diagram_id}/test-cases",
+        json={"name": "Черновик", "variables": {"total": 1}},
+    )
+    assert created.status_code == 201
+    case_id = created.json()["id"]
+
+    patched = await db_client.patch(
+        f"{API}/diagrams/{diagram_id}/test-cases/{case_id}",
+        json={
+            "name": "Готовый кейс",
+            "expected_steps": ["Start", "Prepare", "End"],
+            "expected_variables": {"total": 2},
+        },
+    )
+    assert patched.status_code == 200, patched.text
+    body: dict[str, Any] = patched.json()
+    assert body["name"] == "Готовый кейс"
+    assert body["expected_steps"] == ["Start", "Prepare", "End"]
+    assert body["variables"] == {"total": 1}
+
+    result = await db_client.post(f"{API}/diagrams/{diagram_id}/test-cases/{case_id}/run")
+    assert result.json()["passed"] is True
+
+    other = await create_diagram(db_client)
+    missing = await db_client.patch(
+        f"{API}/diagrams/{other}/test-cases/{case_id}", json={"name": "Чужой"}
+    )
+    assert missing.status_code == 404
 
 
 async def test_runs_and_cases_stay_inside_their_diagram(db_client: AsyncClient) -> None:

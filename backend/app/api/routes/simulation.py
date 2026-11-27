@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from app.api.deps import get_session
 from app.api.routes.diagrams import MAX_XML_BYTES, _current_xml, _load
 from app.bpmn import BpmnError, parse_and_validate_bpmn
-from app.db.models import Diagram, SimulationRun, TestCase
+from app.db.models import Diagram, DiagramVersion, SimulationRun, TestCase
 from app.schemas.simulation import (
     SimulationReport,
     SimulationRequest,
@@ -17,6 +17,7 @@ from app.schemas.simulation import (
     TestCaseCreate,
     TestCaseRead,
     TestCaseResult,
+    TestCaseUpdate,
     VariableDiff,
 )
 from app.simulation.engine import SimulationError, simulate
@@ -71,12 +72,34 @@ _SIMULATE_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 
 
+async def _version_xml(session: AsyncSession, diagram: Diagram, version_id: str) -> str:
+    version = await session.get(DiagramVersion, version_id)
+    if version is None or version.diagram_id != diagram.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="версия XML тест-кейса не найдена",
+        )
+    return version.xml
+
+
 async def _simulate_diagram(
-    session: AsyncSession, diagram_id: str, payload: SimulationRequest
+    session: AsyncSession,
+    diagram_id: str,
+    payload: SimulationRequest,
+    *,
+    version_id: str | None = None,
 ) -> tuple[Diagram, SimulationReport]:
-    """Проводит токен по текущей версии XML и возвращает диаграмму и отчёт."""
+    """Проводит токен по XML и возвращает диаграмму и отчёт.
+
+    `version_id` фиксирует конкретную версию (тест-кейс); без него берётся
+    текущая версия диаграммы.
+    """
     diagram = await _load(session, diagram_id)
-    xml = await _current_xml(session, diagram)
+    xml = (
+        await _current_xml(session, diagram)
+        if version_id is None
+        else await _version_xml(session, diagram, version_id)
+    )
     if len(xml.encode("utf-8")) > MAX_XML_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="XML больше 5 МиБ"
@@ -210,9 +233,10 @@ async def create_test_case(
     payload: TestCaseCreate,
     session: AsyncSession = Depends(get_session),
 ) -> TestCase:
-    await _load(session, diagram_id)
+    diagram = await _load(session, diagram_id)
     case = TestCase(
         diagram_id=diagram_id,
+        version_id=diagram.current_version_id,
         name=payload.name,
         variables=payload.variables,
         choices=payload.choices,
@@ -238,6 +262,37 @@ async def list_test_cases(
     return list(rows)
 
 
+@router.patch("/{diagram_id}/test-cases/{case_id}", response_model=TestCaseRead)
+async def update_test_case(
+    diagram_id: str,
+    case_id: str,
+    payload: TestCaseUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> TestCase:
+    case = await _load_case(session, diagram_id, case_id)
+    diagram = await _load(session, diagram_id)
+    fields = payload.model_fields_set
+    if payload.name is not None:
+        case.name = payload.name
+    if payload.variables is not None:
+        case.variables = cast(dict[str, object], payload.variables)
+    if payload.choices is not None:
+        case.choices = payload.choices
+    if payload.expected_steps is not None:
+        case.expected_steps = payload.expected_steps
+    if payload.expected_variables is not None:
+        case.expected_variables = cast(dict[str, object], payload.expected_variables)
+    if "version_id" in fields:
+        if payload.version_id is None:
+            case.version_id = diagram.current_version_id
+        else:
+            await _version_xml(session, diagram, payload.version_id)
+            case.version_id = payload.version_id
+    await session.commit()
+    await session.refresh(case)
+    return case
+
+
 @router.delete("/{diagram_id}/test-cases/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_test_case(
     diagram_id: str, case_id: str, session: AsyncSession = Depends(get_session)
@@ -258,6 +313,7 @@ async def run_test_case(
         session,
         diagram_id,
         SimulationRequest(variables=case.variables, choices=case.choices),
+        version_id=case.version_id,
     )
 
     actual_steps = [step.node_id for step in report.steps]

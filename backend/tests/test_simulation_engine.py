@@ -367,6 +367,92 @@ def test_boundary_timer_interrupts_subprocess() -> None:
     assert "прерван" in (report.steps[1].message or "")
 
 
+def test_non_interrupting_boundary_timer_runs_in_parallel() -> None:
+    body = subprocess_body(expanded=True, boundary=True).replace(
+        'attachedToRef="Sub">', 'attachedToRef="Sub" cancelActivity="false">'
+    )
+    report = simulate(document(body))
+
+    assert report.completed
+    ids = [step.node_id for step in report.steps]
+    assert "SubTask" in ids and "Late" in ids
+    assert report.counts["SubTask"] == 1
+    assert report.counts["Late"] == 1
+    assert report.tokens_completed == 2
+    timeout = next(step for step in report.steps if step.node_id == "Timeout")
+    assert timeout.wait_ms == 300_000
+
+
+def error_boundary_body(*, boundary: bool = True) -> str:
+    boundary_xml = (
+        """
+      <bpmn:boundaryEvent id="Catch" name="Сбой" attachedToRef="Sub">
+        <bpmn:outgoing>BF</bpmn:outgoing>
+        <bpmn:errorEventDefinition errorRef="Err" />
+      </bpmn:boundaryEvent>
+      <bpmn:task id="Recover" name="Восстановить">
+        <bpmn:incoming>BF</bpmn:incoming><bpmn:outgoing>BF2</bpmn:outgoing></bpmn:task>
+      <bpmn:sequenceFlow id="BF" sourceRef="Catch" targetRef="Recover" />
+      <bpmn:sequenceFlow id="BF2" sourceRef="Recover" targetRef="End" />"""
+        if boundary
+        else ""
+    )
+    shape = (
+        '<bpmndi:BPMNShape id="Sub_di" bpmnElement="Sub" isExpanded="true">'
+        '<dc:Bounds x="200" y="80" width="400" height="200" />'
+        "</bpmndi:BPMNShape>"
+    )
+    return f"""
+  <bpmn:error id="Err" name="Сбой" errorCode="FAIL" />
+  <bpmn:process id="P" isExecutable="true">
+    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:subProcess id="Sub" name="Проверка">
+      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+      <bpmn:startEvent id="SubStart"><bpmn:outgoing>SF1</bpmn:outgoing></bpmn:startEvent>
+      <bpmn:scriptTask id="Prepare" name="Считать" scriptFormat="python">
+        <bpmn:incoming>SF1</bpmn:incoming><bpmn:outgoing>SF2</bpmn:outgoing>
+        <bpmn:script>total = missing + 1</bpmn:script>
+      </bpmn:scriptTask>
+      <bpmn:endEvent id="SubEnd"><bpmn:incoming>SF2</bpmn:incoming></bpmn:endEvent>
+      <bpmn:sequenceFlow id="SF1" sourceRef="SubStart" targetRef="Prepare" />
+      <bpmn:sequenceFlow id="SF2" sourceRef="Prepare" targetRef="SubEnd" />
+    </bpmn:subProcess>{boundary_xml}
+    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Sub" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Sub" targetRef="End" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_1">
+    <bpmndi:BPMNPlane id="Plane_1" bpmnElement="P">{shape}</bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>"""
+
+
+def test_error_boundary_catches_script_failure() -> None:
+    parsed = document(error_boundary_body())
+    catch = next(node for node in parsed.nodes() if node.id == "Catch")
+    assert catch.attached_to == "Sub"
+    assert catch.error_ref == "Err"
+    assert [error.error_code for error in parsed.errors] == ["FAIL"]
+
+    report = simulate(parsed, variables={"total": 1})
+    assert report.completed
+    ids = [step.node_id for step in report.steps]
+    assert "Prepare" not in ids and "Recover" in ids
+    caught = next(step for step in report.steps if step.node_id == "Catch")
+    assert caught.action == "completed"
+    assert "missing" in (caught.message or "")
+    assert "Sub" in report.counts
+
+    with pytest.raises(SimulationError, match="строка 1.*не задана"):
+        simulate(document(error_boundary_body(boundary=False)), variables={"total": 1})
+
+
+def test_error_definitions_survive_detached_round_trip() -> None:
+    restored = parse_bpmn(serialize_bpmn(document(error_boundary_body()).detached()))
+    assert [error.id for error in restored.errors] == ["Err"]
+    catch = next(node for node in restored.nodes() if node.id == "Catch")
+    assert catch.error_ref == "Err"
+
+
 def test_nested_script_task_changes_shared_variables() -> None:
     report = simulate(
         document(subprocess_body(expanded=True, nested_script="total = total + 1")),

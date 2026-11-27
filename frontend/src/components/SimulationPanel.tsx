@@ -9,6 +9,7 @@ import {
   fetchSimulationTestCases,
   runSimulationTestCase,
   saveSimulationRun,
+  updateSimulationTestCase,
   type SimulationReport,
   type SimulationRun,
   type SimulationStep,
@@ -16,7 +17,7 @@ import {
   type SimulationTestCaseResult,
   type SimulationVariable,
 } from '../lib/api';
-import { formatSimulationVariable } from '../lib/simulation-variables';
+import { formatSimulationVariable, parseSimulationVariables } from '../lib/simulation-variables';
 
 const SPEEDS = [0.5, 1, 1.5, 2] as const;
 
@@ -362,6 +363,11 @@ function SimulationLibrary({
     caseId: string;
     value: SimulationTestCaseResult;
   } | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState('');
+  const [draftSteps, setDraftSteps] = useState('');
+  const [draftExpected, setDraftExpected] = useState('');
+  const [repin, setRepin] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -423,6 +429,52 @@ function SimulationLibrary({
     perform(async () => {
       const value = await runSimulationTestCase(diagramId, caseId);
       setResult({ caseId, value });
+    });
+
+  const startEdit = (item: SimulationTestCase) => {
+    setEditing(item.id);
+    setDraftName(item.name);
+    setDraftSteps(item.expected_steps.join(', '));
+    setDraftExpected(
+      Object.entries(item.expected_variables)
+        .map(([name, value]) => `${name} = ${formatSimulationVariable(value)}`)
+        .join('\n'),
+    );
+    setRepin(false);
+    setError(null);
+  };
+
+  const fillFromRun = () => {
+    if (!report) {
+      return;
+    }
+    setDraftSteps(report.steps.map((step) => step.node_id).join(', '));
+    const lastStep = report.steps[report.steps.length - 1];
+    setDraftExpected(
+      Object.entries(lastStep?.variables ?? {})
+        .map(([name, value]) => `${name} = ${formatSimulationVariable(value)}`)
+        .join('\n'),
+    );
+  };
+
+  const saveEdit = (item: SimulationTestCase) =>
+    perform(async () => {
+      const parsed = parseSimulationVariables(draftExpected);
+      if (parsed.error) {
+        throw new Error(parsed.error);
+      }
+      const steps = draftSteps
+        .split(',')
+        .map((step) => step.trim())
+        .filter((step) => step !== '');
+      await updateSimulationTestCase(diagramId, item.id, {
+        name: draftName.trim() || item.name,
+        expected_steps: steps,
+        expected_variables: parsed.variables,
+        ...(repin ? { version_id: null } : {}),
+      });
+      setEditing(null);
+      await refresh();
     });
 
   const removeCase = (caseId: string) =>
@@ -506,25 +558,96 @@ function SimulationLibrary({
         <ul className="simulation-panel__library-list">
           {cases.map((item) => (
             <li key={item.id} data-testid="sim-case">
-              <span>{item.name}</span>
-              <button
-                type="button"
-                className="ghost-button ghost-button--small"
-                aria-label={`Запустить тест-кейс ${item.name}`}
-                disabled={busy}
-                onClick={() => void runCase(item.id)}
-              >
-                Запустить
-              </button>
-              <button
-                type="button"
-                className="ghost-button ghost-button--small"
-                aria-label={`Удалить тест-кейс ${item.name}`}
-                disabled={busy}
-                onClick={() => void removeCase(item.id)}
-              >
-                ×
-              </button>
+              {editing === item.id ? (
+                <div className="simulation-panel__case-edit">
+                  <input
+                    className="simulation-panel__case-name"
+                    aria-label="Имя тест-кейса"
+                    value={draftName}
+                    maxLength={255}
+                    onChange={(event) => setDraftName(event.currentTarget.value)}
+                  />
+                  <input
+                    className="simulation-panel__case-name"
+                    aria-label="Ожидаемые шаги"
+                    placeholder="id шагов через запятую"
+                    value={draftSteps}
+                    onChange={(event) => setDraftSteps(event.currentTarget.value)}
+                  />
+                  <textarea
+                    className="simulation-panel__case-name"
+                    aria-label="Ожидаемые переменные"
+                    rows={2}
+                    spellCheck={false}
+                    value={draftExpected}
+                    onChange={(event) => setDraftExpected(event.currentTarget.value)}
+                  />
+                  <label className="simulation-panel__case-repin">
+                    <input
+                      type="checkbox"
+                      checked={repin}
+                      onChange={(event) => setRepin(event.currentTarget.checked)}
+                    />
+                    <span>Привязать к текущей версии</span>
+                  </label>
+                  <div className="simulation-panel__library-actions">
+                    <button
+                      type="button"
+                      className="ghost-button ghost-button--small"
+                      disabled={busy || !report}
+                      onClick={fillFromRun}
+                    >
+                      Из прогона
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button ghost-button--small ghost-button--primary"
+                      disabled={busy}
+                      onClick={() => void saveEdit(item)}
+                    >
+                      Сохранить
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button ghost-button--small"
+                      onClick={() => setEditing(null)}
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <span>{item.name}</span>
+                  <button
+                    type="button"
+                    className="ghost-button ghost-button--small"
+                    aria-label={`Запустить тест-кейс ${item.name}`}
+                    disabled={busy}
+                    onClick={() => void runCase(item.id)}
+                  >
+                    Запустить
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button ghost-button--small"
+                    aria-label={`Изменить тест-кейс ${item.name}`}
+                    disabled={busy}
+                    onClick={() => startEdit(item)}
+                  >
+                    Изменить
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button ghost-button--small"
+                    aria-label={`Удалить тест-кейс ${item.name}`}
+                    disabled={busy}
+                    onClick={() => void removeCase(item.id)}
+                  >
+                    ×
+                  </button>
+                </>
+              )}
               {result?.caseId === item.id ? (
                 <div
                   className="simulation-panel__case-result"

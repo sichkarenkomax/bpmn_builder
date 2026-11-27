@@ -191,6 +191,7 @@ export interface SimulationTestCase {
   id: string;
   diagram_id: string;
   name: string;
+  version_id: string | null;
   variables: Record<string, SimulationVariable>;
   choices: Record<string, string>;
   expected_steps: string[];
@@ -254,6 +255,25 @@ export function createSimulationTestCase(
 ): Promise<SimulationTestCase> {
   return request<SimulationTestCase>(`/diagrams/${id}/test-cases`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateSimulationTestCase(
+  id: string,
+  caseId: string,
+  payload: {
+    name?: string;
+    variables?: Record<string, SimulationVariable>;
+    choices?: Record<string, string>;
+    expected_steps?: string[];
+    expected_variables?: Record<string, SimulationVariable>;
+    version_id?: string | null;
+  },
+): Promise<SimulationTestCase> {
+  return request<SimulationTestCase>(`/diagrams/${id}/test-cases/${caseId}`, {
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });

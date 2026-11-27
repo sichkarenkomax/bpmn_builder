@@ -124,6 +124,20 @@ class TestCaseCreate(BaseModel):
     expected_variables: dict[str, VariableValue] = Field(default_factory=dict)
 
 
+class TestCaseUpdate(BaseModel):
+    """Частичное изменение тест-кейса; не переданные поля не меняются."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    variables: dict[str, VariableValue] | None = None
+    choices: dict[str, str] | None = None
+    expected_steps: list[str] | None = Field(default=None, max_length=5000)
+    expected_variables: dict[str, VariableValue] | None = None
+    #: Перепривязать кейс к другой версии XML.
+    version_id: str | None = Field(default=None, max_length=36)
+
+
 class TestCaseRead(BaseModel):
     """Сохранённый тест-кейс."""
 
@@ -132,6 +146,7 @@ class TestCaseRead(BaseModel):
     id: str
     diagram_id: str
     name: str
+    version_id: str | None = None
     variables: dict[str, VariableValue] = Field(default_factory=dict)
     choices: dict[str, str] = Field(default_factory=dict)
     expected_steps: list[str] = Field(default_factory=list)
@@ -179,6 +194,7 @@ __all__ = [
     "StepDiff",
     "TestCaseCreate",
     "TestCaseRead",
+    "TestCaseUpdate",
     "TestCaseResult",
     "VariableDiff",
     "VariableValue",

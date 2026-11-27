@@ -109,6 +109,8 @@ class TestCase(Base):
         ForeignKey("diagram.id", ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(255))
+    #: Версия XML, к которой привязан кейс; `None` — legacy, текущая версия.
+    version_id: Mapped[str | None] = mapped_column(String(36), default=None)
     variables: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     choices: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
     expected_steps: Mapped[list[str]] = mapped_column(JSON, default=list)

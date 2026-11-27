@@ -16,7 +16,10 @@
 через внутренние концы на исходящие потоки подпроцесса; вложенность любой
 глубины, внутренние узлы видны в журнале и счётчиках, переменные общие.
 Граничное событие с таймером прерывает подпроцесс и уводит токен по своему
-потоку (`cancelActivity="false"` и компенсация пока не моделируются).
+потоку; `cancelActivity="false"` запускает параллельную ветку, не останавливая
+подпроцесс. Ошибка скрипта внутри подпроцесса перехватывается ближайшим
+граничным событием-ошибкой (`errorEventDefinition`), остальные ошибки
+по-прежнему дают `SimulationError`.
 """
 
 from __future__ import annotations
@@ -162,7 +165,12 @@ class _Runner:
 
         changed: tuple[str, ...] = ()
         if node.type is NodeType.SCRIPT_TASK and node.script:
-            changed = self._run_script(node)
+            try:
+                changed = self._run_script(node)
+            except SimulationError as exc:
+                if self._handle_script_error(token, node, exc):
+                    return
+                raise
 
         if node.type is NodeType.SUB_PROCESS:
             self._enter_subprocess(token, node, changed)
@@ -237,8 +245,12 @@ class _Runner:
     # --- подпроцессы ------------------------------------------------------
 
     def _enter_subprocess(self, token: _Token, node: Node, changed: tuple[str, ...]) -> None:
-        boundary = self._interrupting_boundary(node)
-        if boundary is not None:
+        boundaries = self._boundary.get(node.id, [])
+        interrupting = [
+            item for item in boundaries if item.timer and item.cancel_activity is not False
+        ]
+        if interrupting:
+            boundary = interrupting[0]
             self._log(
                 token,
                 node,
@@ -250,15 +262,26 @@ class _Runner:
             self._trigger_boundary(token, boundary)
             return
 
+        # Неразрушающий таймер запускает параллельную ветку, подпроцесс продолжается.
+        non_interrupting = [
+            item
+            for item in boundaries
+            if item.timer and item.cancel_activity is False and item.error_ref is None
+        ]
+
         if not node.is_expanded:
             # Свёрнутый подпроцесс — «чёрный ящик»: один шаг без внутренностей.
             self._log(token, node, "completed", changed=changed)
             self._counts[node.id] += 1
+            for boundary in non_interrupting:
+                self._trigger_boundary(token, boundary)
             self._leave_subprocess(token, node, "подпроцесса")
             return
 
         self._log(token, node, "completed", message="вход в подпроцесс", changed=changed)
         self._counts[node.id] += 1
+        for boundary in non_interrupting:
+            self._trigger_boundary(token, boundary)
         starts = [
             inner
             for inner in node.nodes
@@ -287,15 +310,43 @@ class _Runner:
         for flow in outgoing:
             self._queue.append(_Token(flow.target_ref, token.token, flow.id, scope))
 
-    def _interrupting_boundary(self, node: Node) -> Node | None:
-        """Граничное событие с таймером, которое прерывает подпроцесс."""
-        for boundary in self._boundary.get(node.id, []):
-            if boundary.timer is None or boundary.cancel_activity is False:
-                continue
-            return boundary
-        return None
+    def _handle_script_error(self, token: _Token, node: Node, error: SimulationError) -> bool:
+        """Ищет граничное событие-ошибку у своего или внешнего подпроцесса."""
+        scope = token.scope
+        while scope is not None:
+            owner = self._nodes[scope]
+            boundary = next(
+                (item for item in self._boundary.get(scope, []) if item.error_ref is not None),
+                None,
+            )
+            if boundary is not None:
+                self._log(
+                    token,
+                    owner,
+                    "completed",
+                    message=f"прерван ошибкой: {error}",
+                )
+                self._counts[owner.id] += 1
+                self._trigger_boundary(
+                    token,
+                    boundary,
+                    action="completed",
+                    message=f"ошибка перехвачена: {error}",
+                )
+                return True
+            scope = self._parents.get(scope)
+        return False
 
-    def _trigger_boundary(self, token: _Token, boundary: Node) -> None:
+    def _trigger_boundary(
+        self,
+        token: _Token,
+        boundary: Node,
+        *,
+        action: SimulationStepAction = "waiting",
+        message: str | None = None,
+    ) -> None:
+        if message is None and boundary.timer is not None:
+            message = f"ожидание таймера: {boundary.timer.expression}"
         self._steps.append(
             SimulationStep(
                 index=len(self._steps) + 1,
@@ -303,10 +354,8 @@ class _Runner:
                 node_id=boundary.id,
                 node_name=boundary.name,
                 node_type=boundary.type,
-                action="waiting",
-                message=f"ожидание таймера: {boundary.timer.expression}"
-                if boundary.timer
-                else None,
+                action=action,
+                message=message,
                 wait_ms=timer_wait_ms(boundary.timer),
                 variables=dict(self._variables),
             )

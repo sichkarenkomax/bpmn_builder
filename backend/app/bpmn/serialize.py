@@ -17,6 +17,7 @@ from app.bpmn.model import (
     Bounds,
     BpmnDocument,
     Collaboration,
+    ErrorDefinition,
     Flow,
     FlowType,
     Lane,
@@ -66,6 +67,8 @@ def serialize_bpmn(document: BpmnDocument) -> str:
         definitions.set("exporter", document.exporter)
 
     _emit_categories(definitions, document)
+    for error in document.errors:
+        _emit_error(definitions, error)
     if document.collaboration is not None:
         _emit_collaboration(definitions, document.collaboration)
     for process in document.processes:
@@ -199,11 +202,17 @@ def _emit_node(parent: etree._Element, node: Node) -> None:
     if node.timer is not None:
         definition = _sub(element, "timerEventDefinition")
         _sub(definition, node.timer.kind.value).text = node.timer.expression
+    if node.error_ref is not None:
+        _sub(element, "errorEventDefinition", errorRef=node.error_ref)
     if node.type is NodeType.SUB_PROCESS:
         for child in node.nodes:
             _emit_node(element, child)
         for flow in node.flows:
             _emit_flow(element, flow)
+
+
+def _emit_error(parent: etree._Element, error: ErrorDefinition) -> None:
+    _sub(parent, "error", id=error.id, name=error.name, errorCode=error.error_code)
 
 
 def _emit_flow(parent: etree._Element, flow: Flow) -> None:

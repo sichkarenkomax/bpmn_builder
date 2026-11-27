@@ -303,13 +303,25 @@ test('симуляция: прогон и тест-кейс переживают
     await testCase.getByRole('button', { name: 'Запустить тест-кейс Линейный' }).click();
     await expect(panel.getByTestId('sim-case-result')).toContainText('Пройден');
 
+    // Кейс редактируется: имя, ожидаемые шаги и переменные.
+    await testCase.getByRole('button', { name: 'Изменить тест-кейс Линейный' }).click();
+    const edit = panel.locator('.simulation-panel__case-edit');
+    await edit.getByLabel('Имя тест-кейса').fill('Линейный v2');
+    await edit.getByLabel('Ожидаемые шаги').fill('StartEvent_1, Task_Review, EndEvent_1');
+    await edit.getByRole('button', { name: 'Из прогона' }).click();
+    await edit.getByRole('button', { name: 'Сохранить' }).click();
+    const renamed = panel.getByTestId('sim-case').filter({ hasText: 'Линейный v2' });
+    await expect(renamed).toBeVisible();
+    await renamed.getByRole('button', { name: 'Запустить тест-кейс Линейный v2' }).click();
+    await expect(panel.getByTestId('sim-case-result')).toContainText('Пройден');
+
     // Прогон и тест-кейс хранятся в БД: после перезагрузки они на месте.
     await page.reload();
     await expect(page.locator('[data-element-id="StartEvent_1"]').first()).toBeVisible();
     await page.getByRole('button', { name: 'Симуляция процесса' }).click();
     const reopened = page.getByRole('complementary', { name: 'Симуляция процесса' });
     await expect(reopened.getByTestId('sim-run')).toHaveCount(1);
-    await expect(reopened.getByTestId('sim-case').filter({ hasText: 'Линейный' })).toBeVisible();
+    await expect(reopened.getByTestId('sim-case').filter({ hasText: 'Линейный v2' })).toBeVisible();
   } finally {
     await request.delete(`${API}/diagrams/${diagram.id}`);
   }
